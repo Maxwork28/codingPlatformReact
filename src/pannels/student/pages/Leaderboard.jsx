@@ -12,7 +12,7 @@ const Leaderboard = () => {
   useEffect(() => {
     const fetchLeaderboard = async () => {
       try {
-        const response = await axios.get(`http://localhost:3000/questions/classes/${classId}/leaderboard`, {
+        const response = await axios.get(`https://api.algosutra.co.in/questions/classes/${classId}/leaderboard`, {
           headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
         });
         setLeaderboard(response.data.leaderboard || []);

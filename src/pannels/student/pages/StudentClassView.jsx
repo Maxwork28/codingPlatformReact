@@ -5,7 +5,7 @@ import { io } from 'socket.io-client';
 import axios from 'axios';
 import StudentQuestionCard from '../components/StudentQuestionCard';
 
-const socket = io('http://localhost:3000', {
+const socket = io('hhttps://api.algosutra.co.in', {
   withCredentials: true,
 });
 
@@ -39,7 +39,7 @@ const StudentClassView = () => {
       console.log('[StudentClassView] Fetching assignments for class', { classId });
       try {
         const response = await axios.get(
-          `http://localhost:3000/admin/classes/${classId}/assignments`,
+          `https://api.algosutra.co.in/admin/classes/${classId}/assignments`,
           {
             headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
           }
