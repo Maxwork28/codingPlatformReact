@@ -16,6 +16,7 @@ const TeacherQuestionCard = ({ question, onQuestionUpdate }) => {
     classId: effectiveClassId,
     isPublished: question.isPublished,
     isDisabled: question.isDisabled,
+    hasClassId: !!effectiveClassId,
   });
 
   const handlePublishToggle = async () => {
@@ -109,59 +110,61 @@ const TeacherQuestionCard = ({ question, onQuestionUpdate }) => {
       <div className="mt-4 flex flex-wrap gap-2">
         <Link
           to={`/teacher/questions/${question._id}/statement`}
-          className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-200"
         >
           View Statement
         </Link>
         <Link
           to={`/teacher/questions/${question._id}/solution`}
-          className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-200"
         >
           View Solution
         </Link>
         {question.type === 'coding' && (
           <Link
             to={`/teacher/questions/${question._id}/test-cases`}
-            className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-200"
           >
             View Test Cases
           </Link>
         )}
         <Link
           to={`/teacher/questions/${question._id}/edit`}
-          className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-200"
         >
           Edit Question
         </Link>
         <Link
           to={`/teacher/questions/${question._id}/preview`}
-          className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-200"
         >
           Preview as Student
         </Link>
         <button
           onClick={handlePublishToggle}
           disabled={isLoading || !effectiveClassId}
-          className={`inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
+          className={`inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-200 ${
             isLoading || !effectiveClassId
-              ? 'bg-gray-400 cursor-not-allowed'
+              ? 'bg-gray-400 cursor-not-allowed opacity-50'
               : question.isPublished
               ? 'bg-red-600 hover:bg-red-700'
               : 'bg-green-600 hover:bg-green-700'
           }`}
+          title={!effectiveClassId ? 'No class assigned' : isLoading ? 'Processing...' : question.isPublished ? 'Unpublish question' : 'Publish question'}
         >
           {isLoading ? 'Processing...' : question.isPublished ? 'Unpublish' : 'Publish'}
         </button>
         <button
           onClick={handleDisableToggle}
           disabled={isLoading || !effectiveClassId}
-          className={`inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
+          className={`inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-200 ${
             isLoading || !effectiveClassId
-              ? 'bg-gray-400 cursor-not-allowed'
+              ? 'bg-gray-400 cursor-not-allowed opacity-50'
               : question.isDisabled
               ? 'bg-green-600 hover:bg-green-700'
               : 'bg-yellow-600 hover:bg-yellow-700'
           }`}
+          title={!effectiveClassId ? 'No class assigned' : isLoading ? 'Processing...' : question.isDisabled ? 'Enable question' : 'Disable question'}
         >
           {isLoading ? 'Processing...' : question.isDisabled ? 'Enable' : 'Disable'}
         </button>

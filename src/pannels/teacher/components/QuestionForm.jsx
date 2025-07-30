@@ -283,7 +283,13 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
   const [description, setDescription] = useState(deserializeFromHTML(initialData?.description || ''));
   const [points, setPoints] = useState(initialData?.points || 10);
   const [difficulty, setDifficulty] = useState(initialData?.difficulty || 'easy');
-  const [tags, setTags] = useState(initialData?.tags?.join(', ') || '');
+  const [tags, setTags] = useState(
+    typeof initialData?.tags === 'string' 
+      ? initialData.tags 
+      : Array.isArray(initialData?.tags) 
+        ? initialData.tags.join(', ') 
+        : ''
+  );
   const [constraints, setConstraints] = useState(deserializeFromHTML(initialData?.constraints || ''));
   const [examples, setExamples] = useState(
     (Array.isArray(initialData?.examples) ? initialData.examples : ['']).map(ex => deserializeFromHTML(ex))
@@ -296,7 +302,9 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
   const [codeSnippet, setCodeSnippet] = useState(deserializeFromHTML(initialData?.codeSnippet || ''));
   const [correctAnswer, setCorrectAnswer] = useState(deserializeFromHTML(initialData?.correctAnswer || ''));
   const [starterCode, setStarterCode] = useState(
-    initialData?.starterCode?.map(sc => ({ language: sc.language, code: sc.code })) || []
+    initialData?.starterCode?.map(sc => ({ language: sc.language, code: sc.code })) ||
+    initialData?.templateCode?.map(tc => ({ language: tc.language, code: tc.code })) ||
+    []
   );
   const [testCases, setTestCases] = useState(
     (Array.isArray(initialData?.testCases) ? initialData.testCases : [{ input: '', expectedOutput: '', isPublic: true }]).map(tc => ({
@@ -311,7 +319,9 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
   const [explanation, setExplanation] = useState(deserializeFromHTML(initialData?.explanation || ''));
   const [languages, setLanguages] = useState(initialData?.languages || []);
   const [classIds, setClassIds] = useState(
-    initialData?.classes?.map(c => c.classId.toString()) || (defaultClassId ? [defaultClassId] : [])
+    initialData?.classIds || 
+    initialData?.classes?.map(c => c.classId?.toString()) || 
+    (defaultClassId ? [defaultClassId] : [])
   );
   const [inputErrors, setInputErrors] = useState(testCases.map(() => ''));
 

@@ -19,13 +19,14 @@ const QuestionPreview = () => {
         console.log('[QuestionPreview] Question fetched:', {
           id: fetchedQuestion._id,
           title: fetchedQuestion.title,
-          classIds: fetchedQuestion.classIds,
+          classes: fetchedQuestion.classes,
         });
         setQuestion(fetchedQuestion);
 
-        if (!fetchedQuestion.classIds || fetchedQuestion.classIds.length === 0) {
-          console.warn('[QuestionPreview] No classIds found, redirecting to /teacher/classes');
-          navigate('/teacher/classes');
+        // Check if question has classes assigned
+        if (!fetchedQuestion.classes || fetchedQuestion.classes.length === 0) {
+          console.warn('[QuestionPreview] No classes found, redirecting to /teacher/questions');
+          navigate('/teacher/questions');
           return;
         }
       } catch (err) {
@@ -113,10 +114,35 @@ const QuestionPreview = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
-        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight mb-6">
+      <div className="flex items-center mb-8">
+        <button
+          onClick={() => navigate(-1)}
+          className="mr-4 p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-5 w-5 text-gray-600"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fillRule="evenodd"
+              d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </button>
+        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight">
           Student Preview
         </h1>
+      </div>
+      
+      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
+        <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+          <p className="text-sm text-blue-800">
+            <strong>Preview Mode:</strong> This is how students will see this question. You can test the interface but submissions are disabled.
+          </p>
+        </div>
         <QuestionStatement isPreview={true} question={question} />
       </div>
     </div>

@@ -137,9 +137,17 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion }) => {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight mb-6">
-        {parse(question.title || 'Untitled')}
-      </h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight">
+          {parse(question.title || 'Untitled')}
+        </h2>
+        {isPreview && (
+          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800">
+            Preview Mode
+          </span>
+        )}
+      </div>
+      
       <div className="flex flex-wrap gap-3 mb-6">
         <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
           {question.difficulty || 'Unknown'}
@@ -158,13 +166,13 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion }) => {
       <div className="space-y-6 mb-8">
         <div>
           <h3 className="text-lg font-semibold text-gray-800 mb-2">Description</h3>
-          <div className="text-sm text-gray-700 prose">{parse(question.description || 'No description available')}</div>
+          <div className="text-sm text-gray-700 prose max-w-none">{parse(question.description || 'No description available')}</div>
         </div>
 
         {question.constraints && (
           <div>
             <h3 className="text-lg font-semibold text-gray-800 mb-2">Constraints</h3>
-            <div className="text-sm text-gray-700 prose">{parse(question.constraints)}</div>
+            <div className="text-sm text-gray-700 prose max-w-none">{parse(question.constraints)}</div>
           </div>
         )}
 
@@ -173,7 +181,9 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion }) => {
             <h3 className="text-lg font-semibold text-gray-800 mb-2">Examples</h3>
             <div className="space-y-3">
               {question.examples.map((example, index) => (
-                <pre key={index} className="bg-gray-50 p-4 rounded-lg text-sm text-gray-700 prose">{parse(example)}</pre>
+                <div key={index} className="bg-gray-50 p-4 rounded-lg">
+                  <div className="text-sm text-gray-700 prose max-w-none">{parse(example)}</div>
+                </div>
               ))}
             </div>
           </div>
@@ -182,7 +192,7 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion }) => {
         {question.functionSignature && (
           <div>
             <h3 className="text-lg font-semibold text-gray-800 mb-2">Function Signature</h3>
-            <pre className="bg-gray-50 p-4 rounded-lg text-sm text-gray-700 font-mono">{parse(question.functionSignature)}</pre>
+            <pre className="bg-gray-50 p-4 rounded-lg text-sm text-gray-700 font-mono overflow-x-auto">{parse(question.functionSignature)}</pre>
           </div>
         )}
       </div>
@@ -213,7 +223,7 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion }) => {
                     className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
                     disabled={isSubmitting || isPreview}
                   />
-                  <label className="ml-2 text-sm text-gray-700 prose">{parse(option)}</label>
+                  <label className="ml-2 text-sm text-gray-700 prose max-w-none">{parse(option)}</label>
                 </div>
               ))}
             </div>
@@ -238,7 +248,7 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion }) => {
                   : 'bg-indigo-600 hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2'
               }`}
             >
-              {isSubmitting ? 'Submitting...' : 'Submit Answer'}
+              {isSubmitting ? 'Submitting...' : isPreview ? 'Preview Mode' : 'Submit Answer'}
             </button>
           </div>
         </form>

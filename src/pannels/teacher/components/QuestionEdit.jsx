@@ -41,6 +41,8 @@ const QuestionEdit = () => {
           tags: question.tags,
           tagsType: typeof question.tags,
           tagsIsArray: Array.isArray(question.tags),
+          languages: question.languages,
+          templateCode: question.templateCode,
         });
 
         // Extract classIds from question.classes array
@@ -68,12 +70,12 @@ const QuestionEdit = () => {
           correctOption: question.correctOption || 0,
           codeSnippet: question.codeSnippet || '',
           correctAnswer: question.correctAnswer || '',
-          templateCode: Array.isArray(question.templateCode) ? question.templateCode : [],
+          templateCode: Array.isArray(question.templateCode) ? question.templateCode : (question.templateCode ? [question.templateCode] : []),
           testCases: question.testCases?.length > 0 ? question.testCases : [{ input: '', expectedOutput: '', isPublic: true }],
           timeLimit: question.timeLimit || 2,
           memoryLimit: question.memoryLimit || 256,
           classIds, // Use array of class IDs
-          classId: classIds[0] || defaultClassId, // For backward compatibility
+          classId: classIds[0] || '', // For backward compatibility
         };
         console.log('[QuestionEdit] initialData set:', preparedData);
         setInitialData(preparedData);
@@ -100,8 +102,8 @@ const QuestionEdit = () => {
       });
       await editQuestion(questionId, questionData);
       setMessage('Question updated successfully!');
-      console.log('[QuestionEdit] Question updated successfully, navigating to:', `/teacher/classes/${questionData.classIds[0] || initialData.classId}`);
-      setTimeout(() => navigate(`/teacher/classes/${questionData.classIds[0] || initialData.classId}`), 2000);
+      console.log('[QuestionEdit] Question updated successfully, navigating to:', `/teacher/classes/${questionData.classIds[0] || initialData?.classId || 'manage'}`);
+      setTimeout(() => navigate(`/teacher/classes/${questionData.classIds[0] || initialData?.classId || 'manage'}`), 2000);
     } catch (err) {
       console.error('[QuestionEdit] Update error:', err.message, err.response?.data);
       setError(err.response?.data?.error || 'Failed to update question');
@@ -211,7 +213,7 @@ const QuestionEdit = () => {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="flex items-center mb-8">
         <Link
-          to={initialData?.classId ? `/teacher/classes/${initialData.classId}` : '/teacher/questions/manage'}
+          to={initialData?.classId ? `/teacher/classes/${initialData.classId}` : '/teacher/questions'}
           className="mr-4 p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200"
         >
           <svg

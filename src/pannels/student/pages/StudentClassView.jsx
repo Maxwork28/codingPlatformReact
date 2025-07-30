@@ -5,7 +5,7 @@ import { io } from 'socket.io-client';
 import axios from 'axios';
 import StudentQuestionCard from '../components/StudentQuestionCard';
 
-const socket = io('hhttps://api.algosutra.co.in', {
+const socket = io('https://api.algosutra.co.in', {
   withCredentials: true,
 });
 

@@ -91,30 +91,30 @@ const QuestionSolution = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
-        <div className="flex items-center mb-6">
-          <Link
-            to={`/teacher/classes/${question.classIds?.[0] || ''}`}
-            className="mr-4 p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200"
+      <div className="flex items-center mb-8">
+        <button
+          onClick={() => window.history.back()}
+          className="mr-4 p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-5 w-5 text-gray-600"
+            viewBox="0 0 20 20"
+            fill="currentColor"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5 text-gray-600"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </Link>
-          <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight">
-            {parse(question.title || 'Untitled')} - Solution
-          </h2>
-        </div>
+            <path
+              fillRule="evenodd"
+              d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </button>
+        <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight">
+          {parse(question.title || 'Untitled')} - Solution
+        </h2>
+      </div>
 
+      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
         <div className="space-y-8">
           <div className="flex flex-wrap gap-3">
             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
@@ -149,10 +149,10 @@ const QuestionSolution = () => {
             )}
             {question.type === 'coding' && question.templateCode?.length > 0 && (
               <div className="mt-2">
-                <p className="text-sm text-gray-700">Reference Solutions:</p>
+                <p className="text-sm text-gray-700 mb-3">Reference Solutions:</p>
                 {question.templateCode.map((tc, idx) => (
                   <div key={idx} className="mt-3">
-                    <p className="text-sm font-semibold text-gray-700">{tc.language}</p>
+                    <p className="text-sm font-semibold text-gray-700 mb-2">{tc.language}</p>
                     <pre className="mt-1 p-4 bg-gray-50 rounded-lg text-sm text-gray-700 font-mono whitespace-pre-wrap">
                       {tc.code}
                     </pre>
@@ -160,7 +160,7 @@ const QuestionSolution = () => {
                 ))}
                 {question.functionSignature && (
                   <div className="mt-3">
-                    <p className="text-sm text-gray-700">Function Signature:</p>
+                    <p className="text-sm text-gray-700 mb-2">Function Signature:</p>
                     <pre className="mt-1 p-4 bg-gray-50 rounded-lg text-sm text-gray-700 font-mono">
                       {parse(question.functionSignature)}
                     </pre>

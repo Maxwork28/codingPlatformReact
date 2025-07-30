@@ -187,6 +187,41 @@ export const getStudents = async () => {
 };
 
 /**
+ * Edits a student's information
+ * @param {string} studentId - Student ID
+ * @param {Object} data - Updated student data (name, email, number)
+ * @returns {Promise} Axios response
+ */
+export const editStudent = async (studentId, data) => {
+  console.log('editStudent called', { studentId, data });
+  try {
+    const response = await api.put(`/admin/students/${studentId}`, data);
+    console.log('editStudent success', { studentId, response: response.data });
+    return response;
+  } catch (err) {
+    console.error('editStudent error', { studentId, error: err.response?.data?.error || 'Failed to edit student' });
+    throw err.response?.data?.error || 'Failed to edit student';
+  }
+};
+
+/**
+ * Deletes a student
+ * @param {string} studentId - Student ID
+ * @returns {Promise} Axios response
+ */
+export const deleteStudent = async (studentId) => {
+  console.log('deleteStudent called', { studentId });
+  try {
+    const response = await api.delete(`/admin/students/${studentId}`);
+    console.log('deleteStudent success', { studentId, response: response.data });
+    return response;
+  } catch (err) {
+    console.error('deleteStudent error', { studentId, error: err.response?.data?.error || 'Failed to delete student' });
+    throw err.response?.data?.error || 'Failed to delete student';
+  }
+};
+
+/**
  * Fetches students in a specific class
  * @param {string} classId - Class ID
  * @returns {Promise} Axios response

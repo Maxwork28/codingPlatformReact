@@ -33,10 +33,20 @@ const TeacherClassView = () => {
           const allQuestionsResponse = await getAllQuestions();
           const userQuestions = allQuestionsResponse.data.questions.filter((q) => q.createdBy._id === user.id);
           console.log('[TeacherClassView] User questions:', userQuestions.length);
+          console.log('[TeacherClassView] All questions:', allQuestionsResponse.data.questions.length);
+          console.log('[TeacherClassView] User ID:', user.id);
+          console.log('[TeacherClassView] User questions details:', userQuestions.map(q => ({ id: q._id, title: q.title, createdBy: q.createdBy._id })));
+          
           const unassignedQuestions = userQuestions.filter(
             (q) => !q.classes.some((c) => String(c.classId) === String(classId))
           );
           console.log('[TeacherClassView] Unassigned questions:', unassignedQuestions.length);
+          console.log('[TeacherClassView] Class ID:', classId);
+          console.log('[TeacherClassView] Question classes details:', userQuestions.map(q => ({ 
+            id: q._id, 
+            title: q.title, 
+            classes: q.classes.map(c => ({ classId: c.classId, className: c.className }))
+          })));
           setAvailableQuestions(unassignedQuestions);
         } else {
           console.log('[TeacherClassView] Class not found or user not authorized');
@@ -249,26 +259,68 @@ const TeacherClassView = () => {
           <div className="mb-4">
             <label className="block text-sm font-semibold text-gray-800 mb-2">Select Questions</label>
             {availableQuestions.length === 0 ? (
-              <div className="text-sm text-gray-500">
-                <p>All your questions are already assigned to this class or you haven't created any questions yet.</p>
-                <Link
-                  to="/teacher/questions/new"
-                  className="text-indigo-600 hover:text-indigo-800 font-medium"
-                >
-                  Create a new question
-                </Link>
+              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="flex items-start">
+                  <svg
+                    className="h-5 w-5 text-gray-400 mt-0.5 mr-3"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  <div className="flex-1">
+                    <p className="text-sm text-gray-600 mb-2">
+                      {questions.length === 0 
+                        ? "You haven't created any questions yet. Create your first question to assign to this class."
+                        : "All your questions are already assigned to this class."
+                      }
+                    </p>
+                    <div className="flex space-x-3">
+                      <Link
+                        to="/teacher/questions/new"
+                        className="inline-flex items-center px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 transition-colors"
+                      >
+                        <svg className="h-4 w-4 mr-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                        </svg>
+                        Create New Question
+                      </Link>
+                      <Link
+                        to="/teacher/questions"
+                        className="inline-flex items-center px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-md hover:bg-gray-100 transition-colors"
+                      >
+                        View All Questions
+                      </Link>
+                    </div>
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="space-y-2">
+                <p className="text-sm text-gray-600 mb-3">
+                  Select questions to assign to this class:
+                </p>
                 {availableQuestions.map((q) => (
-                  <div key={q._id} className="flex items-center">
+                  <div key={q._id} className="flex items-center p-2 rounded-lg hover:bg-gray-50">
                     <input
                       type="checkbox"
                       checked={selectedQuestionIds.includes(q._id)}
                       onChange={() => handleQuestionToggle(q._id)}
                       className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-200 rounded"
                     />
-                    <label className="ml-2 text-sm text-gray-800">{q.title}</label>
+                    <label className="ml-3 text-sm text-gray-800 flex-1 cursor-pointer">
+                      <span className="font-medium">{q.title}</span>
+                      {q.type === 'coding' && (
+                        <span className="ml-2 text-xs text-gray-500">
+                          ({q.languages?.join(', ') || 'No languages'})
+                        </span>
+                      )}
+                    </label>
                   </div>
                 ))}
               </div>
@@ -288,7 +340,17 @@ const TeacherClassView = () => {
                 : ''
             }
           >
-            {assignmentLoading ? 'Assigning...' : 'Assign Questions'}
+            {assignmentLoading ? (
+              <>
+                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Assigning...
+              </>
+            ) : (
+              'Assign Questions'
+            )}
           </button>
         </div>
 
