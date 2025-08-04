@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { getClassDetails, getQuestionsByClass, getAllQuestions, assignQuestionToClass } from '../../../common/services/api'; // Updated import path
+import { getClassDetails, getQuestionsByClass, getAllQuestions, assignQuestionToClass, searchQuestions, adminSearchQuestionsById, createAssignment, getAssignments, deleteAssignment } from '../../../common/services/api'; // Updated import path
 import TeacherQuestionCard from '../components/TeacherQuestionCard';
 
 const TeacherClassView = () => {
@@ -10,12 +10,20 @@ const TeacherClassView = () => {
   const [classData, setClassData] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [availableQuestions, setAvailableQuestions] = useState([]);
-  const [selectedQuestionIds, setSelectedQuestionIds] = useState([]);
+  const [filteredQuestions, setFilteredQuestions] = useState([]);
+  const [questionSearchKeyword, setQuestionSearchKeyword] = useState('');
+  const [selectedQuestionId, setSelectedQuestionId] = useState('');
   const [loading, setLoading] = useState(true);
   const [assignmentLoading, setAssignmentLoading] = useState(false);
   const [error, setError] = useState('');
   const [assignmentError, setAssignmentError] = useState('');
   const [assignmentMessage, setAssignmentMessage] = useState('');
+  const [assignments, setAssignments] = useState([]);
+  const [assignmentForm, setAssignmentForm] = useState({
+    questionId: '',
+    maxPoints: '',
+    dueDate: '',
+  });
 
   useEffect(() => {
     const fetchClassData = async () => {
@@ -48,6 +56,12 @@ const TeacherClassView = () => {
             classes: q.classes.map(c => ({ classId: c.classId, className: c.className }))
           })));
           setAvailableQuestions(unassignedQuestions);
+          setFilteredQuestions(unassignedQuestions);
+          
+          // Fetch assignments
+          const assignmentsResponse = await getAssignments(classId);
+          console.log('[TeacherClassView] Assignments for class:', assignmentsResponse.data.assignments);
+          setAssignments(assignmentsResponse.data.assignments);
         } else {
           console.log('[TeacherClassView] Class not found or user not authorized');
           setError('Class not found or you are not authorized');
@@ -67,11 +81,12 @@ const TeacherClassView = () => {
   useEffect(() => {
     console.log('[TeacherClassView] State:', {
       assignmentLoading,
-      selectedQuestionIds,
+      selectedQuestionId,
       availableQuestionsLength: availableQuestions.length,
-      buttonDisabled: assignmentLoading || selectedQuestionIds.length === 0 || availableQuestions.length === 0,
+      filteredQuestionsLength: filteredQuestions.length,
+      buttonDisabled: assignmentLoading || !selectedQuestionId || availableQuestions.length === 0,
     });
-  }, [assignmentLoading, selectedQuestionIds, availableQuestions]);
+  }, [assignmentLoading, selectedQuestionId, availableQuestions, filteredQuestions]);
 
   const handleQuestionUpdate = (updatedQuestion) => {
     console.log('[TeacherClassView] Updating question:', {
@@ -93,28 +108,70 @@ const TeacherClassView = () => {
     );
   };
 
-  const handleQuestionToggle = (questionId) => {
-    setSelectedQuestionIds((prev) => {
-      const newSelection = prev.includes(questionId)
-        ? prev.filter((id) => id !== questionId)
-        : [...prev, questionId];
-      console.log('[TeacherClassView] Updated selectedQuestionIds:', newSelection);
-      return newSelection;
-    });
+  // Helper function to check if a string is a valid MongoDB ObjectId
+  const isValidObjectId = (str) => {
+    const objectIdPattern = /^[0-9a-fA-F]{24}$/;
+    return objectIdPattern.test(str);
   };
 
-  const handleAssignQuestions = async () => {
-    if (selectedQuestionIds.length === 0) {
-      setAssignmentError('Please select at least one question to assign');
+  // Helper function to strip HTML tags from text
+  const stripHtml = (html) => {
+    if (!html) return '';
+    try {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      const result = tmp.textContent || tmp.innerText || '';
+      console.log('stripHtml result:', { original: html, stripped: result });
+      return result;
+    } catch (error) {
+      console.error('stripHtml error:', error);
+      return html; // Return original if stripping fails
+    }
+  };
+
+  const handleQuestionSearch = async () => {
+    console.log('[TeacherClassView] handleQuestionSearch called', { keyword: questionSearchKeyword });
+    try {
+      if (!questionSearchKeyword.trim()) {
+        setFilteredQuestions(availableQuestions);
+        return;
+      }
+
+      // Check if the search keyword is a valid ObjectId
+      if (isValidObjectId(questionSearchKeyword.trim())) {
+        console.log('[TeacherClassView] handleQuestionSearch: Searching by ID', { questionId: questionSearchKeyword.trim() });
+        const response = await adminSearchQuestionsById(questionSearchKeyword.trim());
+        console.log('[TeacherClassView] handleQuestionSearch success (ID search)', { question: response.data.question });
+        const questions = response.data.question ? [response.data.question] : [];
+        // Filter to only show user's questions
+        const userQuestions = questions.filter(q => q.createdBy._id === user.id);
+        console.log('[TeacherClassView] handleQuestionSearch: Setting filteredQuestions to', userQuestions);
+        setFilteredQuestions(userQuestions);
+      } else {
+        console.log('[TeacherClassView] handleQuestionSearch: Searching by title', { title: questionSearchKeyword });
+        const response = await searchQuestions({ title: questionSearchKeyword });
+        console.log('[TeacherClassView] handleQuestionSearch success (title search)', { questions: response.data.questions });
+        // Filter to only show user's questions
+        const userQuestions = response.data.questions.filter(q => q.createdBy._id === user.id);
+        setFilteredQuestions(userQuestions);
+      }
+    } catch (err) {
+      console.error('[TeacherClassView] handleQuestionSearch error', err);
+      setError(err.message || 'Failed to search questions');
+    }
+  };
+
+  const handleAssignQuestion = async () => {
+    console.log('[TeacherClassView] handleAssignQuestion called', { classId, selectedQuestionId });
+    if (!selectedQuestionId) {
+      setAssignmentError('Please select a question to assign');
       return;
     }
     setAssignmentLoading(true);
     try {
-      for (const questionId of selectedQuestionIds) {
-        console.log('[TeacherClassView] Assigning question:', questionId, 'to class:', classId);
-        await assignQuestionToClass(questionId, classId); // Updated to match api.js signature
-      }
-      setAssignmentMessage('Questions assigned successfully!');
+      console.log('[TeacherClassView] Assigning question:', selectedQuestionId, 'to class:', classId);
+      await assignQuestionToClass(selectedQuestionId, classId);
+      setAssignmentMessage('Question assigned successfully!');
       setAssignmentError('');
       const questionsResponse = await getQuestionsByClass(classId);
       setQuestions(questionsResponse.data.questions);
@@ -125,14 +182,50 @@ const TeacherClassView = () => {
       );
       console.log('[TeacherClassView] Refreshed unassigned questions:', unassignedQuestions.length);
       setAvailableQuestions(unassignedQuestions);
-      setSelectedQuestionIds([]);
+      setFilteredQuestions(unassignedQuestions);
+      setSelectedQuestionId('');
+      setQuestionSearchKeyword('');
       setTimeout(() => setAssignmentMessage(''), 3000);
     } catch (err) {
       console.error('[TeacherClassView] Assign error:', err.message || err.error, err);
-      setAssignmentError(err.error || 'Failed to assign questions');
+      setAssignmentError(err.error || 'Failed to assign question');
       setAssignmentMessage('');
     } finally {
       setAssignmentLoading(false);
+    }
+  };
+
+  const handleCreateAssignment = async (e) => {
+    e.preventDefault();
+    console.log('[TeacherClassView] handleCreateAssignment called', { classId, assignmentForm });
+    try {
+      await createAssignment(classId, assignmentForm);
+      const assignmentsResponse = await getAssignments(classId);
+      setAssignments(assignmentsResponse.data.assignments);
+      setAssignmentForm({ questionId: '', maxPoints: '', dueDate: '' });
+      setAssignmentMessage('Assignment created successfully');
+      setAssignmentError('');
+      setTimeout(() => setAssignmentMessage(''), 3000);
+    } catch (err) {
+      console.error('[TeacherClassView] Create assignment error:', err.message || err.error, err);
+      setAssignmentError(err.error || 'Failed to create assignment');
+      setAssignmentMessage('');
+    }
+  };
+
+  const handleDeleteAssignment = async (assignmentId) => {
+    console.log('[TeacherClassView] handleDeleteAssignment called', { classId, assignmentId });
+    try {
+      await deleteAssignment(classId, assignmentId);
+      const assignmentsResponse = await getAssignments(classId);
+      setAssignments(assignmentsResponse.data.assignments);
+      setAssignmentMessage('Assignment deleted successfully');
+      setAssignmentError('');
+      setTimeout(() => setAssignmentMessage(''), 3000);
+    } catch (err) {
+      console.error('[TeacherClassView] Delete assignment error:', err.message || err.error, err);
+      setAssignmentError(err.error || 'Failed to delete assignment');
+      setAssignmentMessage('');
     }
   };
 
@@ -191,12 +284,12 @@ const TeacherClassView = () => {
             >
               Details
             </Link>
-            <Link
+            {/* <Link
               to={`/teacher/classes/${classId}/edit`}
               className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-gray-700 bg-white border border-gray-200 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300"
             >
               Edit Class
-            </Link>
+            </Link> */}
             <Link
               to="/teacher/questions/new"
               className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300"
@@ -216,142 +309,312 @@ const TeacherClassView = () => {
       </div>
 
       <div className="mt-10">
+        {/* Messages */}
+        {assignmentMessage && (
+          <div className="mb-6 p-4 rounded-xl bg-green-50/80 backdrop-blur-sm border border-green-200 shadow-sm">
+            <div className="flex items-center">
+              <svg
+                className="h-6 w-6 text-green-500 mr-3"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              <p className="text-sm font-semibold text-green-800">{assignmentMessage}</p>
+            </div>
+          </div>
+        )}
+        {assignmentError && (
+          <div className="mb-6 p-4 rounded-xl bg-red-50/80 backdrop-blur-sm border border-red-200 shadow-sm">
+            <div className="flex items-center">
+              <svg
+                className="h-6 w-6 text-red-500 mr-3"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              <p className="text-sm font-semibold text-red-800">{assignmentError}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Create Assignment Form */}
+        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 p-6 mb-8">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">Create Assignment</h3>
+          <form onSubmit={handleCreateAssignment} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Question</label>
+                <select
+                  value={assignmentForm.questionId}
+                  onChange={(e) =>
+                    setAssignmentForm({ ...assignmentForm, questionId: e.target.value })
+                  }
+                  className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  required
+                >
+                  <option value="">Select Question</option>
+                  {questions?.length > 0 ? (
+                    questions.map((question) => (
+                      <option key={question._id} value={question._id}>
+                        {stripHtml(question.title)}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="" disabled>No questions available for this class</option>
+                  )}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Max Points</label>
+                <input
+                  type="number"
+                  value={assignmentForm.maxPoints}
+                  onChange={(e) =>
+                    setAssignmentForm({ ...assignmentForm, maxPoints: e.target.value })
+                  }
+                  className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Due Date</label>
+                <input
+                  type="datetime-local"
+                  value={assignmentForm.dueDate}
+                  onChange={(e) =>
+                    setAssignmentForm({ ...assignmentForm, dueDate: e.target.value })
+                  }
+                  className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  required
+                />
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300"
+              >
+                Create Assignment
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Assignments List */}
+        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 p-6 mb-8">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">Assignments ({assignments.length})</h3>
+          {assignments.length === 0 ? (
+            <p className="text-sm text-gray-500">No assignments available</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    >
+                      Question Title
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    >
+                      Max Points
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    >
+                      Assigned At
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    >
+                      Due Date
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    >
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {assignments.map((assignment) => (
+                    <tr key={assignment._id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {assignment.questionId?.title ? stripHtml(assignment.questionId.title) : 'N/A'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {assignment.maxPoints}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {new Date(assignment.assignedAt).toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {new Date(assignment.dueDate).toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button
+                          onClick={() => handleDeleteAssignment(assignment._id)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Attach Question to Class */}
         <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100 mb-10">
-          <h3 className="text-xl font-semibold text-gray-800 mb-4">Assign Questions to Class</h3>
-          {assignmentMessage && (
-            <div className="mb-4 p-4 rounded-xl bg-green-50/80 backdrop-blur-sm border border-green-200 shadow-sm">
-              <div className="flex items-center">
+          <h3 className="text-xl font-semibold text-gray-800 mb-4">Attach Question to Class</h3>
+          
+          {availableQuestions.length === 0 ? (
+            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <div className="flex items-start">
                 <svg
-                  className="h-6 w-6 text-green-500"
+                  className="h-5 w-5 text-gray-400 mt-0.5 mr-3"
                   xmlns="http://www.w3.org/2000/svg"
                   viewBox="0 0 20 20"
                   fill="currentColor"
                 >
                   <path
                     fillRule="evenodd"
-                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
                     clipRule="evenodd"
                   />
                 </svg>
-                <p className="ml-3 text-sm font-semibold text-green-800">{assignmentMessage}</p>
-              </div>
-            </div>
-          )}
-          {assignmentError && (
-            <div className="mb-4 p-4 rounded-xl bg-red-50/80 backdrop-blur-sm border border-red-200 shadow-sm">
-              <div className="flex items-center">
-                <svg
-                  className="h-6 w-6 text-red-500"
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-                <p className="ml-3 text-sm font-semibold text-red-800">{assignmentError}</p>
-              </div>
-            </div>
-          )}
-          <div className="mb-4">
-            <label className="block text-sm font-semibold text-gray-800 mb-2">Select Questions</label>
-            {availableQuestions.length === 0 ? (
-              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <div className="flex items-start">
-                  <svg
-                    className="h-5 w-5 text-gray-400 mt-0.5 mr-3"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  <div className="flex-1">
-                    <p className="text-sm text-gray-600 mb-2">
-                      {questions.length === 0 
-                        ? "You haven't created any questions yet. Create your first question to assign to this class."
-                        : "All your questions are already assigned to this class."
-                      }
-                    </p>
-                    <div className="flex space-x-3">
-                      <Link
-                        to="/teacher/questions/new"
-                        className="inline-flex items-center px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 transition-colors"
-                      >
-                        <svg className="h-4 w-4 mr-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-                        </svg>
-                        Create New Question
-                      </Link>
-                      <Link
-                        to="/teacher/questions"
-                        className="inline-flex items-center px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-md hover:bg-gray-100 transition-colors"
-                      >
-                        View All Questions
-                      </Link>
-                    </div>
+                <div className="flex-1">
+                  <p className="text-sm text-gray-600 mb-2">
+                    {questions.length === 0 
+                      ? "You haven't created any questions yet. Create your first question to attach to this class."
+                      : "All your questions are already attached to this class."
+                    }
+                  </p>
+                  <div className="flex space-x-3">
+                    <Link
+                      to="/teacher/questions/new"
+                      className="inline-flex items-center px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 transition-colors"
+                    >
+                      <svg className="h-4 w-4 mr-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                      </svg>
+                      Create New Question
+                    </Link>
+                    <Link
+                      to="/teacher/questions"
+                      className="inline-flex items-center px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-md hover:bg-gray-100 transition-colors"
+                    >
+                      View All Questions
+                    </Link>
                   </div>
                 </div>
               </div>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-sm text-gray-600 mb-3">
-                  Select questions to assign to this class:
-                </p>
-                {availableQuestions.map((q) => (
-                  <div key={q._id} className="flex items-center p-2 rounded-lg hover:bg-gray-50">
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Search Questions */}
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Search Questions</label>
+                  <div className="flex gap-2">
                     <input
-                      type="checkbox"
-                      checked={selectedQuestionIds.includes(q._id)}
-                      onChange={() => handleQuestionToggle(q._id)}
-                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-200 rounded"
+                      type="text"
+                      value={questionSearchKeyword}
+                      onChange={(e) => setQuestionSearchKeyword(e.target.value)}
+                      placeholder="Search questions by title or ID..."
+                      className="flex-1 rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                     />
-                    <label className="ml-3 text-sm text-gray-800 flex-1 cursor-pointer">
-                      <span className="font-medium">{q.title}</span>
-                      {q.type === 'coding' && (
-                        <span className="ml-2 text-xs text-gray-500">
-                          ({q.languages?.join(', ') || 'No languages'})
-                        </span>
-                      )}
-                    </label>
+                    <button
+                      onClick={handleQuestionSearch}
+                      className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300"
+                    >
+                      Search
+                    </button>
                   </div>
-                ))}
+                </div>
               </div>
-            )}
-          </div>
-          <button
-            onClick={handleAssignQuestions}
-            disabled={assignmentLoading || selectedQuestionIds.length === 0 || availableQuestions.length === 0}
-            className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300 disabled:bg-gray-400 disabled:cursor-not-allowed"
-            title={
-              availableQuestions.length === 0
-                ? 'No unassigned questions available'
-                : selectedQuestionIds.length === 0
-                ? 'Select at least one question'
-                : assignmentLoading
-                ? 'Assigning in progress'
-                : ''
-            }
-          >
-            {assignmentLoading ? (
-              <>
-                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Assigning...
-              </>
-            ) : (
-              'Assign Questions'
-            )}
-          </button>
+
+              {/* Available Questions */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Select Question to Attach</label>
+                <select
+                  value={selectedQuestionId}
+                  onChange={(e) => setSelectedQuestionId(e.target.value)}
+                  className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                >
+                  <option value="">Select a question</option>
+                  {filteredQuestions?.length > 0 ? (
+                    filteredQuestions.map((question) => {
+                      // Ensure question has required properties
+                      if (!question._id || !question.title) {
+                        console.warn('Question missing required properties:', question);
+                        return null;
+                      }
+                      
+                      return (
+                        <option key={question._id} value={question._id}>
+                          {stripHtml(question.title)} - {question.type || 'Unknown'} ({question.points || 0} points)
+                        </option>
+                      );
+                    }).filter(Boolean) // Remove null options
+                  ) : (
+                    <option value="" disabled>No questions available</option>
+                  )}
+                </select>
+              </div>
+
+              {/* Attach Button */}
+              <div className="flex justify-end">
+                <button
+                  onClick={handleAssignQuestion}
+                  disabled={assignmentLoading || !selectedQuestionId || availableQuestions.length === 0}
+                  className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={
+                    availableQuestions.length === 0
+                      ? 'No unassigned questions available'
+                      : !selectedQuestionId
+                      ? 'Select a question to attach'
+                      : assignmentLoading
+                      ? 'Attaching in progress'
+                      : ''
+                  }
+                >
+                  {assignmentLoading ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Attaching...
+                    </>
+                  ) : (
+                    'Attach Question to Class'
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div>

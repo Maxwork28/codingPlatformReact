@@ -5,7 +5,7 @@ import { io } from 'socket.io-client';
 import axios from 'axios';
 import StudentQuestionCard from '../components/StudentQuestionCard';
 
-const socket = io('https://api.algosutra.co.in', {
+const socket = io('https://api.algosutra.co.in/', {
   withCredentials: true,
 });
 
@@ -306,9 +306,16 @@ const StudentClassView = () => {
           <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700 shadow-sm">
             {assignments.length} Assignments
           </span>
+          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 shadow-sm">
+            {classData.questions.filter(q => {
+              const classInfo = q.classes.find(c => c.classId === classId);
+              return classInfo?.isPublished;
+            }).length} Attached Questions
+          </span>
         </div>
       </div>
 
+      {/* Assignments Section */}
       <div className="mt-10">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-xl font-semibold text-gray-800">Assignments</h3>
@@ -336,29 +343,41 @@ const StudentClassView = () => {
           </div>
         ) : (
           <div className="space-y-6">
-            {assignments.map((assignment) => {
-              const question = classData.questions.find(
-                (q) => q._id === (assignment.questionId?._id || assignment.questionId)
-              );
-              const classInfo = question?.classes.find((c) => c.classId === classId);
-              console.log('[StudentClassView] Rendering assignment', {
-                assignmentId: assignment._id,
-                questionId: assignment.questionId?._id || assignment.questionId,
-                classId,
-                hasQuestion: !!question,
-                isPublished: classInfo?.isPublished,
-                isDisabled: classInfo?.isDisabled,
-                questionTitle: question?.title,
-              });
-              if (!question) {
-                console.warn('[StudentClassView] Question not found for assignment', {
+            {assignments
+              .map((assignment) => {
+                const question = classData.questions.find(
+                  (q) => q._id === (assignment.questionId?._id || assignment.questionId)
+                );
+                const classInfo = question?.classes.find((c) => c.classId === classId);
+                console.log('[StudentClassView] Rendering assignment', {
                   assignmentId: assignment._id,
                   questionId: assignment.questionId?._id || assignment.questionId,
                   classId,
+                  hasQuestion: !!question,
+                  isPublished: classInfo?.isPublished,
+                  isDisabled: classInfo?.isDisabled,
+                  questionTitle: question?.title,
                 });
-                return null;
-              }
-              return (
+                if (!question) {
+                  console.warn('[StudentClassView] Question not found for assignment', {
+                    assignmentId: assignment._id,
+                    questionId: assignment.questionId?._id || assignment.questionId,
+                    classId,
+                  });
+                  return null;
+                }
+                // Only show published questions
+                if (!classInfo?.isPublished) {
+                  return null;
+                }
+                return {
+                  assignment,
+                  question,
+                  classInfo
+                };
+              })
+              .filter(Boolean)
+              .map(({ assignment, question, classInfo }) => (
                 <div
                   key={assignment._id}
                   className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg overflow-hidden border border-gray-100 transition-all duration-300 hover:shadow-xl"
@@ -380,11 +399,11 @@ const StudentClassView = () => {
                           }/submit`}
                           state={{ classId }}
                           className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-300 ${
-                            classInfo?.isPublished && !classInfo?.isDisabled
+                            !classInfo?.isDisabled
                               ? 'bg-indigo-600 hover:bg-indigo-700'
                               : 'bg-gray-400 cursor-not-allowed'
                           }`}
-                          disabled={!classInfo?.isPublished || classInfo?.isDisabled}
+                          disabled={classInfo?.isDisabled}
                           onClick={() =>
                             console.log('[StudentClassView] Navigating to question submission', {
                               questionId: assignment.questionId?._id || assignment.questionId,
@@ -392,18 +411,106 @@ const StudentClassView = () => {
                             })
                           }
                         >
-                          {classInfo?.isPublished && !classInfo?.isDisabled
-                            ? 'Submit Answer'
-                            : classInfo?.isDisabled
-                            ? 'Disabled'
-                            : 'Unpublished'}
+                          {!classInfo?.isDisabled ? 'Submit Answer' : 'Disabled'}
                         </Link>
                       </div>
                     </div>
                   </div>
                 </div>
-              );
-            })}
+              ))}
+          </div>
+        )}
+      </div>
+
+      {/* Attached Questions Section */}
+      <div className="mt-10">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-semibold text-gray-800">Attached Questions</h3>
+        </div>
+
+        {classData.questions.filter(q => {
+          const classInfo = q.classes.find(c => c.classId === classId);
+          return classInfo?.isPublished;
+        }).length === 0 ? (
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-8 text-center border border-gray-100">
+            <svg
+              className="mx-auto h-14 w-14 text-gray-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+              />
+            </svg>
+            <h4 className="mt-3 text-base font-semibold text-gray-800">No attached questions yet</h4>
+            <p className="mt-1 text-sm text-gray-500">
+              Check back later for questions from your teacher
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {classData.questions
+              .map((question) => {
+                const classInfo = question.classes.find((c) => c.classId === classId);
+                console.log('[StudentClassView] Rendering attached question', {
+                  questionId: question._id,
+                  questionTitle: question.title,
+                  classId,
+                  isPublished: classInfo?.isPublished,
+                  isDisabled: classInfo?.isDisabled,
+                });
+                // Only show published questions
+                if (!classInfo?.isPublished) {
+                  return null;
+                }
+                return {
+                  question,
+                  classInfo
+                };
+              })
+              .filter(Boolean)
+              .map(({ question, classInfo }) => (
+                <div
+                  key={question._id}
+                  className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg overflow-hidden border border-gray-100 transition-all duration-300 hover:shadow-xl"
+                >
+                  <div className="p-6">
+                    <div className="flex justify-between items-start">
+                      <StudentQuestionCard
+                        question={{
+                          ...question,
+                          isPublished: classInfo?.isPublished,
+                          isDisabled: classInfo?.isDisabled,
+                        }}
+                      />
+                      <div className="ml-4 flex-shrink-0">
+                        <Link
+                          to={`/student/questions/${question._id}/submit`}
+                          state={{ classId }}
+                          className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-300 ${
+                            !classInfo?.isDisabled
+                              ? 'bg-indigo-600 hover:bg-indigo-700'
+                              : 'bg-gray-400 cursor-not-allowed'
+                          }`}
+                          disabled={classInfo?.isDisabled}
+                          onClick={() =>
+                            console.log('[StudentClassView] Navigating to question submission', {
+                              questionId: question._id,
+                              classId,
+                            })
+                          }
+                        >
+                          {!classInfo?.isDisabled ? 'Submit Answer' : 'Disabled'}
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
           </div>
         )}
       </div>

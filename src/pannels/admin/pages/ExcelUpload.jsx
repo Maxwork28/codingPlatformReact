@@ -11,12 +11,12 @@ const StudentUpload = () => {
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
-    if (selectedFile && selectedFile.type.includes('spreadsheetml')) {
+    if (selectedFile && (selectedFile.type.includes('spreadsheetml') || selectedFile.type.includes('excel') || selectedFile.name.endsWith('.xlsx') || selectedFile.name.endsWith('.xls'))) {
       setFile(selectedFile);
       setError('');
     } else {
       setFile(null);
-      setError('Please select a valid Excel file (.xlsx).');
+      setError('Please select a valid Excel file (.xlsx or .xls).');
     }
   };
 

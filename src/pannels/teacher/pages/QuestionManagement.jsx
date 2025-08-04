@@ -106,7 +106,7 @@ const QuestionManagement = () => {
     try {
       for (const classId of selectedClassIds) {
         console.log('[QuestionManagement] Assigning question', selectedQuestion._id, 'to class', classId);
-        await assignQuestionToClass(selectedQuestion._id, { classId });
+        await assignQuestionToClass(selectedQuestion._id, classId);
       }
       setMessage('Question assigned to classes successfully!');
       setError('');

@@ -54,7 +54,7 @@ export const uploadExcel = async (file, role) => {
   formData.append('file', file);
   formData.append('role', role);
   try {
-    const response = await api.post('/admin/upload-excel', formData);
+    const response = await api.post('/admin/upload', formData);
     console.log('uploadExcel success', { role, response: response.data });
     return response;
   } catch (err) {
@@ -625,7 +625,9 @@ export const assignQuestion = async (questionData, classIds = []) => {
 export const assignQuestionToClass = async (questionId, classId) => {
   console.log('assignQuestionToClass called', { questionId, classId });
   try {
-    const response = await api.post(`/questions/${questionId}/assign-class`, { classId });
+    const requestBody = { classId };
+    console.log('assignQuestionToClass request body:', requestBody);
+    const response = await api.post(`/questions/${questionId}/assign`, requestBody);
     console.log('assignQuestionToClass success', { response: response.data });
     return response;
   } catch (err) {

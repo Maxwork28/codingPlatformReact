@@ -21,6 +21,11 @@ import {
   blockUser,
   blockAllUsers,
   manageTeacherPermission,
+  getQuestionsByClass,
+  assignQuestionToClass,
+  getAllQuestions,
+  searchQuestions,
+  adminSearchQuestionsById,
 } from '../../../common/services/api';
 
 const AdminClassDetails = () => {
@@ -39,6 +44,11 @@ const AdminClassDetails = () => {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [classData, setClassData] = useState(null);
+  const [classQuestions, setClassQuestions] = useState([]);
+  const [allAvailableQuestions, setAllAvailableQuestions] = useState([]);
+  const [filteredQuestions, setFilteredQuestions] = useState([]);
+  const [questionSearchKeyword, setQuestionSearchKeyword] = useState('');
+  const [selectedQuestionId, setSelectedQuestionId] = useState('');
   const [assignments, setAssignments] = useState([]);
   const [participantStats, setParticipantStats] = useState(null);
   const [runSubmitStats, setRunSubmitStats] = useState(null);
@@ -50,7 +60,7 @@ const AdminClassDetails = () => {
     activityStatus: '',
   });
 
-  console.log('AdminClassDetails rendered', { classId });
+  console.log('AdminClassDetails rendered', { classId, filteredQuestionsLength: filteredQuestions?.length, filteredQuestions });
 
   useEffect(() => {
     let isMounted = true;
@@ -63,6 +73,7 @@ const AdminClassDetails = () => {
           fetchClassDetails(classId),
           fetchAssignments(classId),
           fetchStats(classId),
+          fetchAllAvailableQuestions(),
         ]);
       } catch (err) {
         if (isMounted) {
@@ -85,14 +96,29 @@ const AdminClassDetails = () => {
     console.log('Leaderboard state changed', leaderboard);
   }, [leaderboard]);
 
+  useEffect(() => {
+    console.log('allStudents state changed', allStudents);
+  }, [allStudents]);
+
+  useEffect(() => {
+    console.log('filteredQuestions state changed', { length: filteredQuestions?.length, questions: filteredQuestions });
+  }, [filteredQuestions]);
+
   const fetchAllUsers = async () => {
     console.log('fetchAllUsers called');
     try {
+      console.log('fetchAllUsers: Calling getStudents() and getTeachers()');
       const [studentsRes, teachersRes] = await Promise.all([getStudents(), getTeachers()]);
+      console.log('fetchAllUsers: Raw responses:', {
+        studentsRes: studentsRes,
+        teachersRes: teachersRes,
+      });
       console.log('fetchAllUsers success', {
         students: studentsRes.data.students,
         teachers: teachersRes.data.teachers,
       });
+      console.log('Setting allStudents:', studentsRes.data.students);
+      console.log('Setting allTeachers:', teachersRes.data.teachers);
       setAllStudents(studentsRes.data.students);
       setAllTeachers(teachersRes.data.teachers);
     } catch (err) {
@@ -105,19 +131,22 @@ const AdminClassDetails = () => {
   const fetchClassDetails = async (id) => {
     console.log('fetchClassDetails called', { id });
     try {
-      const [classRes, studentsRes, teachersRes] = await Promise.all([
+      const [classRes, studentsRes, teachersRes, questionsRes] = await Promise.all([
         getClassDetails(id),
         getClassStudents(id),
         getClassTeachers(id),
+        getQuestionsByClass(id),
       ]);
       console.log('fetchClassDetails success', {
         classData: classRes.data.class,
         students: studentsRes.data.students,
         teachers: teachersRes.data.teachers,
+        questions: questionsRes.data.questions,
       });
       setClassData(classRes.data.class);
       setClassStudents(studentsRes.data.students);
       setClassTeachers(teachersRes.data.teachers);
+      setClassQuestions(questionsRes.data.questions);
       setEditName(classRes.data?.class?.name || '');
       setEditDescription(classRes.data?.class?.description || '');
       setClassStatus(classRes.data?.class?.status || 'active');
@@ -374,6 +403,91 @@ const AdminClassDetails = () => {
     }
   };
 
+  const fetchAllAvailableQuestions = async () => {
+    console.log('fetchAllAvailableQuestions called');
+    try {
+      const response = await getAllQuestions();
+      console.log('fetchAllAvailableQuestions success', { questions: response.data.questions });
+      setAllAvailableQuestions(response.data.questions);
+      setFilteredQuestions(response.data.questions);
+    } catch (err) {
+      console.error('fetchAllAvailableQuestions error', err);
+      setError(err.message || 'Failed to fetch available questions');
+    }
+  };
+
+  // Helper function to check if a string is a valid MongoDB ObjectId
+  const isValidObjectId = (str) => {
+    const objectIdPattern = /^[0-9a-fA-F]{24}$/;
+    return objectIdPattern.test(str);
+  };
+
+  // Helper function to strip HTML tags from text
+  const stripHtml = (html) => {
+    if (!html) return '';
+    try {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      const result = tmp.textContent || tmp.innerText || '';
+      console.log('stripHtml result:', { original: html, stripped: result });
+      return result;
+    } catch (error) {
+      console.error('stripHtml error:', error);
+      return html; // Return original if stripping fails
+    }
+  };
+
+  const handleQuestionSearch = async () => {
+    console.log('handleQuestionSearch called', { keyword: questionSearchKeyword });
+    try {
+      if (!questionSearchKeyword.trim()) {
+        setFilteredQuestions(allAvailableQuestions);
+        return;
+      }
+
+      // Check if the search keyword is a valid ObjectId
+      if (isValidObjectId(questionSearchKeyword.trim())) {
+        console.log('handleQuestionSearch: Searching by ID', { questionId: questionSearchKeyword.trim() });
+        const response = await adminSearchQuestionsById(questionSearchKeyword.trim());
+        console.log('handleQuestionSearch success (ID search)', { question: response.data.question });
+        const questions = response.data.question ? [response.data.question] : [];
+        console.log('handleQuestionSearch: Setting filteredQuestions to', questions);
+        setFilteredQuestions(questions);
+        console.log('handleQuestionSearch: filteredQuestions state should be updated to', questions);
+      } else {
+        console.log('handleQuestionSearch: Searching by title', { title: questionSearchKeyword });
+        const response = await searchQuestions({ title: questionSearchKeyword });
+        console.log('handleQuestionSearch success (title search)', { questions: response.data.questions });
+        setFilteredQuestions(response.data.questions);
+      }
+    } catch (err) {
+      console.error('handleQuestionSearch error', err);
+      setError(err.message || 'Failed to search questions');
+    }
+  };
+
+  const handleAttachQuestion = async () => {
+    console.log('handleAttachQuestion called', { classId, selectedQuestionId });
+    if (!selectedQuestionId) {
+      setError('Please select a question to attach');
+      return;
+    }
+    try {
+      await assignQuestionToClass(selectedQuestionId, classId);
+      await fetchClassDetails(classId);
+      setSelectedQuestionId('');
+      setQuestionSearchKeyword('');
+      setFilteredQuestions(allAvailableQuestions);
+      setMessage('Question attached to class successfully');
+      setError('');
+      console.log('handleAttachQuestion success');
+    } catch (err) {
+      console.error('handleAttachQuestion error', err);
+      setError(err.message || 'Failed to attach question to class');
+      setMessage('');
+    }
+  };
+
   const [assignmentForm, setAssignmentForm] = useState({
     questionId: '',
     maxPoints: '',
@@ -541,11 +655,18 @@ const AdminClassDetails = () => {
                       className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                     >
                       <option value="">Select Student</option>
-                      {allStudents.map((student) => (
-                        <option key={student._id} value={student._id}>
-                          {student.name} ({student.email})
-                        </option>
-                      ))}
+                      {allStudents && allStudents.length > 0 ? (
+                        allStudents.map((student) => {
+                          console.log('Student in dropdown:', student);
+                          return (
+                            <option key={student._id} value={student._id}>
+                              {student.name || 'No Name'} ({student.email || 'No Email'})
+                            </option>
+                          );
+                        })
+                      ) : (
+                        <option value="" disabled>No students available</option>
+                      )}
                     </select>
                   </div>
                 </div>
@@ -600,15 +721,25 @@ const AdminClassDetails = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Question ID</label>
-                  <input
-                    type="text"
+                  <select
                     value={assignmentForm.questionId}
                     onChange={(e) =>
                       setAssignmentForm({ ...assignmentForm, questionId: e.target.value })
                     }
                     className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                     required
-                  />
+                  >
+                                         <option value="">Select Question</option>
+                     {classQuestions?.length > 0 ? (
+                       classQuestions.map((question) => (
+                         <option key={question._id} value={question._id}>
+                           {stripHtml(question.title)}
+                         </option>
+                       ))
+                     ) : (
+                       <option value="" disabled>No questions available for this class</option>
+                     )}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Max Points</label>
@@ -692,7 +823,7 @@ const AdminClassDetails = () => {
                     {assignments.map((assignment) => (
                       <tr key={assignment._id}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {assignment.questionId?.title || 'N/A'}
+                          {assignment.questionId?.title ? stripHtml(assignment.questionId.title) : 'N/A'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {assignment.maxPoints}
@@ -719,58 +850,135 @@ const AdminClassDetails = () => {
             )}
           </div>
 
-          {/* Questions List */}
-          <div className="mb-8">
-            <h4 className="text-md font-semibold text-gray-800 mb-3">Questions ({classData.questions?.length || 0})</h4>
-            {classData.questions?.length === 0 ? (
-              <p className="text-sm text-gray-500">No questions available</p>
-            ) : (
-              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th
-                        scope="col"
-                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                      >
-                        Title
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                      >
-                        Description
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                      >
-                        Type
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                      >
-                        Points
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {classData.questions.map((question) => (
-                      <tr key={question._id}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {question.title}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-500">{question.description}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.type}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.points}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+                     {/* Questions List */}
+           <div className="mb-8">
+             <h4 className="text-md font-semibold text-gray-800 mb-3">Questions ({classData.questions?.length || 0})</h4>
+             {classData.questions?.length === 0 ? (
+               <p className="text-sm text-gray-500">No questions available</p>
+             ) : (
+               <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 overflow-x-auto">
+                 <table className="min-w-full divide-y divide-gray-200">
+                   <thead className="bg-gray-50">
+                     <tr>
+                       <th
+                         scope="col"
+                         className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                       >
+                         Title
+                       </th>
+                       <th
+                         scope="col"
+                         className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                       >
+                         Description
+                       </th>
+                       <th
+                         scope="col"
+                         className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                       >
+                         Type
+                       </th>
+                       <th
+                         scope="col"
+                         className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                       >
+                         Points
+                       </th>
+                     </tr>
+                   </thead>
+                   <tbody className="divide-y divide-gray-200">
+                     {classData.questions.map((question) => (
+                       <tr key={question._id}>
+                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                           {stripHtml(question.title)}
+                         </td>
+                         <td className="px-6 py-4 text-sm text-gray-500">{stripHtml(question.description)}</td>
+                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.type}</td>
+                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.points}</td>
+                       </tr>
+                     ))}
+                   </tbody>
+                 </table>
+               </div>
+             )}
+           </div>
+
+           {/* Attach Question to Class */}
+           <div className="mb-8 border-t border-gray-200 pt-6">
+             <h4 className="text-md font-semibold text-gray-800 mb-4">Attach Question to Class</h4>
+             <div className="space-y-6">
+               {/* Search Questions */}
+               <div className="flex gap-4">
+                 <div className="flex-1">
+                   <label className="block text-sm font-medium text-gray-700 mb-2">Search Questions</label>
+                   <div className="flex gap-2">
+                     <input
+                       type="text"
+                       value={questionSearchKeyword}
+                       onChange={(e) => setQuestionSearchKeyword(e.target.value)}
+                       placeholder="Search questions by title or ID..."
+                       className="flex-1 rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                     />
+                     <button
+                       onClick={handleQuestionSearch}
+                       className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300"
+                     >
+                       Search
+                     </button>
+                   </div>
+                 </div>
+               </div>
+
+               {/* Available Questions */}
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-2">Select Question to Attach</label>
+                 {console.log('Rendering dropdown with filteredQuestions:', { length: filteredQuestions?.length, questions: filteredQuestions })}
+                 <select
+                   value={selectedQuestionId}
+                   onChange={(e) => setSelectedQuestionId(e.target.value)}
+                   className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                 >
+                   <option value="">Select a question</option>
+                   {filteredQuestions?.length > 0 ? (
+                     filteredQuestions.map((question) => {
+                       console.log('Rendering question option:', { 
+                         id: question._id, 
+                         title: question.title, 
+                         type: question.type,
+                         points: question.points,
+                         strippedTitle: stripHtml(question.title) 
+                       });
+                       
+                       // Ensure question has required properties
+                       if (!question._id || !question.title) {
+                         console.warn('Question missing required properties:', question);
+                         return null;
+                       }
+                       
+                       return (
+                         <option key={question._id} value={question._id}>
+                           {stripHtml(question.title)} - {question.type || 'Unknown'} ({question.points || 0} points)
+                         </option>
+                       );
+                     }).filter(Boolean) // Remove null options
+                   ) : (
+                     <option value="" disabled>No questions available</option>
+                   )}
+                 </select>
+               </div>
+
+               {/* Attach Button */}
+               <div className="flex justify-end">
+                 <button
+                   onClick={handleAttachQuestion}
+                   disabled={!selectedQuestionId}
+                   className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                 >
+                   Attach Question to Class
+                 </button>
+               </div>
+             </div>
+           </div>
 
           {/* Participant Statistics */}
           <div className="mb-8">
