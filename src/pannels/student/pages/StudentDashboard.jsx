@@ -63,7 +63,7 @@ const StudentDashboard = () => {
             className: cls.name,
           });
           const response = await axios.get(
-            `http://localhost:3000/admin/classes/${cls._id}/assignments`,
+            `https://api.algosutra.co.in//admin/classes/${cls._id}/assignments`,
             {
               headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
             }
