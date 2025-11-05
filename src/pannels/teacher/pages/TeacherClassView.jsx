@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, Fragment } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { Tab, Menu, Transition, Dialog, Disclosure } from '@headlessui/react';
@@ -28,6 +28,7 @@ import {
   searchLeaderboard,
   blockUser,
   blockAllUsers,
+  focusStudent,
   viewSubmissionCode,
   getQuestionPerspectiveReport,
 } from '../../../common/services/api';
@@ -85,6 +86,20 @@ const TeacherClassView = () => {
   // Student modal
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // Tab state - persist selected tab
+  const [selectedTabIndex, setSelectedTabIndex] = useState(0);
+  
+  // Toast notification state
+  const [toast, setToast] = useState({ show: false, message: '', type: '' });
+  
+  // Toast notification helper
+  const showToast = (message, type = 'info') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => {
+      setToast({ show: false, message: '', type: '' });
+    }, 5000); // Auto-dismiss after 5 seconds
+  };
 
   // Search and pagination for assignments
   const [assignmentSearch, setAssignmentSearch] = useState('');
@@ -142,13 +157,15 @@ const TeacherClassView = () => {
   const studentTotalPages = Math.ceil(filteredStudents.length / studentItemsPerPage);
 
   // Fetch all data
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (skipLoading = false) => {
     if (!user) {
       console.log('[TeacherClassView] No user, skipping data fetch');
       return;
     }
     try {
-      setLoading(true);
+      if (!skipLoading) {
+        setLoading(true);
+      }
       console.log('[TeacherClassView] Fetching data for classId:', classId);
 
       const classResponse = await getClassDetails(classId);
@@ -183,11 +200,21 @@ const TeacherClassView = () => {
 
         // Fetch leaderboard
         const leaderboardResponse = await searchLeaderboard(classId, {});
-        setLeaderboard(
-          Array.isArray(leaderboardResponse.data.leaderboard)
-            ? leaderboardResponse.data.leaderboard
-            : []
-        );
+        const leaderboardData = Array.isArray(leaderboardResponse.data.leaderboard)
+          ? leaderboardResponse.data.leaderboard
+          : [];
+        
+        console.log('[TeacherClassView] 📊 Leaderboard data received:', leaderboardData.length, 'entries');
+        leaderboardData.forEach((entry, idx) => {
+          console.log(`  [${idx}] ${entry.studentId?.name}:`, {
+            needsFocus: entry.needsFocus,
+            activityStatus: entry.activityStatus,
+            isBlocked: entry.isBlocked,
+            totalSubmits: entry.totalSubmits
+          });
+        });
+        
+        setLeaderboard(leaderboardData);
 
         // Fetch questions
         const questionsResponse = await getQuestionsByClass(classId);
@@ -207,7 +234,9 @@ const TeacherClassView = () => {
       console.error('[TeacherClassView] Error fetching data:', err.message);
       setError(err.error || 'Failed to fetch data');
     } finally {
-      setLoading(false);
+      if (!skipLoading) {
+        setLoading(false);
+      }
     }
   }, [classId, user]);
 
@@ -260,14 +289,15 @@ const TeacherClassView = () => {
     setAssignmentMessage('');
 
     try {
-      await createAssignment({
-        classId,
+      await createAssignment(classId, {
         questionId: assignmentForm.questionId,
         maxPoints: assignmentForm.maxPoints,
         dueDate: assignmentForm.dueDate,
       });
-      setAssignmentMessage('Assignment created successfully!');
+      const successMsg = 'Assignment created successfully!';
+      setAssignmentMessage(successMsg);
       setAssignmentForm({ questionId: '', maxPoints: '', dueDate: '' });
+      showToast(successMsg, 'success');
 
       // Refresh assignments
       const assignmentsResponse = await getAssignments(classId);
@@ -285,32 +315,46 @@ const TeacherClassView = () => {
     if (!window.confirm('Are you sure you want to delete this assignment?')) return;
 
     try {
-      await deleteAssignment(assignmentId);
+      await deleteAssignment(classId, assignmentId);
       setAssignments(assignments.filter((a) => a._id !== assignmentId));
-      setAssignmentMessage('Assignment deleted successfully!');
+      const successMsg = 'Assignment deleted successfully!';
+      setAssignmentMessage(successMsg);
+      showToast(successMsg, 'success');
       setTimeout(() => setAssignmentMessage(''), 3000);
     } catch (err) {
-      setAssignmentError(err.error || 'Failed to delete assignment');
+      const errorMsg = typeof err === 'string' ? err : (err.error || 'Failed to delete assignment');
+      setAssignmentError(errorMsg);
+      showToast(errorMsg, 'error');
     }
   };
 
   const handleAssignQuestion = async () => {
     if (!selectedQuestionId) {
-      setError('Please select a question');
+      const errorMsg = 'Please select a question';
+      setError(errorMsg);
+      showToast(errorMsg, 'warning');
       return;
     }
 
     try {
-      await assignQuestionToClass(selectedQuestionId, { classId });
+      await assignQuestionToClass(selectedQuestionId, classId);
       setError('');
-      alert('Question assigned successfully!');
+      const successMsg = 'Question assigned successfully!';
+      showToast(successMsg, 'success');
 
-      // Refresh questions
-      const questionsResponse = await getQuestionsByClass(classId);
-      setQuestions(questionsResponse.data.questions);
+      // Refresh data without loading spinner or resetting tab
+      await fetchData(true);
       setSelectedQuestionId('');
+      setQuestionSearchKeyword('');
     } catch (err) {
-      setError(err.error || 'Failed to assign question');
+      const errorMsg = typeof err === 'string' ? err : (err.error || 'Failed to assign question');
+      setError(errorMsg);
+      // Show specific error message based on error type
+      if (errorMsg.toLowerCase().includes('already assigned')) {
+        showToast('This question is already assigned to this class. Please select a different question.', 'warning');
+      } else {
+        showToast(errorMsg, 'error');
+      }
     }
   };
 
@@ -327,30 +371,64 @@ const TeacherClassView = () => {
   };
 
   const handleBlockUser = async (studentId, block) => {
+    console.log('[handleBlockUser] 🔨 Called with:', { studentId, block, classId });
     try {
-      await blockUser(classId, studentId, block);
-      fetchData();
+      console.log('[handleBlockUser] Calling blockUser API...');
+      const response = await blockUser(classId, studentId, block);
+      console.log('[handleBlockUser] ✅ API response:', response.data);
+      
+      const actionMsg = block ? 'Student blocked successfully' : 'Student unblocked successfully';
+      showToast(actionMsg, 'success');
+      
+      // Refresh data without loading spinner or resetting tab
+      console.log('[handleBlockUser] Refreshing data...');
+      await fetchData(true);
+      console.log('[handleBlockUser] ✅ Data refreshed');
     } catch (err) {
-      setError(err.error || 'Failed to block/unblock user');
+      console.error('[handleBlockUser] ❌ Error:', err);
+      const errorMsg = typeof err === 'string' ? err : (err.error || 'Failed to block/unblock user');
+      setError(errorMsg);
+      showToast(errorMsg, 'error');
     }
   };
 
   const handleFocusUser = async (studentId, focus) => {
+    console.log('[handleFocusUser] 🎯 Called with:', { studentId, focus, classId });
     try {
-      await blockUser(classId, studentId, focus, true);
-      fetchData();
+      console.log('[handleFocusUser] Calling focusStudent API...');
+      const response = await focusStudent(classId, studentId, focus);
+      console.log('[handleFocusUser] ✅ API response:', response.data);
+      
+      const actionMsg = focus ? 'Student marked for focus successfully' : 'Student unmarked from focus successfully';
+      showToast(actionMsg, 'success');
+      
+      // Refresh data without loading spinner or resetting tab
+      console.log('[handleFocusUser] Refreshing data...');
+      await fetchData(true);
+      console.log('[handleFocusUser] ✅ Data refreshed');
     } catch (err) {
-      setError(err.error || 'Failed to focus/unfocus user');
+      console.error('[handleFocusUser] ❌ Error:', err);
+      const errorMsg = typeof err === 'string' ? err : (err.error || 'Failed to focus/unfocus user');
+      setError(errorMsg);
+      showToast(errorMsg, 'error');
     }
   };
 
   const handleBlockAllUsers = async (e) => {
     e.preventDefault();
+    if (!confirm(`Are you sure you want to ${blockAll ? 'block' : 'unblock'} all students in this class?`)) {
+      return;
+    }
     try {
       await blockAllUsers(classId, blockAll);
-      fetchData();
+      const actionMsg = blockAll ? 'All students blocked successfully' : 'All students unblocked successfully';
+      showToast(actionMsg, 'success');
+      // Refresh data without loading spinner or resetting tab
+      await fetchData(true);
     } catch (err) {
-      setError(err.error || 'Failed to block/unblock all users');
+      const errorMsg = typeof err === 'string' ? err : (err.error || 'Failed to block/unblock all users');
+      setError(errorMsg);
+      showToast(errorMsg, 'error');
     }
   };
 
@@ -557,6 +635,77 @@ const TeacherClassView = () => {
  
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Toast Notification */}
+      {toast.show && (
+        <div className="fixed top-4 right-4 z-50 animate-slide-in-right">
+          <div className={`rounded-lg shadow-2xl border-l-4 p-4 max-w-md backdrop-blur-sm ${
+            toast.type === 'success' ? 'bg-green-50/95 border-green-500' :
+            toast.type === 'error' ? 'bg-red-50/95 border-red-500' :
+            toast.type === 'warning' ? 'bg-yellow-50/95 border-yellow-500' :
+            'bg-blue-50/95 border-blue-500'
+          }`}>
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                {toast.type === 'success' && (
+                  <svg className="h-6 w-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+                {toast.type === 'error' && (
+                  <svg className="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+                {toast.type === 'warning' && (
+                  <svg className="h-6 w-6 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                )}
+                {toast.type === 'info' && (
+                  <svg className="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+              </div>
+              <div className="ml-3 flex-1">
+                <p className={`text-sm font-semibold ${
+                  toast.type === 'success' ? 'text-green-800' :
+                  toast.type === 'error' ? 'text-red-800' :
+                  toast.type === 'warning' ? 'text-yellow-800' :
+                  'text-blue-800'
+                }`}>
+                  {toast.type === 'success' ? 'Success!' :
+                   toast.type === 'error' ? 'Error!' :
+                   toast.type === 'warning' ? 'Warning!' :
+                   'Info'}
+                </p>
+                <p className={`mt-1 text-sm ${
+                  toast.type === 'success' ? 'text-green-700' :
+                  toast.type === 'error' ? 'text-red-700' :
+                  toast.type === 'warning' ? 'text-yellow-700' :
+                  'text-blue-700'
+                }`}>
+                  {toast.message}
+                </p>
+              </div>
+              <button
+                onClick={() => setToast({ show: false, message: '', type: '' })}
+                className={`ml-4 flex-shrink-0 rounded-lg p-1 hover:bg-white/50 transition-colors ${
+                  toast.type === 'success' ? 'text-green-500' :
+                  toast.type === 'error' ? 'text-red-500' :
+                  toast.type === 'warning' ? 'text-yellow-500' :
+                  'text-blue-500'
+                }`}
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold" style={{ color: 'var(--text-heading)' }}>
@@ -578,7 +727,7 @@ const TeacherClassView = () => {
       )}
 
       {/* Tabs */}
-      <Tab.Group>
+      <Tab.Group selectedIndex={selectedTabIndex} onChange={setSelectedTabIndex}>
         <Tab.List className="flex gap-2 rounded-xl p-1.5 mb-8 border" style={{ backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }}>
           {['Analytics', 'Students', 'Assignments', 'Questions', 'Management'].map((tabName) => (
             <Tab key={tabName} className="flex-1">
@@ -600,9 +749,9 @@ const TeacherClassView = () => {
           ))}
         </Tab.List>
 
-        <Tab.Panels>
+        <Tab.Panels className="overflow-visible">
           {/* Analytics Tab */}
-          <Tab.Panel>
+          <Tab.Panel className="overflow-visible">
             {/* Statistics Pie Charts */}
             <div className="mb-8">
               <h2 className="text-2xl font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>Analytics Overview</h2>
@@ -772,7 +921,7 @@ const TeacherClassView = () => {
           </Tab.Panel>
 
           {/* Students Tab */}
-          <Tab.Panel>
+          <Tab.Panel className="overflow-visible">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-semibold" style={{ color: 'var(--text-heading)' }}>
                 Students ({filteredStudents.length})
@@ -840,10 +989,22 @@ const TeacherClassView = () => {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {currentStudents.map((studentData) => {
+                      {currentStudents.map((studentData, idx) => {
                         const studentInfo = studentData.studentId || {};
                         const isFocused = studentData.activityStatus === 'focused';
                         const isBlocked = studentData.isBlocked || false;
+                        
+                        // Debug logging for rendering
+                        if (idx === 0) {
+                          console.log('[TeacherClassView] 🎨 Rendering students table, first student:', {
+                            name: studentInfo.name,
+                            needsFocus: studentData.needsFocus,
+                            activityStatus: studentData.activityStatus,
+                            isBlocked: studentData.isBlocked,
+                            computedIsFocused: isFocused,
+                            computedIsBlocked: isBlocked
+                          });
+                        }
 
                         return (
                           <tr
@@ -1036,7 +1197,7 @@ const TeacherClassView = () => {
           </Tab.Panel>
 
           {/* Assignments Tab */}
-          <Tab.Panel>
+          <Tab.Panel className="overflow-visible">
             {/* Create Assignment Form */}
             <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 mb-8 transition-all duration-300 hover:shadow-2xl" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
               <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>Create Assignment</h3>
@@ -1238,7 +1399,7 @@ const TeacherClassView = () => {
           </Tab.Panel>
 
           {/* Questions Tab */}
-          <Tab.Panel>
+          <Tab.Panel className="overflow-visible">
             {/* Attach Question to Class */}
             <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 mb-8 transition-all duration-300 hover:shadow-2xl" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
               <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>Attach Question to Class</h3>
@@ -1287,17 +1448,17 @@ const TeacherClassView = () => {
             </div>
 
             {/* Assigned Questions */}
-            <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 transition-all duration-300 hover:shadow-2xl" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
+            <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 transition-all duration-300 hover:shadow-2xl overflow-visible" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
               <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>
                 Assigned Questions ({questions.length})
               </h3>
 
               {questions.length === 0 ? (
-                <p className="text-sm text-gray-500">No questions assigned to this class</p>
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>No questions assigned to this class</p>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-visible">
                   {questions.map((question) => (
-                    <TeacherQuestionCard key={question._id} question={question} classId={classId} />
+                    <TeacherQuestionCard key={question._id} question={question} classId={classId} onQuestionUpdate={() => fetchData(true)} />
                   ))}
                 </div>
               )}
@@ -1305,7 +1466,7 @@ const TeacherClassView = () => {
           </Tab.Panel>
 
           {/* Management Tab */}
-          <Tab.Panel>
+          <Tab.Panel className="overflow-visible">
             {/* Question Perspective Report */}
             <Disclosure>
               {({ open }) => (

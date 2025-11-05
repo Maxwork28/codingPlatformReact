@@ -114,24 +114,87 @@ const QuestionManagement = () => {
       return;
     }
     setLoading(true);
+    setError('');
+    setMessage('');
+    
+    const results = {
+      success: [],
+      alreadyAssigned: [],
+      failed: []
+    };
+    
     try {
       for (const classId of selectedClassIds) {
+        const className = classes.find(c => c._id === classId)?.name || classId;
         console.log('[QuestionManagement] Assigning question', selectedQuestion._id, 'to class', classId);
-        await assignQuestionToClass(selectedQuestion._id, classId);
+        try {
+          await assignQuestionToClass(selectedQuestion._id, classId);
+          results.success.push(className);
+        } catch (err) {
+          const errorMsg = err.error || err.response?.data?.error || err.message || 'Unknown error';
+          if (errorMsg.toLowerCase().includes('already assigned')) {
+            results.alreadyAssigned.push(className);
+          } else {
+            results.failed.push({ className, error: errorMsg });
+          }
+        }
       }
-      setMessage('Question assigned to classes successfully!');
-      setError('');
+      
+      // Build result message
+      const messages = [];
+      if (results.success.length > 0) {
+        messages.push(`✅ Successfully assigned to: ${results.success.join(', ')}`);
+      }
+      if (results.alreadyAssigned.length > 0) {
+        messages.push(`⚠️ Already assigned to: ${results.alreadyAssigned.join(', ')}`);
+      }
+      if (results.failed.length > 0) {
+        messages.push(`❌ Failed for: ${results.failed.map(f => `${f.className} (${f.error})`).join(', ')}`);
+      }
+      
+      // Refresh questions list
       const response = await getAllQuestions();
-      const userQuestions = response.data.questions.filter((q) => q.createdBy._id === user.id);
-      console.log('[QuestionManagement] Refreshed questions:', userQuestions);
-      setQuestions(userQuestions);
-      setFilteredQuestions(userQuestions);
-      setSelectedQuestion(null);
-      setSelectedClassIds([]);
-      setTimeout(() => setMessage(''), 3000);
+      const allQuestions = response.data.questions;
+      console.log('[QuestionManagement] Refreshed questions:', allQuestions);
+      setQuestions(allQuestions);
+      
+      // Apply current search filter
+      if (searchKeyword.trim()) {
+        const filtered = allQuestions.filter(q => 
+          stripHtml(q.title).toLowerCase().includes(searchKeyword.toLowerCase())
+        );
+        setFilteredQuestions(filtered);
+      } else {
+        setFilteredQuestions(allQuestions);
+      }
+      
+      // Update selected question to show new class assignments
+      const updatedQuestion = allQuestions.find(q => q._id === selectedQuestion._id);
+      if (updatedQuestion) {
+        setSelectedQuestion(updatedQuestion);
+      }
+      
+      // Only clear form if at least one assignment was successful
+      if (results.success.length > 0) {
+        setSelectedQuestion(null);
+        setSelectedClassIds([]);
+      }
+      
+      // Show messages
+      if (results.success.length > 0 || results.alreadyAssigned.length > 0) {
+        setMessage(messages.join('\n'));
+      }
+      if (results.failed.length > 0 && results.success.length === 0) {
+        setError(messages.join('\n'));
+      }
+      
+      setTimeout(() => {
+        setMessage('');
+        setError('');
+      }, 5000);
     } catch (err) {
       console.error('[QuestionManagement] Assign error:', err.message, err.response?.data);
-      setError(err.response?.data?.error || 'Failed to assign question');
+      setError(err.response?.data?.error || err.error || 'Failed to assign question');
       setMessage('');
     } finally {
       setLoading(false);
@@ -175,14 +238,20 @@ const QuestionManagement = () => {
           {/* Error Message */}
           {(error || classError) && (
             <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-sm text-red-700">{error || classError}</p>
+              <div className="flex items-start">
+                <ExclamationTriangleIcon className="h-5 w-5 text-red-500 mr-2 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-red-700 whitespace-pre-line">{error || classError}</p>
+              </div>
             </div>
           )}
 
           {/* Success Message */}
           {message && (
             <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-              <p className="text-sm text-green-700">{message}</p>
+              <div className="flex items-start">
+                <CheckCircleIcon className="h-5 w-5 text-green-500 mr-2 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-green-700 whitespace-pre-line">{message}</p>
+              </div>
             </div>
           )}
 
@@ -247,6 +316,9 @@ const QuestionManagement = () => {
                         <thead className="bg-gray-50">
                           <tr>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Question ID
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                               Title
                             </th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -263,6 +335,9 @@ const QuestionManagement = () => {
                         <tbody className="bg-white divide-y divide-gray-200">
                           {filteredQuestions.map((q) => (
                             <tr key={q._id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap text-xs font-mono text-gray-600">
+                                {q._id}
+                              </td>
                               <td className="px-6 py-4 text-sm font-medium text-gray-900">
                                 {stripHtml(q.title)}
                               </td>
@@ -326,30 +401,73 @@ const QuestionManagement = () => {
 
                     {/* Class Selection */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Select Classes</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Select Classes
+                        {selectedQuestion && (
+                          <span className="ml-2 text-xs text-gray-500">
+                            (Currently assigned to {selectedQuestion.classes?.length || 0} class{selectedQuestion.classes?.length !== 1 ? 'es' : ''})
+                          </span>
+                        )}
+                      </label>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {classes
                           .filter((cls) => cls.teachers.some((t) => t._id === user.id) || cls.createdBy._id === user.id)
-                          .map((cls) => (
-                            <label key={cls._id} className="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
-                              <input
-                                type="checkbox"
-                                checked={selectedClassIds.includes(cls._id)}
-                                onChange={() => handleClassToggle(cls._id)}
-                                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                              />
-                              <span className="ml-3 text-sm text-gray-800">{cls.name}</span>
-                            </label>
-                          ))}
+                          .map((cls) => {
+                            // Check if question is already assigned to this class
+                            const isAlreadyAssigned = selectedQuestion?.classes?.some(
+                              (qClass) => qClass.classId === cls._id || qClass.classId?._id === cls._id
+                            );
+                            
+                            return (
+                              <label 
+                                key={cls._id} 
+                                className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-all ${
+                                  isAlreadyAssigned 
+                                    ? 'border-green-300 bg-green-50' 
+                                    : 'border-gray-300 hover:bg-gray-50'
+                                }`}
+                              >
+                                <div className="flex items-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedClassIds.includes(cls._id)}
+                                    onChange={() => handleClassToggle(cls._id)}
+                                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                                  />
+                                  <span className={`ml-3 text-sm ${isAlreadyAssigned ? 'text-gray-700 font-medium' : 'text-gray-800'}`}>
+                                    {cls.name}
+                                  </span>
+                                </div>
+                                {isAlreadyAssigned && (
+                                  <span className="flex items-center text-xs text-green-600 font-semibold">
+                                    <CheckCircleIcon className="h-4 w-4 mr-1" />
+                                    Assigned
+                                  </span>
+                                )}
+                              </label>
+                            );
+                          })}
                       </div>
                     </div>
 
-                    {/* Action Button */}
-                    <div className="flex justify-end pt-4 border-t border-gray-200">
+                    {/* Action Buttons */}
+                    <div className="flex justify-between items-center pt-4 border-t border-gray-200">
+                      <button
+                        onClick={() => {
+                          setSelectedQuestion(null);
+                          setSelectedClassIds([]);
+                          setError('');
+                          setMessage('');
+                        }}
+                        disabled={loading || (!selectedQuestion && selectedClassIds.length === 0)}
+                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400 transition-colors"
+                      >
+                        Clear Selection
+                      </button>
                       <button
                         onClick={handleAssignQuestion}
                         disabled={loading || !selectedQuestion || selectedClassIds.length === 0}
-                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                       >
                         {loading ? 'Assigning...' : 'Assign Question'}
                       </button>

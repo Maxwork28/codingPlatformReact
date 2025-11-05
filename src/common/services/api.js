@@ -458,6 +458,25 @@ export const blockUser = async (classId, studentId, isBlocked) => {
 };
 
 /**
+ * Marks a student for focus or unfocus in a class
+ * @param {string} classId - Class ID
+ * @param {string} studentId - Student ID
+ * @param {boolean} needsFocus - Focus status
+ * @returns {Promise} Axios response
+ */
+export const focusStudent = async (classId, studentId, needsFocus) => {
+  console.log('focusStudent called', { classId, studentId, needsFocus });
+  try {
+    const response = await api.patch(`/admin/classes/${classId}/focus-student`, { studentId, needsFocus });
+    console.log('focusStudent success', { classId, studentId, needsFocus, response: response.data });
+    return response;
+  } catch (err) {
+    console.error('focusStudent error', { classId, studentId, needsFocus, error: err.response?.data?.error || 'Failed to update student focus status' });
+    throw err.response?.data?.error || 'Failed to update student focus status';
+  }
+};
+
+/**
  * Blocks or unblocks all users in a class
  * @param {string} classId - Class ID
  * @param {boolean} isBlocked - Block status

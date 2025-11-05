@@ -3,7 +3,7 @@ import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { Menu, Transition } from '@headlessui/react';
-import { getQuestionsByClass, teacherTestQuestion, teacherTestWithCustomInput } from '../../../common/services/api';
+import { getQuestionsByClass, teacherTestQuestion, teacherTestWithCustomInput, publishQuestion, unpublishQuestion, disableQuestion, enableQuestion } from '../../../common/services/api';
 import CodeEditor from '../../student/components/CodeEditor';
 import { DiJavascript } from "react-icons/di";
 import { FaJava, FaPython, FaDatabase, FaBookOpen } from "react-icons/fa";
@@ -259,12 +259,94 @@ const TakeClass = () => {
     navigate(`/teacher/questions/${questionId}/preview`);
   };
 
-  const handlePublish = (questionId) => {
-    alert('Publish functionality coming soon');
+  const handlePublish = async (questionId) => {
+    try {
+      // Find the question to check current status
+      const question = questions.find(q => q._id === questionId);
+      if (!question) {
+        alert('Question not found');
+        return;
+      }
+      
+      // Get class-specific settings
+      const classEntry = question.classes?.find(
+        (c) => c.classId?.toString() === selectedClass._id || c.classId?._id?.toString() === selectedClass._id
+      );
+      const isPublished = classEntry?.isPublished || false;
+      
+      setLoading(true);
+      if (isPublished) {
+        await unpublishQuestion(questionId, { classId: selectedClass._id });
+        alert('Question unpublished successfully');
+      } else {
+        await publishQuestion(questionId, { classId: selectedClass._id });
+        alert('Question published successfully');
+      }
+      
+      // Refresh questions list
+      const response = await getQuestionsByClass(selectedClass._id);
+      const updatedQuestions = response.data.questions || [];
+      setQuestions(updatedQuestions);
+      
+      // Update selected question if it's the one that was modified
+      if (selectedQuestion && selectedQuestion._id === questionId) {
+        const updatedQuestion = updatedQuestions.find(q => q._id === questionId);
+        if (updatedQuestion) {
+          setSelectedQuestion(updatedQuestion);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to toggle publish status:', err);
+      const errorMsg = err.response?.data?.error || err.error || 'Failed to update publish status';
+      alert(errorMsg);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleDisable = (questionId) => {
-    alert('Disable functionality coming soon');
+  const handleDisable = async (questionId) => {
+    try {
+      // Find the question to check current status
+      const question = questions.find(q => q._id === questionId);
+      if (!question) {
+        alert('Question not found');
+        return;
+      }
+      
+      // Get class-specific settings
+      const classEntry = question.classes?.find(
+        (c) => c.classId?.toString() === selectedClass._id || c.classId?._id?.toString() === selectedClass._id
+      );
+      const isDisabled = classEntry?.isDisabled || false;
+      
+      setLoading(true);
+      if (isDisabled) {
+        await enableQuestion(questionId, { classId: selectedClass._id });
+        alert('Question enabled successfully');
+      } else {
+        await disableQuestion(questionId, { classId: selectedClass._id });
+        alert('Question disabled successfully');
+      }
+      
+      // Refresh questions list
+      const response = await getQuestionsByClass(selectedClass._id);
+      const updatedQuestions = response.data.questions || [];
+      setQuestions(updatedQuestions);
+      
+      // Update selected question if it's the one that was modified
+      if (selectedQuestion && selectedQuestion._id === questionId) {
+        const updatedQuestion = updatedQuestions.find(q => q._id === questionId);
+        if (updatedQuestion) {
+          setSelectedQuestion(updatedQuestion);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to toggle disable status:', err);
+      const errorMsg = err.response?.data?.error || err.error || 'Failed to update disable status';
+      alert(errorMsg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Handle horizontal panel resizing
@@ -516,7 +598,8 @@ const TakeClass = () => {
           style={{ 
             backgroundColor: 'var(--card-white)', 
             borderColor: 'var(--card-border)',
-            zIndex: 100
+            zIndex: 100,
+            overflow: 'visible'
           }}
         >
           {/* Header */}
@@ -542,8 +625,8 @@ const TakeClass = () => {
           </div>
           
           {/* Questions List - Full height scrollable */}
-          <div className="flex-1" style={{ overflowY: 'auto', overflowX: 'visible', minHeight: 0 }}>
-            <div className="px-4 pb-4 pt-3">
+          <div className="flex-1" style={{ overflowY: 'auto', overflowX: 'visible', minHeight: 0, position: 'relative', zIndex: 1 }}>
+            <div className="px-4 pb-4 pt-3" style={{ position: 'relative' }}>
               {loading ? (
                 <div className="text-center py-8">
                   <div className="w-8 h-8 border-4 border-t-transparent rounded-full animate-spin mx-auto" style={{ borderColor: 'var(--text-primary)', borderTopColor: 'transparent' }}></div>
@@ -557,8 +640,8 @@ const TakeClass = () => {
                   {questions.map((q, idx) => (
                     <div
                       key={q._id}
-                      className={`rounded-lg transition-all duration-200 ${
-                        selectedQuestion?._id === q._id ? 'shadow-lg' : 'hover:shadow'
+                      className={`rounded-lg transition-all duration-200 hover:z-50 ${
+                        selectedQuestion?._id === q._id ? 'shadow-lg z-50' : 'hover:shadow'
                       }`}
                       style={{ 
                         backgroundColor: selectedQuestion?._id === q._id ? 'var(--accent-indigo)' : 'var(--background-light)',
@@ -584,6 +667,9 @@ const TakeClass = () => {
                               title={q.title?.replace(/<[^>]*>/g, '') || 'Untitled'}
                             >
                               {q.title?.replace(/<[^>]*>/g, '') || 'Untitled'}
+                            </p>
+                            <p className="text-xs mt-0.5 font-mono" style={{ color: 'var(--text-secondary)' }}>
+                              ID: {q._id}
                             </p>
                             <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
                               {q.difficulty} • {q.type}
@@ -627,7 +713,7 @@ const TakeClass = () => {
                                     transform: 'translateX(-50%)',
                                     top: '100%',
                                     marginTop: '0.5rem',
-                                    zIndex: 10001
+                                    zIndex: 99999
                                   }}
                                 >
                                   <div className="py-1">
@@ -730,54 +816,58 @@ const TakeClass = () => {
                                     </Menu.Item>
                                     <div className="my-1 h-px" style={{ backgroundColor: 'var(--card-border)' }}></div>
                                     <Menu.Item>
-                                      {({ active }) => (
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (q.isPublished) {
-                                              alert('Question is already published');
-                                            } else {
+                                      {({ active }) => {
+                                        // Get class-specific settings
+                                        const classEntry = q.classes?.find(
+                                          (c) => c.classId?.toString() === selectedClass._id || c.classId?._id?.toString() === selectedClass._id
+                                        );
+                                        const isPublished = classEntry?.isPublished || false;
+                                        
+                                        return (
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
                                               handlePublish(q._id);
-                                            }
-                                          }}
-                                          className={`${
-                                            active && !q.isPublished ? 'bg-green-50' : ''
-                                          } group flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors ${
-                                            q.isPublished ? 'opacity-50 cursor-not-allowed' : ''
-                                          }`}
-                                          style={{ color: q.isPublished ? 'var(--text-secondary)' : '#16a34a' }}
-                                        >
-                                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                          </svg>
-                                          {q.isPublished ? 'Published' : 'Publish'}
-                                        </button>
-                                      )}
+                                            }}
+                                            className={`${
+                                              active ? (isPublished ? 'bg-gray-50' : 'bg-green-50') : ''
+                                            } group flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors cursor-pointer`}
+                                            style={{ color: '#16a34a' }}
+                                          >
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            {isPublished ? 'Unpublish Question' : 'Publish Question'}
+                                          </button>
+                                        );
+                                      }}
                                     </Menu.Item>
                                     <Menu.Item>
-                                      {({ active }) => (
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (q.isDisabled) {
-                                              alert('Question is already disabled');
-                                            } else {
+                                      {({ active }) => {
+                                        // Get class-specific settings
+                                        const classEntry = q.classes?.find(
+                                          (c) => c.classId?.toString() === selectedClass._id || c.classId?._id?.toString() === selectedClass._id
+                                        );
+                                        const isDisabled = classEntry?.isDisabled || false;
+                                        
+                                        return (
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
                                               handleDisable(q._id);
-                                            }
-                                          }}
-                                          className={`${
-                                            active && !q.isDisabled ? 'bg-red-50' : ''
-                                          } group flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors ${
-                                            q.isDisabled ? 'opacity-50 cursor-not-allowed' : ''
-                                          }`}
-                                          style={{ color: q.isDisabled ? 'var(--text-secondary)' : '#dc2626' }}
-                                        >
-                                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                                          </svg>
-                                          {q.isDisabled ? 'Disabled' : 'Disable'}
-                                        </button>
-                                      )}
+                                            }}
+                                            className={`${
+                                              active ? (isDisabled ? 'bg-gray-50' : 'bg-red-50') : ''
+                                            } group flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors cursor-pointer`}
+                                            style={{ color: '#dc2626' }}
+                                          >
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                            </svg>
+                                            {isDisabled ? 'Enable Question' : 'Disable Question'}
+                                          </button>
+                                        );
+                                      }}
                                     </Menu.Item>
                                   </div>
                                 </Menu.Items>
@@ -836,14 +926,29 @@ const TakeClass = () => {
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">
                     {selectedQuestion.maxPoints || 10} points
                   </span>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                    selectedQuestion.isPublished ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
-                  }`}>
-                    {selectedQuestion.isPublished ? 'Published' : 'Unpublished'}
-                  </span>
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
-                    Enabled
-                  </span>
+                  {(() => {
+                    // Get class-specific settings
+                    const classEntry = selectedQuestion.classes?.find(
+                      (c) => c.classId?.toString() === selectedClass._id || c.classId?._id?.toString() === selectedClass._id
+                    );
+                    const isPublished = classEntry?.isPublished || false;
+                    const isDisabled = classEntry?.isDisabled || false;
+                    
+                    return (
+                      <>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                          isPublished ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                        }`}>
+                          {isPublished ? 'Published' : 'Unpublished'}
+                        </span>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                          isDisabled ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {isDisabled ? 'Disabled' : 'Enabled'}
+                        </span>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 <div className="mb-4 sm:mb-6">

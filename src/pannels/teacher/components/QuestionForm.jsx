@@ -7,14 +7,29 @@ import { ChevronDownIcon, ChevronUpIcon, TrashIcon, PlusIcon } from '@heroicons/
 
 // Custom Slate editor with formatting
 const withFormatting = editor => {
-  const { insertData, insertText } = editor;
+  const { insertData, insertText, normalizeNode } = editor;
 
   editor.insertData = data => {
-    if (data.get('Text')) {
-      insertText(data.get('Text'));
-    } else {
-      insertData(data);
+    const text = data.getData('text/plain');
+    if (text) {
+      insertText(text);
+      return;
     }
+    insertData(data);
+  };
+
+  editor.normalizeNode = entry => {
+    const [node, path] = entry;
+
+    // Ensure all nodes have children array
+    if (node && typeof node === 'object' && !Text.isText(node)) {
+      if (!node.children || !Array.isArray(node.children)) {
+        Transforms.removeNodes(editor, { at: path });
+        return;
+      }
+    }
+
+    normalizeNode(entry);
   };
 
   return editor;
@@ -26,12 +41,18 @@ const serializeToHTML = nodes => {
   const nodeArray = Array.isArray(nodes) ? nodes : [nodes];
 
   return nodeArray.map(node => {
+    if (!node) return '';
+    
     if (Text.isText(node)) {
-      let text = node.text;
+      let text = node.text || '';
       if (node.bold) text = `<strong>${text}</strong>`;
       if (node.italic) text = `<em>${text}</em>`;
       if (node.code) text = `<code class="bg-gray-100 px-1 rounded">${text}</code>`;
       return text;
+    }
+
+    if (!node.children || !Array.isArray(node.children)) {
+      return '';
     }
 
     const children = serializeToHTML(node.children);
@@ -58,43 +79,67 @@ const deserializeFromHTML = (html) => {
     return [{ type: 'paragraph', children: [{ text: '' }] }];
   }
 
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-  const body = doc.body;
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const body = doc.body;
 
-  const deserializeNode = (node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      return node.textContent ? [{ text: node.textContent }] : [];
-    }
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-      return [];
-    }
+    const deserializeNode = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        return node.textContent ? [{ text: node.textContent }] : [];
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) {
+        return [];
+      }
 
-    const children = Array.from(node.childNodes).flatMap(deserializeNode);
-    switch (node.tagName.toLowerCase()) {
-      case 'p':
-        return [{ type: 'paragraph', children: children.length ? children : [{ text: '' }] }];
-      case 'pre':
-        return [{ type: 'code-block', children: children.length ? children : [{ text: '' }] }];
-      case 'ul':
-        return [{ type: 'bulleted-list', children: children.length ? children : [{ type: 'list-item', children: [{ text: '' }] }] }];
-      case 'ol':
-        return [{ type: 'numbered-list', children: children.length ? children : [{ type: 'list-item', children: [{ text: '' }] }] }];
-      case 'li':
-        return [{ type: 'list-item', children: children.length ? children : [{ text: '' }] }];
-      case 'strong':
-        return children.map(child => ({ ...child, bold: true }));
-      case 'em':
-        return children.map(child => ({ ...child, italic: true }));
-      case 'code':
-        return children.map(child => ({ ...child, code: true }));
-      default:
-        return children;
-    }
-  };
+      const children = Array.from(node.childNodes).flatMap(deserializeNode);
+      const validChildren = children.length ? children : [{ text: '' }];
+      
+      switch (node.tagName.toLowerCase()) {
+        case 'p':
+          return [{ type: 'paragraph', children: validChildren }];
+        case 'pre':
+          return [{ type: 'code-block', children: validChildren }];
+        case 'ul':
+          return [{ type: 'bulleted-list', children: validChildren.map(child => 
+            child.type === 'list-item' ? child : { type: 'list-item', children: [child] }
+          ) }];
+        case 'ol':
+          return [{ type: 'numbered-list', children: validChildren.map(child =>
+            child.type === 'list-item' ? child : { type: 'list-item', children: [child] }
+          ) }];
+        case 'li':
+          return [{ type: 'list-item', children: validChildren }];
+        case 'strong':
+          return children.map(child => Text.isText(child) ? { ...child, bold: true } : child);
+        case 'em':
+          return children.map(child => Text.isText(child) ? { ...child, italic: true } : child);
+        case 'code':
+          return children.map(child => Text.isText(child) ? { ...child, code: true } : child);
+        case 'br':
+          return [{ text: '\n' }];
+        default:
+          return children.length ? children : [{ text: '' }];
+      }
+    };
 
-  const nodes = Array.from(body.childNodes).flatMap(deserializeNode);
-  return nodes.length ? nodes : [{ type: 'paragraph', children: [{ text: '' }] }];
+    const nodes = Array.from(body.childNodes).flatMap(deserializeNode);
+    const validNodes = nodes.length ? nodes : [{ type: 'paragraph', children: [{ text: '' }] }];
+    
+    // Ensure all nodes are valid
+    return validNodes.map(node => {
+      if (Text.isText(node)) {
+        return { type: 'paragraph', children: [node] };
+      }
+      if (!node.children || !Array.isArray(node.children)) {
+        return { ...node, children: [{ text: '' }] };
+      }
+      return node;
+    });
+  } catch (error) {
+    console.error('Error deserializing HTML:', error);
+    return [{ type: 'paragraph', children: [{ text: '' }] }];
+  }
 };
 
 // Leaf component for rendering text with marks
@@ -213,30 +258,94 @@ const Toolbar = () => {
   );
 };
 
+// Validate and fix Slate node structure
+const validateSlateValue = (value) => {
+  if (!value || !Array.isArray(value) || value.length === 0) {
+    return [{ type: 'paragraph', children: [{ text: '' }] }];
+  }
+
+  const fixNode = (node) => {
+    if (!node || typeof node !== 'object') {
+      return { text: '' };
+    }
+
+    if (Text.isText(node)) {
+      return { text: node.text || '', ...node };
+    }
+
+    const children = node.children && Array.isArray(node.children)
+      ? node.children.map(fixNode).filter(Boolean)
+      : [{ text: '' }];
+
+    return {
+      ...node,
+      children: children.length > 0 ? children : [{ text: '' }],
+      type: node.type || 'paragraph'
+    };
+  };
+
+  try {
+    return value.map(fixNode).filter(Boolean);
+  } catch (error) {
+    console.error('Error validating Slate value:', error);
+    return [{ type: 'paragraph', children: [{ text: '' }] }];
+  }
+};
+
 // Slate editor component
 const RichTextEditor = ({ value, onChange, placeholder, className }) => {
+  // Create new editor instance only once
   const editor = useMemo(() => withHistory(withFormatting(withReact(createEditor()))), []);
+  
+  // Ensure value is always valid for Slate
+  const safeValue = useMemo(() => validateSlateValue(value), [value]);
+  
   const renderElement = useCallback(props => <Element {...props} />, []);
   const renderLeaf = useCallback(props => <Leaf {...props} />, []);
+
+  // Wrap onChange to ensure valid values
+  const handleChange = useCallback((newValue) => {
+    try {
+      const validatedValue = validateSlateValue(newValue);
+      onChange(validatedValue);
+    } catch (error) {
+      console.error('Error in RichTextEditor onChange:', error);
+    }
+  }, [onChange]);
 
   const handleKeyDown = event => {
     if (isHotkey('mod+b', event)) {
       event.preventDefault();
-      Editor.addMark(editor, 'bold', true);
+      const isActive = Editor.marks(editor)?.bold;
+      if (isActive) {
+        Editor.removeMark(editor, 'bold');
+      } else {
+        Editor.addMark(editor, 'bold', true);
+      }
     }
     if (isHotkey('mod+i', event)) {
       event.preventDefault();
-      Editor.addMark(editor, 'italic', true);
+      const isActive = Editor.marks(editor)?.italic;
+      if (isActive) {
+        Editor.removeMark(editor, 'italic');
+      } else {
+        Editor.addMark(editor, 'italic', true);
+      }
     }
     if (isHotkey('mod+`', event)) {
       event.preventDefault();
-      Editor.addMark(editor, 'code', true);
+      const isActive = Editor.marks(editor)?.code;
+      if (isActive) {
+        Editor.removeMark(editor, 'code');
+      } else {
+        Editor.addMark(editor, 'code', true);
+      }
     }
   };
 
   return (
     <div className={`border border-gray-200 rounded-lg bg-white ${className}`}>
-      <Slate editor={editor} initialValue={value} onChange={onChange}>
+      <Slate editor={editor} initialValue={safeValue} onChange={handleChange}>
         <Toolbar />
         <Editable
           renderElement={renderElement}
@@ -297,6 +406,7 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
   const [options, setOptions] = useState(
     (Array.isArray(initialData?.options) ? initialData.options : ['', '', '', '']).map(opt => deserializeFromHTML(opt))
   );
+
   const [correctOption, setCorrectOption] = useState(initialData?.correctOption || 0);
   const [correctOptions, setCorrectOptions] = useState(initialData?.correctOptions || []);
   const [codeSnippet, setCodeSnippet] = useState(deserializeFromHTML(initialData?.codeSnippet || ''));
@@ -324,11 +434,60 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
     (defaultClassId ? [defaultClassId] : [])
   );
   const [inputErrors, setInputErrors] = useState(testCases.map(() => ''));
+  // Use initialData ID or timestamp to force editor remount only when question changes
+  const editorResetKey = useMemo(() => initialData?._id || initialData?.id || Date.now(), [initialData?._id, initialData?.id]);
+
+  // Update state when initialData changes (for edit mode)
+  useEffect(() => {
+    if (initialData) {
+      setType(initialData.type || 'singleCorrectMcq');
+      setTitle(deserializeFromHTML(initialData.title || ''));
+      setDescription(deserializeFromHTML(initialData.description || ''));
+      setPoints(initialData.points || 10);
+      setDifficulty(initialData.difficulty || 'easy');
+      setTags(
+        typeof initialData.tags === 'string' 
+          ? initialData.tags 
+          : Array.isArray(initialData.tags) 
+            ? initialData.tags.join(', ') 
+            : ''
+      );
+      setConstraints(deserializeFromHTML(initialData.constraints || ''));
+      setExamples((Array.isArray(initialData.examples) ? initialData.examples : ['']).map(ex => deserializeFromHTML(ex)));
+      setOptions((Array.isArray(initialData.options) ? initialData.options : ['', '', '', '']).map(opt => deserializeFromHTML(opt)));
+      setCorrectOption(initialData.correctOption || 0);
+      setCorrectOptions(initialData.correctOptions || []);
+      setCodeSnippet(deserializeFromHTML(initialData.codeSnippet || ''));
+      setCorrectAnswer(deserializeFromHTML(initialData.correctAnswer || ''));
+      setStarterCode(
+        initialData.starterCode?.map(sc => ({ language: sc.language, code: sc.code })) ||
+        initialData.templateCode?.map(tc => ({ language: tc.language, code: tc.code })) ||
+        []
+      );
+      const tCases = (Array.isArray(initialData.testCases) ? initialData.testCases : [{ input: '', expectedOutput: '', isPublic: true }]).map(tc => ({
+        input: tc.input,
+        expectedOutput: tc.expectedOutput,
+        isPublic: tc.isPublic !== undefined ? tc.isPublic : true,
+      }));
+      setTestCases(tCases);
+      setInputErrors(tCases.map(() => ''));
+      setTimeLimit(initialData.timeLimit || 2);
+      setMemoryLimit(initialData.memoryLimit || 256);
+      setMaxAttempts(initialData.maxAttempts || '');
+      setExplanation(deserializeFromHTML(initialData.explanation || ''));
+      setLanguages(initialData.languages || []);
+      setClassIds(
+        initialData.classIds || 
+        initialData.classes?.map(c => c.classId?.toString()) || 
+        (defaultClassId ? [defaultClassId] : [])
+      );
+    }
+  }, [initialData, defaultClassId]);
 
   const supportedLanguages = ['javascript', 'c', 'cpp', 'java', 'python', 'php', 'ruby', 'go'];
 
   // Default starter code for coding questions
-  const getDefaultStarterCode = (lang) => {
+  const getDefaultStarterCode = useCallback((lang) => {
     switch (lang) {
       case 'c':
       case 'cpp':
@@ -377,20 +536,30 @@ func main() {
       default:
         return '// Write your code here';
     }
-  };
+  }, []);
 
   // Sync starterCode with selected languages
   useEffect(() => {
     if (type === 'coding' || type === 'fillInTheBlanksCoding') {
-      const updatedStarterCode = languages.map(lang => {
-        const existing = starterCode.find(sc => sc.language === lang);
-        return existing || { language: lang, code: getDefaultStarterCode(lang) };
+      setStarterCode(prevStarterCode => {
+        // Map over languages and preserve existing code or use default
+        const updatedStarterCode = languages.map(lang => {
+          const existing = prevStarterCode.find(sc => sc.language === lang);
+          return existing || { language: lang, code: getDefaultStarterCode(lang) };
+        });
+        console.log('[QuestionForm] Syncing starterCode:', {
+          languages,
+          prevStarterCodeLength: prevStarterCode.length,
+          updatedStarterCodeLength: updatedStarterCode.length,
+          prevStarterCode,
+          updatedStarterCode
+        });
+        return updatedStarterCode;
       });
-      setStarterCode(updatedStarterCode);
     } else {
       setStarterCode([]);
     }
-  }, [languages, type]);
+  }, [languages, type, getDefaultStarterCode]);
 
   // Validate test case input for C/C++
   const validateTestCaseInput = (input, lang) => {
@@ -499,6 +668,14 @@ func main() {
   const handleFormSubmit = (e) => {
     e.preventDefault();
 
+    console.log('[QuestionForm] Form submit validation:', {
+      type,
+      languages,
+      starterCodeLength: starterCode.length,
+      starterCode: starterCode.map(sc => ({ language: sc.language, codeLength: sc.code?.length })),
+      testCasesLength: testCases.length
+    });
+
     if (inputErrors.some(error => error)) {
       alert('Please fix test case input errors before submitting.');
       return;
@@ -520,8 +697,27 @@ func main() {
     }
 
     if ((type === 'coding' || type === 'fillInTheBlanksCoding') && starterCode.length !== languages.length) {
-      alert('Please provide starter code for all selected languages.');
+      const missingLanguages = languages.filter(lang => !starterCode.find(sc => sc.language === lang));
+      console.error('[QuestionForm] Starter code validation failed:', {
+        languages,
+        starterCodeLanguages: starterCode.map(sc => sc.language),
+        missingLanguages
+      });
+      if (missingLanguages.length > 0) {
+        alert(`Please provide starter code for: ${missingLanguages.join(', ')}`);
+      } else {
+        alert('Please ensure starter code matches selected languages.');
+      }
       return;
+    }
+
+    // Validate that all starter code entries have actual code
+    if ((type === 'coding' || type === 'fillInTheBlanksCoding')) {
+      const emptyStarterCode = starterCode.filter(sc => !sc.code || sc.code.trim() === '');
+      if (emptyStarterCode.length > 0) {
+        alert(`Please provide code for: ${emptyStarterCode.map(sc => sc.language).join(', ')}`);
+        return;
+      }
     }
 
     if ((type === 'singleCorrectMcq' || type === 'multipleCorrectMcq') && options.length < 2) {
@@ -563,7 +759,7 @@ func main() {
       questionData.correctAnswer = serializeToHTML(correctAnswer);
     } else if (type === 'fillInTheBlanksCoding') {
       questionData.languages = languages;
-      questionData.starterCode = starterCode.map(sc => ({
+      questionData.templateCode = starterCode.map(sc => ({
         language: sc.language,
         code: sc.code,
       }));
@@ -576,7 +772,7 @@ func main() {
       questionData.memoryLimit = Number(memoryLimit);
     } else if (type === 'coding') {
       questionData.languages = languages;
-      questionData.starterCode = starterCode.map(sc => ({
+      questionData.templateCode = starterCode.map(sc => ({
         language: sc.language,
         code: sc.code,
       }));
@@ -661,6 +857,7 @@ func main() {
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Title</label>
             <RichTextEditor
+              key={`title-${editorResetKey}`}
               value={title}
               onChange={setTitle}
               placeholder="Enter question title"
@@ -674,6 +871,7 @@ func main() {
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Description</label>
             <RichTextEditor
+              key={`description-${editorResetKey}`}
               value={description}
               onChange={setDescription}
               placeholder="Provide detailed question description"
@@ -687,6 +885,7 @@ func main() {
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Explanation</label>
             <RichTextEditor
+              key={`explanation-${editorResetKey}`}
               value={explanation}
               onChange={setExplanation}
               placeholder="Provide explanation for the correct answer"
@@ -746,6 +945,7 @@ func main() {
             {options.map((option, idx) => (
               <div key={idx} className="flex items-start gap-3">
                 <RichTextEditor
+                  key={`option-${idx}-${editorResetKey}`}
                   value={option}
                   onChange={value => handleOptionChange(idx, value)}
                   placeholder={`Option ${idx + 1}`}
@@ -814,6 +1014,7 @@ func main() {
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">Correct Answer</label>
               <RichTextEditor
+                key={`correctAnswer-${editorResetKey}`}
                 value={correctAnswer}
                 onChange={setCorrectAnswer}
                 placeholder="Correct answer"
@@ -876,6 +1077,7 @@ func main() {
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Constraints</label>
                 <RichTextEditor
+                  key={`constraints-${editorResetKey}`}
                   value={constraints}
                   onChange={setConstraints}
                   placeholder="e.g., 1 <= n <= 10^5"
@@ -891,6 +1093,7 @@ func main() {
                 {examples.map((example, idx) => (
                   <div key={idx} className="flex items-start gap-3 mb-4">
                     <RichTextEditor
+                      key={`example-${idx}-${editorResetKey}`}
                       value={example}
                       onChange={value => handleExampleChange(idx, value)}
                       placeholder={`Example ${idx + 1}`}

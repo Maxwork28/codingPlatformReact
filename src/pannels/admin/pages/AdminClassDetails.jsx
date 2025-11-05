@@ -50,6 +50,16 @@ const AdminClassDetails = () => {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [classData, setClassData] = useState(null);
+  const [toast, setToast] = useState({ show: false, message: '', type: '' });
+  
+  // Toast notification helper
+  const showToast = (message, type = 'info') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => {
+      setToast({ show: false, message: '', type: '' });
+    }, 5000); // Auto-dismiss after 5 seconds
+  };
+  
   const [classQuestions, setClassQuestions] = useState([]);
   const [allAvailableQuestions, setAllAvailableQuestions] = useState([]);
   const [filteredQuestions, setFilteredQuestions] = useState([]);
@@ -308,28 +318,39 @@ const AdminClassDetails = () => {
       await createAssignment(classId, assignmentForm);
       await fetchAssignments(classId);
       setAssignmentForm({ questionId: '', maxPoints: '', dueDate: '' });
-      setMessage('Assignment created successfully');
+      const successMsg = 'Assignment created successfully';
+      setMessage(successMsg);
       setError('');
+      showToast(successMsg, 'success');
       console.log('handleCreateAssignment success');
     } catch (err) {
       console.error('handleCreateAssignment error', err);
-      setError(err.message || 'Failed to create assignment');
+      const errorMsg = typeof err === 'string' ? err : (err.message || 'Failed to create assignment');
+      setError(errorMsg);
       setMessage('');
+      showToast(errorMsg, 'error');
     }
   };
 
   const handleDeleteAssignment = async (assignmentId) => {
     console.log('handleDeleteAssignment called', { classId, assignmentId });
+    if (!confirm('Are you sure you want to delete this assignment?')) {
+      return;
+    }
     try {
       await deleteAssignment(classId, assignmentId);
       await fetchAssignments(classId);
-      setMessage('Assignment deleted successfully');
+      const successMsg = 'Assignment deleted successfully';
+      setMessage(successMsg);
       setError('');
+      showToast(successMsg, 'success');
       console.log('handleDeleteAssignment success');
     } catch (err) {
       console.error('handleDeleteAssignment error', err);
-      setError(err.message || 'Failed to delete assignment');
+      const errorMsg = typeof err === 'string' ? err : (err.message || 'Failed to delete assignment');
+      setError(errorMsg);
       setMessage('');
+      showToast(errorMsg, 'error');
     }
   };
 
@@ -475,7 +496,9 @@ const AdminClassDetails = () => {
   const handleAttachQuestion = async () => {
     console.log('handleAttachQuestion called', { classId, selectedQuestionId });
     if (!selectedQuestionId) {
-      setError('Please select a question to attach');
+      const errorMsg = 'Please select a question to attach';
+      setError(errorMsg);
+      showToast(errorMsg, 'warning');
       return;
     }
     try {
@@ -484,13 +507,22 @@ const AdminClassDetails = () => {
       setSelectedQuestionId('');
       setQuestionSearchKeyword('');
       setFilteredQuestions(allAvailableQuestions);
-      setMessage('Question attached to class successfully');
+      const successMsg = 'Question attached to class successfully';
+      setMessage(successMsg);
       setError('');
+      showToast(successMsg, 'success');
       console.log('handleAttachQuestion success');
     } catch (err) {
       console.error('handleAttachQuestion error', err);
-      setError(err.message || 'Failed to attach question to class');
+      const errorMsg = typeof err === 'string' ? err : (err.message || 'Failed to attach question to class');
+      setError(errorMsg);
       setMessage('');
+      // Show specific error message based on error type
+      if (errorMsg.toLowerCase().includes('already assigned')) {
+        showToast('This question is already attached to this class. Please select a different question.', 'warning');
+      } else {
+        showToast(errorMsg, 'error');
+      }
     }
   };
 
@@ -619,6 +651,77 @@ const AdminClassDetails = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Toast Notification */}
+      {toast.show && (
+        <div className="fixed top-4 right-4 z-50 animate-slide-in-right">
+          <div className={`rounded-lg shadow-2xl border-l-4 p-4 max-w-md backdrop-blur-sm ${
+            toast.type === 'success' ? 'bg-green-50/95 border-green-500' :
+            toast.type === 'error' ? 'bg-red-50/95 border-red-500' :
+            toast.type === 'warning' ? 'bg-yellow-50/95 border-yellow-500' :
+            'bg-blue-50/95 border-blue-500'
+          }`}>
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                {toast.type === 'success' && (
+                  <svg className="h-6 w-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+                {toast.type === 'error' && (
+                  <svg className="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+                {toast.type === 'warning' && (
+                  <svg className="h-6 w-6 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                )}
+                {toast.type === 'info' && (
+                  <svg className="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+              </div>
+              <div className="ml-3 flex-1">
+                <p className={`text-sm font-semibold ${
+                  toast.type === 'success' ? 'text-green-800' :
+                  toast.type === 'error' ? 'text-red-800' :
+                  toast.type === 'warning' ? 'text-yellow-800' :
+                  'text-blue-800'
+                }`}>
+                  {toast.type === 'success' ? 'Success!' :
+                   toast.type === 'error' ? 'Error!' :
+                   toast.type === 'warning' ? 'Warning!' :
+                   'Info'}
+                </p>
+                <p className={`mt-1 text-sm ${
+                  toast.type === 'success' ? 'text-green-700' :
+                  toast.type === 'error' ? 'text-red-700' :
+                  toast.type === 'warning' ? 'text-yellow-700' :
+                  'text-blue-700'
+                }`}>
+                  {toast.message}
+                </p>
+              </div>
+              <button
+                onClick={() => setToast({ show: false, message: '', type: '' })}
+                className={`ml-4 flex-shrink-0 rounded-lg p-1 hover:bg-white/50 transition-colors ${
+                  toast.type === 'success' ? 'text-green-500' :
+                  toast.type === 'error' ? 'text-red-500' :
+                  toast.type === 'warning' ? 'text-yellow-500' :
+                  'text-blue-500'
+                }`}
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-10 flex justify-between items-center">
         <div>
           <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight">
@@ -1173,33 +1276,39 @@ const AdminClassDetails = () => {
                <>
                <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 overflow-x-auto">
                  <table className="min-w-full divide-y divide-gray-200">
-                   <thead className="bg-gray-50">
-                     <tr>
-                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                         Title
-                       </th>
-                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                         Description
-                       </th>
-                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                         Type
-                       </th>
-                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                         Points
-                       </th>
-                     </tr>
-                   </thead>
-                   <tbody className="divide-y divide-gray-200">
-                     {currentQuestions.map((question) => (
-                       <tr key={question._id}>
-                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                           {stripHtml(question.title)}
-                         </td>
-                         <td className="px-6 py-4 text-sm text-gray-500">{stripHtml(question.description)}</td>
-                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.type}</td>
-                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.points}</td>
-                       </tr>
-                     ))}
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Question ID
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Title
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Description
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Type
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Points
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {currentQuestions.map((question) => (
+                      <tr key={question._id}>
+                        <td className="px-6 py-4 text-sm text-gray-500">
+                          <code className="px-2 py-1 bg-gray-100 rounded text-xs font-mono">{question._id}</code>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {stripHtml(question.title)}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-500">{stripHtml(question.description)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.type}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.points}</td>
+                      </tr>
+                    ))}
                    </tbody>
                  </table>
                </div>
