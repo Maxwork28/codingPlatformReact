@@ -4,6 +4,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { fetchClasses } from '../../../common/components/redux/classSlice';
 import { getQuestion, editQuestion } from '../../../common/services/api';
 import QuestionForm from './QuestionForm';
+import { ArrowLeftIcon, CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 
 const QuestionEdit = () => {
   const { questionId } = useParams();
@@ -21,7 +22,7 @@ const QuestionEdit = () => {
   useEffect(() => {
     if (classStatus === 'idle' && user) {
       console.log('[QuestionEdit] Dispatching fetchClasses', { userId: user.id });
-      dispatch(fetchClasses());
+      dispatch(fetchClasses(''));
     }
   }, [classStatus, dispatch, user]);
 
@@ -114,7 +115,7 @@ const QuestionEdit = () => {
 
   if (!user) {
     return (
-      <div className="p-6">
+      <div className="p-6 backdrop-blur-sm rounded-2xl shadow-lg border" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
         <p className="text-red-700 font-semibold text-center">You must be logged in to view this page.</p>
       </div>
     );
@@ -123,7 +124,7 @@ const QuestionEdit = () => {
   if (isLoading) {
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-60 flex items-center justify-center z-50">
-        <div className="bg-white/90 backdrop-blur-sm p-8 rounded-2xl shadow-xl max-w-sm w-full">
+        <div className="backdrop-blur-sm p-8 rounded-2xl shadow-xl max-w-sm w-full" style={{ backgroundColor: 'var(--card-white)' }}>
           <div className="flex items-center justify-center">
             <svg
               className="animate-spin h-10 w-10 text-indigo-600"
@@ -145,7 +146,7 @@ const QuestionEdit = () => {
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               ></path>
             </svg>
-            <span className="ml-4 text-lg font-semibold text-gray-800">Loading...</span>
+            <span className="ml-4 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Loading...</span>
           </div>
         </div>
       </div>
@@ -155,21 +156,10 @@ const QuestionEdit = () => {
   if (error) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6 p-4 rounded-xl bg-red-50/80 backdrop-blur-sm border border-red-200 shadow-sm">
+        <div className="mb-6 p-6 rounded-xl bg-red-50/80 backdrop-blur-sm border border-red-200 shadow-sm">
           <div className="flex items-center">
-            <svg
-              className="h-6 w-6 text-red-500"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <p className="ml-3 text-sm font-semibold text-red-800">{error}</p>
+            <ExclamationTriangleIcon className="h-6 w-6 text-red-500 flex-shrink-0 mr-3" />
+            <p className="text-sm font-semibold text-red-800">{error}</p>
           </div>
         </div>
       </div>
@@ -178,7 +168,7 @@ const QuestionEdit = () => {
 
   if (classStatus === 'loading') {
     return (
-      <div className="flex justify-center items-center py-16 bg-white/50 backdrop-blur-sm rounded-xl shadow-lg">
+      <div className="flex justify-center items-center py-16 backdrop-blur-sm rounded-xl shadow-lg border" style={{ backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }}>
         <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
@@ -187,19 +177,8 @@ const QuestionEdit = () => {
   if (classStatus === 'failed') {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center p-4 mb-6 bg-red-50/80 backdrop-blur-sm rounded-xl shadow-sm border border-red-200">
-          <svg
-            className="h-6 w-6 text-red-500 mr-3"
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-          >
-            <path
-              fillRule="evenodd"
-              d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-              clipRule="evenodd"
-            />
-          </svg>
+        <div className="flex items-center p-6 mb-6 bg-red-50/80 backdrop-blur-sm rounded-xl shadow-sm border border-red-200">
+          <ExclamationTriangleIcon className="h-6 w-6 text-red-500 mr-3 flex-shrink-0" />
           <div>
             <h3 className="text-sm font-semibold text-red-800">Error loading classes</h3>
             <p className="mt-1 text-sm text-red-700">Failed to load classes. Please try again.</p>
@@ -211,51 +190,37 @@ const QuestionEdit = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="flex items-center mb-8">
+      {/* Enhanced Header */}
+      <div className="flex items-center mb-8 space-x-4">
         <Link
           to={initialData?.classId ? `/teacher/classes/${initialData.classId}` : '/teacher/questions'}
-          className="mr-4 p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200"
+          className="p-3 rounded-xl transition-all duration-200 shadow-sm hover:shadow-md"
+          style={{ backgroundColor: 'var(--background-light)', color: 'var(--text-primary)' }}
+          aria-label="Go back"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-5 w-5 text-gray-600"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-          >
-            <path
-              fillRule="evenodd"
-              d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
-              clipRule="evenodd"
-            />
-          </svg>
+          <ArrowLeftIcon className="h-5 w-5" />
         </Link>
-        <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight">
-          Edit Question
-        </h2>
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight" style={{ color: 'var(--text-heading)' }}>
+            Edit Question
+          </h2>
+          <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>Update question details and settings</p>
+        </div>
       </div>
 
+      {/* Enhanced Success Message */}
       {message && (
-        <div className="mb-6 p-4 rounded-xl bg-green-50/80 backdrop-blur-sm border border-green-200 shadow-sm">
+        <div className="mb-6 p-6 rounded-xl bg-green-50/80 backdrop-blur-sm border border-green-200 shadow-sm">
           <div className="flex items-center">
-            <svg
-              className="h-6 w-6 text-green-500"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <p className="ml-3 text-sm font-semibold text-green-800">{message}</p>
+            <CheckCircleIcon className="h-6 w-6 text-green-500 flex-shrink-0 mr-3" />
+            <p className="text-sm font-semibold text-green-800">{message}</p>
           </div>
         </div>
       )}
 
+      {/* Enhanced Form Container */}
       {classStatus === 'succeeded' && initialData && (
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
+        <div className="backdrop-blur-sm rounded-2xl shadow-lg p-8 border hover:shadow-xl transition-all duration-300" style={{ backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }}>
           <QuestionForm
             onSubmit={handleSubmit}
             initialData={initialData}

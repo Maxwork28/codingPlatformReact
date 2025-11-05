@@ -8,24 +8,13 @@ import { ChevronDownIcon, ChevronUpIcon, TrashIcon, PlusIcon } from '@heroicons/
 // Unchanged: withFormatting, serializeToHTML, deserializeFromHTML, Leaf, Element, Toolbar, RichTextEditor, CollapsibleSection
 const withFormatting = editor => {
   const { insertData, insertText } = editor;
-
   editor.insertData = data => {
-    const text = data.getData('text/plain');
-    const html = data.getData('text/html');
-    
-    if (html) {
-      // Handle HTML paste
-      const fragment = deserializeFromHTML(html);
-      Transforms.insertFragment(editor, fragment);
-    } else if (text) {
-      // Handle plain text paste
-      insertText(text);
+    if (data.get('Text')) {
+      insertText(data.get('Text'));
     } else {
-      // Fallback to default behavior
       insertData(data);
     }
   };
-
   return editor;
 };
 
@@ -275,17 +264,6 @@ const RichTextEditor = ({ value, onChange, placeholder, className }) => {
     }
   };
 
-  const handlePaste = event => {
-    // Let the default paste behavior handle it
-    // The withFormatting plugin will process the pasted content
-    console.log('[RichTextEditor] Paste event triggered', {
-      clipboardData: event.clipboardData,
-      hasText: event.clipboardData?.getData('text/plain'),
-      hasHTML: event.clipboardData?.getData('text/html')
-    });
-    // Don't prevent default - let Slate handle the paste
-  };
-
   return (
     <div className={`border border-gray-200 rounded-lg bg-white ${className}`}>
       <Slate editor={editor} initialValue={initialValue} onChange={handleChange}>
@@ -295,11 +273,7 @@ const RichTextEditor = ({ value, onChange, placeholder, className }) => {
           renderLeaf={renderLeaf}
           placeholder={placeholder}
           onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
           className="p-3 min-h-[100px] focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-b-lg"
-          spellCheck={false}
-          autoCorrect="off"
-          autoComplete="off"
         />
       </Slate>
     </div>
@@ -768,20 +742,6 @@ func main() {
               placeholder="Leave blank for unlimited"
             />
           </div>
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Test Copy-Paste</label>
-            <input
-              type="text"
-              placeholder="Try copying and pasting text here"
-              className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
-              onPaste={(e) => {
-                console.log('[Test Input] Paste event triggered', {
-                  clipboardData: e.clipboardData,
-                  hasText: e.clipboardData?.getData('text/plain')
-                });
-              }}
-            />
-          </div>
         </div>
         {classes.length > 0 && (
           <div className="mt-6">
@@ -868,12 +828,6 @@ func main() {
             <input
               value={tags}
               onChange={(e) => setTags(e.target.value)}
-              onPaste={(e) => {
-                console.log('[Tags Input] Paste event triggered', {
-                  clipboardData: e.clipboardData,
-                  hasText: e.clipboardData?.getData('text/plain')
-                });
-              }}
               className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
               placeholder="e.g., array, sorting, algorithm"
             />

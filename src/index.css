@@ -1,1 +1,211 @@
 @import "tailwindcss";
+
+/* Import Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* Light Mode Color Palette */
+:root {
+  --primary-navy: #2C3E50;      /* Primary background (sidebar, header) */
+  --text-primary: #1e293b;      /* Text (slate-800) */
+  --text-secondary: #64748b;    /* Subtle text (slate-500) */
+  --background-light: #f8fafc;  /* Background (slate-50) */
+  --background-content: #ffffff; /* Main content background */
+  --card-white: #ffffff;        /* Cards (white) */
+  --card-border: #e2e8f0;       /* Borders (light gray) */
+  
+  /* Neutral badge (works in both themes) */
+  --pill-muted-bg: #e5e7eb;     /* gray-200 */
+  --pill-muted-text: #374151;   /* gray-700/800 */
+  
+  /* Subject-specific icon colors (20% less saturated) */
+  --python-blue: #2563eb;       /* Python (darker blue) */
+  --data-emerald: #059669;      /* Data Structures (darker green) */
+  --oop-amber: #d97706;         /* OOP (darker amber) */
+  --database-violet: #7c3aed;   /* Database (darker purple) */
+  --competition-red: #dc2626;   /* Competition (darker red) */
+  --software-cyan: #0891b2;     /* Software Eng (darker cyan) */
+  
+  /* Question badges */
+  --badge-slate: #64748b;       /* Question badges (slate-500) */
+  
+  /* Button Gradient */
+  --button-gradient: linear-gradient(to right, #3b82f6, #8b5cf6);
+  
+  /* Highlight colors */
+  --highlight-blue: #3b82f6;
+  --accent-blue: #1d4ed8;
+  --primary-blue: #3b82f6;
+  --primary-indigo: #6366f1;
+  --text-heading: #1e293b;
+}
+
+/* Dark Mode Color Palette */
+[data-theme="dark"] {
+  --primary-navy: #1a202c;      /* Darker primary background */
+  --text-primary: #f1f5f9;      /* Light text */
+  --text-secondary: #94a3b8;    /* Light subtle text */
+  --background-light: #1e293b;  /* Dark background */
+  --background-content: #0f172a; /* Dark main content background */
+  --card-white: #1e293b;        /* Dark cards */
+  --card-border: #334155;       /* Dark borders */
+  
+  /* Neutral badge (works in both themes) */
+  --pill-muted-bg: #334155;     /* slate-700 */
+  --pill-muted-text: #e2e8f0;   /* gray-200 */
+  
+  /* Subject-specific icon colors (adjusted for dark mode) */
+  --python-blue: #60a5fa;       /* Lighter blue for dark mode */
+  --data-emerald: #34d399;      /* Lighter green for dark mode */
+  --oop-amber: #fbbf24;         /* Lighter amber for dark mode */
+  --database-violet: #a78bfa;   /* Lighter purple for dark mode */
+  --competition-red: #f87171;   /* Lighter red for dark mode */
+  --software-cyan: #22d3ee;     /* Lighter cyan for dark mode */
+  
+  /* Question badges */
+  --badge-slate: #94a3b8;       /* Light badges for dark mode */
+  
+  /* Button Gradient */
+  --button-gradient: linear-gradient(to right, #60a5fa, #a78bfa);
+  
+  /* Highlight colors */
+  --highlight-blue: #60a5fa;
+  --accent-blue: #3b82f6;
+  --primary-blue: #60a5fa;
+  --primary-indigo: #818cf8;
+  --text-heading: #f1f5f9;
+}
+
+/* Apply Inter font family globally */
+* {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Ensure headings follow theme colors */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--text-heading);
+}
+[data-theme="dark"] h1,
+[data-theme="dark"] h2,
+[data-theme="dark"] h3,
+[data-theme="dark"] h4,
+[data-theme="dark"] h5,
+[data-theme="dark"] h6 {
+  color: var(--text-heading);
+}
+
+/* Smooth transitions for theme switching */
+* {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Custom styles can be added below */
+
+/* Ensure placeholder text is visible in dark mode */
+input::placeholder {
+  color: var(--text-secondary);
+  opacity: 1;
+}
+
+/* Ensure proper focus states for inputs */
+input:focus {
+  outline: none;
+  border-color: var(--primary-blue);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+/* Dark mode specific focus states */
+[data-theme="dark"] input:focus {
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2);
+}
+
+/* Softer, lighter form fields in dark mode (contrast against dark content bg) */
+[data-theme="dark"] input,
+[data-theme="dark"] textarea,
+[data-theme="dark"] select {
+  background-color: #374151; /* gray-700: lighter than content bg */
+  border-color: #4b5563;     /* gray-600 */
+  color: #e5e7eb;            /* gray-200 */
+}
+
+[data-theme="dark"] input:hover,
+[data-theme="dark"] textarea:hover,
+[data-theme="dark"] select:hover {
+  background-color: #3f4957; /* slightly lighter on hover */
+}
+
+[data-theme="dark"] input::file-selector-button {
+  background-color: #4b5563; /* gray-600 button */
+  color: #ffffff;
+}
+
+[data-theme="dark"] input::file-selector-button:hover {
+  background-color: #6b7280; /* gray-500 hover */
+}
+
+/* Ensure all text is visible in dark mode */
+[data-theme="dark"] {
+  color: var(--text-primary);
+}
+
+/* Ensure icons are visible in dark mode */
+[data-theme="dark"] svg {
+  color: inherit;
+}
+
+/* Ensure proper contrast for gray text in dark mode */
+[data-theme="dark"] .text-gray-400,
+[data-theme="dark"] .text-gray-500,
+[data-theme="dark"] .text-gray-600 {
+  color: var(--text-secondary) !important;
+}
+
+/* Ensure proper contrast for gray backgrounds in dark mode */
+[data-theme="dark"] .bg-gray-50,
+[data-theme="dark"] .bg-gray-100 {
+  background-color: var(--background-light) !important;
+}
+
+/* Hard overrides so light utility classes render correctly in dark theme */
+[data-theme="dark"] .bg-white { background-color: var(--background-content) !important; }
+[data-theme="dark"] .text-gray-900 { color: var(--text-primary) !important; }
+[data-theme="dark"] .text-gray-800 { color: var(--text-primary) !important; }
+[data-theme="dark"] .text-gray-700 { color: var(--text-secondary) !important; }
+[data-theme="dark"] .border-gray-200 { border-color: var(--card-border) !important; }
+[data-theme="dark"] .border-gray-300 { border-color: var(--card-border) !important; }
+[data-theme="dark"] .bg-gray-900 { background-color: #0f172a !important; }
+[data-theme="dark"] .bg-gray-800 { background-color: #1f2937 !important; }
+[data-theme="dark"] .bg-gray-700 { background-color: #374151 !important; }
+
+/* Ensure code/editor side containers get dark text contrast */
+[data-theme="dark"] pre, [data-theme="dark"] code { color: #e5e7eb; }
+
+/* Dark mode scrollbar styling */
+[data-theme="dark"] {
+  scrollbar-color: #4b5563 #0b1220; /* thumb color | track color */
+  scrollbar-width: thin;
+}
+
+[data-theme="dark"] *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+[data-theme="dark"] *::-webkit-scrollbar-track {
+  background: #0b1220; /* near bg-gray-900 */
+}
+[data-theme="dark"] *::-webkit-scrollbar-thumb {
+  background: #374151; /* gray-700 */
+  border-radius: 8px;
+  border: 2px solid #0b1220;
+}
+[data-theme="dark"] *::-webkit-scrollbar-thumb:hover {
+  background: #4b5563; /* gray-600 */
+}
+
+/* Ensure theme toggle icons are always visible */
+.theme-toggle svg {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+}
+
+[data-theme="dark"] .theme-toggle svg {
+  filter: drop-shadow(0 1px 2px rgba(255, 255, 255, 0.1));
+}

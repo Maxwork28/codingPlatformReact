@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+  import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useSelector, shallowEqual } from 'react-redux';
 import { format } from 'date-fns';
-import { Menu, Transition, Dialog, Disclosure } from '@headlessui/react';
+import { Menu, Transition, Dialog, Disclosure, Tab } from '@headlessui/react';
 import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -61,6 +61,23 @@ const ClassDetails = () => {
   const [formErrors, setFormErrors] = useState({});
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // Search and pagination for assignments
+  const [assignmentSearch, setAssignmentSearch] = useState('');
+  const [assignmentCurrentPage, setAssignmentCurrentPage] = useState(1);
+  const [assignmentItemsPerPage] = useState(5);
+
+  // Filter assignments based on search
+  const filteredAssignments = assignmentSearch === ''
+    ? assignments
+    : assignments.filter((assignment) =>
+        (assignment.questionId?.title || '').toLowerCase().includes(assignmentSearch.toLowerCase())
+      );
+
+  const assignmentIndexOfLastItem = assignmentCurrentPage * assignmentItemsPerPage;
+  const assignmentIndexOfFirstItem = assignmentIndexOfLastItem - assignmentItemsPerPage;
+  const currentAssignments = filteredAssignments.slice(assignmentIndexOfFirstItem, assignmentIndexOfLastItem);
+  const assignmentTotalPages = Math.ceil(filteredAssignments.length / assignmentItemsPerPage);
 
   console.log('[ClassDetails] Component mounted', { classId, user });
 
@@ -840,6 +857,29 @@ const ClassDetails = () => {
         </div>
       )}
 
+      {/* Tab Navigation */}
+      <Tab.Group>
+        <Tab.List className="flex space-x-1 rounded-xl bg-gray-100 dark:bg-gray-800 p-1 mb-6">
+          {['Analytics', 'Students', 'Management'].map((category) => (
+            <Tab
+              key={category}
+              className={({ selected }) =>
+                `w-full rounded-lg py-2.5 text-sm font-medium leading-5 transition-all duration-200 focus:outline-none
+                ${
+                  selected
+                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-white/[0.12] hover:text-gray-900 dark:hover:text-white'
+                }`
+              }
+            >
+              {category}
+            </Tab>
+          ))}
+        </Tab.List>
+
+        <Tab.Panels>
+          {/* Analytics Tab */}
+          <Tab.Panel>
       {/* Participant Statistics */}
       <section className="mb-12">
         <h2 className="text-2xl font-semibold text-gray-800 mb-4">Participant Statistics</h2>
@@ -931,7 +971,10 @@ const ClassDetails = () => {
           )}
         </div>
       </section>
+          </Tab.Panel>
 
+          {/* Students Tab */}
+          <Tab.Panel>
       {/* Student Cards */}
       <section className="mb-12">
         <h2 className="text-2xl font-semibold text-gray-800 mb-4">Students</h2>
@@ -947,7 +990,10 @@ const ClassDetails = () => {
           )}
         </div>
       </section>
+          </Tab.Panel>
 
+          {/* Management Tab */}
+          <Tab.Panel>
       {/* Question Perspective Report */}
       <section className="mb-12">
         <Disclosure>
@@ -1084,30 +1130,102 @@ const ClassDetails = () => {
 
       {/* Assignments List */}
       <section className="mb-12">
-        <h2 className="text-2xl font-semibold text-gray-800 mb-4">Assignments</h2>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-2xl font-semibold text-gray-800">Assignments ({filteredAssignments.length})</h2>
+          <div className="relative">
+            <input
+              type="text"
+              value={assignmentSearch}
+              onChange={(e) => {
+                setAssignmentSearch(e.target.value);
+                setAssignmentCurrentPage(1);
+              }}
+              placeholder="Search assignments..."
+              className="pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+            />
+            <svg className="h-5 w-5 text-gray-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+        </div>
         <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
-          {assignments.length > 0 ? (
-            <ul className="space-y-4">
-              {assignments.map((assignment) => (
-                <li
-                  key={assignment._id}
-                  className="flex justify-between items-center bg-gray-50 p-4 rounded-lg hover:bg-gray-100 transition-colors duration-200"
-                >
-                  <span className="text-sm text-gray-800">
-                    Question: {assignment.questionId.title || assignment.questionId} - Due:{' '}
-                    {format(new Date(assignment.dueDate), 'MM/dd/yyyy HH:mm')} - Points: {assignment.maxPoints}
+          {filteredAssignments.length > 0 ? (
+            <>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Question
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Due Date
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Max Points
+                    </th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {currentAssignments.map((assignment) => (
+                    <tr key={assignment._id}>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                        {assignment.questionId.title || assignment.questionId}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {format(new Date(assignment.dueDate), 'MM/dd/yyyy HH:mm')}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {assignment.maxPoints}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button
+                          onClick={() => handleDeleteAssignment(assignment._id)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {/* Pagination */}
+            {filteredAssignments.length > assignmentItemsPerPage && (
+              <div className="mt-4 flex items-center justify-between">
+                <p className="text-sm text-gray-500">
+                  Showing {assignmentIndexOfFirstItem + 1} to {Math.min(assignmentIndexOfLastItem, filteredAssignments.length)} of {filteredAssignments.length} assignments
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setAssignmentCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={assignmentCurrentPage === 1}
+                    className="px-3 py-1 border rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                  >
+                    Previous
+                  </button>
+                  <span className="px-3 py-1 text-sm text-gray-700">
+                    Page {assignmentCurrentPage} of {assignmentTotalPages}
                   </span>
                   <button
-                    onClick={() => handleDeleteAssignment(assignment._id)}
-                    className="inline-flex items-center px-3 py-1 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-all duration-300"
+                    onClick={() => setAssignmentCurrentPage(p => Math.min(assignmentTotalPages, p + 1))}
+                    disabled={assignmentCurrentPage === assignmentTotalPages}
+                    className="px-3 py-1 border rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                   >
-                    Delete
+                    Next
                   </button>
-                </li>
-              ))}
-            </ul>
+                </div>
+              </div>
+            )}
+            </>
           ) : (
-            <p className="text-gray-500">No assignments available</p>
+            <p className="text-gray-500">
+              {assignmentSearch ? `No assignments found matching "${assignmentSearch}"` : 'No assignments available'}
+            </p>
           )}
         </div>
       </section>
@@ -1282,6 +1400,9 @@ const ClassDetails = () => {
           )}
         </div>
       </section>
+          </Tab.Panel>
+        </Tab.Panels>
+      </Tab.Group>
 
       <StudentDetailsModal />
     </div>

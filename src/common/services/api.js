@@ -142,10 +142,11 @@ export const deleteClass = async (classId) => {
  * Fetches all classes
  * @returns {Promise} Axios response
  */
-export const getClasses = async () => {
-  console.log('getClasses called');
+export const getClasses = async (search = '') => {
+  console.log('getClasses called', { search });
   try {
-    const response = await api.get('/admin/classes');
+    const params = search ? { search } : {};
+    const response = await api.get('/admin/classes', { params });
     console.log('getClasses success', { classes: response.data });
     return response;
   } catch (err) {
@@ -158,10 +159,11 @@ export const getClasses = async () => {
  * Fetches all teachers
  * @returns {Promise} Axios response
  */
-export const getTeachers = async () => {
-  console.log('getTeachers called');
+export const getTeachers = async (search = '') => {
+  console.log('getTeachers called', { search });
   try {
-    const response = await api.get('/admin/teachers');
+    const params = search ? { search } : {};
+    const response = await api.get('/admin/teachers', { params });
     console.log('getTeachers success', { teachers: response.data.teachers });
     return response;
   } catch (err) {
@@ -174,10 +176,11 @@ export const getTeachers = async () => {
  * Fetches all students
  * @returns {Promise} Axios response
  */
-export const getStudents = async () => {
-  console.log('getStudents called');
+export const getStudents = async (search = '') => {
+  console.log('getStudents called', { search });
   try {
-    const response = await api.get('/admin/students');
+    const params = search ? { search } : {};
+    const response = await api.get('/admin/students', { params });
     console.log('getStudents success', { students: response.data.students });
     return response;
   } catch (err) {
@@ -978,6 +981,69 @@ export const runCodeWithCustomInput = async (questionId, answer, classId, langua
   } catch (err) {
     console.error('api: runCodeWithCustomInput error', { error: err.response?.data?.error || 'Failed to run code with custom input' });
     throw err.response?.data?.error || 'Failed to run code with custom input';
+  }
+};
+
+// Teacher Testing Routes (no leaderboard/stats impact)
+/**
+ * Tests code with ALL test cases (public + hidden) - Teacher only
+ * @param {string} questionId - Question ID
+ * @param {string} answer - Code to test
+ * @param {string} classId - Class ID (optional, for verification)
+ * @param {string} language - Programming language
+ * @returns {Promise} Axios response with all test results
+ */
+export const teacherTestQuestion = async (questionId, answer, classId, language) => {
+  console.log('teacherTestQuestion called', { questionId, classId, language });
+  try {
+    const response = await api.post(`/questions/${questionId}/teacher-test`, {
+      answer,
+      classId,
+      language
+    });
+    console.log('teacherTestQuestion success', { 
+      testResults: response.data.testResults,
+      passedTestCases: response.data.passedTestCases,
+      totalTestCases: response.data.totalTestCases,
+      publicTestCases: response.data.publicTestCases,
+      hiddenTestCases: response.data.hiddenTestCases
+    });
+    return response;
+  } catch (err) {
+    console.error('teacherTestQuestion error', { error: err.response?.data?.error || 'Failed to test question' });
+    throw err.response?.data?.error || 'Failed to test question';
+  }
+};
+
+/**
+ * Tests code with custom input - Teacher only
+ * @param {string} questionId - Question ID
+ * @param {string} answer - Code to test
+ * @param {string} classId - Class ID (optional, for verification)
+ * @param {string} language - Programming language
+ * @param {string} customInput - Custom test input
+ * @param {string} expectedOutput - Expected output (optional)
+ * @returns {Promise} Axios response with custom test result
+ */
+export const teacherTestWithCustomInput = async (questionId, answer, classId, language, customInput, expectedOutput) => {
+  console.log('teacherTestWithCustomInput called', { questionId, classId, language, customInput, expectedOutput });
+  try {
+    const response = await api.post(`/questions/${questionId}/teacher-test-custom`, {
+      answer,
+      classId,
+      language,
+      customInput,
+      expectedOutput
+    });
+    console.log('teacherTestWithCustomInput success', { 
+      testResult: response.data.testResult,
+      actualOutput: response.data.actualOutput,
+      passed: response.data.passed
+    });
+    return response;
+  } catch (err) {
+    console.error('teacherTestWithCustomInput error', { error: err.response?.data?.error || 'Failed to test with custom input' });
+    throw err.response?.data?.error || 'Failed to test with custom input';
   }
 };
 

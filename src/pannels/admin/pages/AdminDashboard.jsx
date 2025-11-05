@@ -2,6 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { ChartBarIcon, UsersIcon, AcademicCapIcon, UserGroupIcon } from '@heroicons/react/24/outline';
 import { getCounts } from '../../../common/services/api'; // Import the getCounts function from api.js
+import { IoBookSharp, IoPerson } from "react-icons/io5";
+import { FaRegQuestionCircle } from "react-icons/fa";
+import { PiStudentFill } from "react-icons/pi";
 
 const AdminDashboard = () => {
   // Redux state for classes
@@ -37,16 +40,16 @@ const AdminDashboard = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-10">
-        <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight">
+        <h2 className="text-3xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
           Admin Dashboard
         </h2>
-        <p className="mt-1 text-sm text-gray-500">Overview of classes, students, teachers, and questions.</p>
+        <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>Overview of classes, students, teachers, and questions.</p>
       </div>
 
       {/* Loading State */}
       {(classesStatus === 'loading' || countsStatus === 'loading') && (
-        <div className="flex justify-center items-center py-16 bg-white/50 backdrop-blur-sm rounded-xl shadow-lg">
-          <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+        <div className="flex justify-center items-center py-16 backdrop-blur-sm rounded-xl shadow-lg" style={{ backgroundColor: 'var(--card-white)' }}>
+          <div className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--text-primary)', borderTopColor: 'transparent' }}></div>
         </div>
       )}
 
@@ -74,50 +77,50 @@ const AdminDashboard = () => {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 p-6 transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
+        <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 hover:scale-[1.02] hover:border-gray-400" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
           <div className="flex items-center">
-            <div className="flex-shrink-0 bg-indigo-600 rounded-lg p-3 shadow-sm">
-              <AcademicCapIcon className="h-6 w-6 text-white" />
+            <div className="flex-shrink-0 rounded-lg p-3 shadow-sm bg-white">
+              <IoBookSharp className="h-6 w-6 text-gray-500" />
             </div>
             <div className="ml-5">
-              <p className="text-sm font-medium text-gray-500">Total Classes</p>
-              <p className="text-2xl font-semibold text-gray-900">{counts.classes}</p>
+              <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Total Classes</p>
+              <p className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>{counts.classes}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 p-6 transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
+        <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 hover:scale-[1.02] hover:border-gray-400" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
           <div className="flex items-center">
-            <div className="flex-shrink-0 bg-green-600 rounded-lg p-3 shadow-sm">
-              <UsersIcon className="h-6 w-6 text-white" />
+            <div className="flex-shrink-0 rounded-lg p-3 shadow-sm bg-white">
+              <IoPerson className="h-6 w-6 text-gray-500" />
             </div>
             <div className="ml-5">
-              <p className="text-sm font-medium text-gray-500">Total Students</p>
-              <p className="text-2xl font-semibold text-gray-900">{counts.students}</p>
+              <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Total Students</p>
+              <p className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>{counts.students}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 p-6 transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
+        <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 hover:scale-[1.02] hover:border-gray-400" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
           <div className="flex items-center">
-            <div className="flex-shrink-0 bg-blue-600 rounded-lg p-3 shadow-sm">
-              <ChartBarIcon className="h-6 w-6 text-white" />
+            <div className="flex-shrink-0 rounded-lg p-3 shadow-sm bg-white">
+              <FaRegQuestionCircle className="h-6 w-6 text-gray-500" />
             </div>
             <div className="ml-5">
-              <p className="text-sm font-medium text-gray-500">Total Questions</p>
-              <p className="text-2xl font-semibold text-gray-900">{counts.questions}</p>
+              <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Total Questions</p>
+              <p className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>{counts.questions}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 p-6 transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
+        <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 hover:scale-[1.02] hover:border-gray-400" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
           <div className="flex items-center">
-            <div className="flex-shrink-0 bg-purple-600 rounded-lg p-3 shadow-sm">
-              <UserGroupIcon className="h-6 w-6 text-white" />
+            <div className="flex-shrink-0 rounded-lg p-3 shadow-sm bg-white">
+              <PiStudentFill className="h-6 w-6 text-gray-500" />
             </div>
             <div className="ml-5">
-              <p className="text-sm font-medium text-gray-500">Total Teachers</p>
-              <p className="text-2xl font-semibold text-gray-900">{counts.teachers}</p>
+              <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Total Teachers</p>
+              <p className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>{counts.teachers}</p>
             </div>
           </div>
         </div>

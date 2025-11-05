@@ -2,12 +2,14 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 import { API_BASE_URL } from '../../constants';
 
-export const fetchClasses = createAsyncThunk('classes/fetchClasses', async (_, { getState, rejectWithValue }) => {
+export const fetchClasses = createAsyncThunk('classes/fetchClasses', async (search = '', { getState, rejectWithValue }) => {
   try {
     const { auth } = getState();
-    console.log('classSlice: Fetching classes with token', auth.token);
-    const response = await axios.get(`${API_BASE_URL}/admin/classes`, { // Changed from /admin/classes to /classes
+    console.log('classSlice: Fetching classes with token', auth.token, 'search:', search);
+    const params = search ? { search } : {};
+    const response = await axios.get(`${API_BASE_URL}/admin/classes`, {
       headers: { Authorization: `Bearer ${auth.token}` },
+      params,
     });
     console.log('classSlice: Fetch classes response', response.data);
     return response.data.classes;

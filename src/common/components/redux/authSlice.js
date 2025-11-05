@@ -94,7 +94,12 @@ const authSlice = createSlice({
         state.status = 'succeeded';
         state.token = action.payload.token;
         state.role = action.payload.role;
-        state.user = { id: action.payload.id };
+        state.user = {
+          id: action.payload.id,
+          name: action.payload.name,
+          email: action.payload.email,
+          role: action.payload.role,
+        };
         state.error = null;
         if (!action.payload.id) {
           state.error = 'Login succeeded, but user ID is missing';
@@ -116,7 +121,12 @@ const authSlice = createSlice({
         state.status = 'succeeded';
         state.token = action.payload.token;
         state.role = action.payload.role;
-        state.user = { id: action.payload.id };
+        state.user = {
+          id: action.payload.id,
+          name: action.payload.name,
+          email: action.payload.email,
+          role: action.payload.role,
+        };
         state.error = null;
       })
       .addCase(validateToken.rejected, (state, action) => {

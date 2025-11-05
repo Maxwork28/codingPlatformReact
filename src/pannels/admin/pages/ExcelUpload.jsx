@@ -1,106 +1,89 @@
 import React, { useState } from 'react';
+
 import { uploadExcel } from '../../../common/services/api';
 import { DocumentArrowUpIcon } from '@heroicons/react/24/outline';
-
-const StudentUpload = () => {
+const UploadExcel = () => {
   const [file, setFile] = useState(null);
   const [role, setRole] = useState('student');
   const [isUploading, setIsUploading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files[0];
-    if (selectedFile && (selectedFile.type.includes('spreadsheetml') || selectedFile.type.includes('excel') || selectedFile.name.endsWith('.xlsx') || selectedFile.name.endsWith('.xls'))) {
-      setFile(selectedFile);
-      setError('');
-    } else {
-      setFile(null);
-      setError('Please select a valid Excel file (.xlsx or .xls).');
-    }
-  };
-
-  const handleUpload = async () => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     if (!file) {
-      setError('Please select an Excel file to upload.');
+      setError('Please select a file first');
       return;
     }
-
     setIsUploading(true);
-    setMessage('');
-    setError('');
-
     try {
       const response = await uploadExcel(file, role);
       setMessage(response.data.message);
+      setError('');
       setFile(null);
-      document.getElementById('fileInput').value = '';
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to upload file. Please try again.');
+      setError(err.response?.data?.error || 'Failed to upload file');
     } finally {
       setIsUploading(false);
     }
   };
-
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-10">
-        <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight">
-          Upload Students
+        <h2 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
+          Bulk User Upload
         </h2>
-        <p className="mt-1 text-sm text-gray-500">
-          Upload an Excel file to create student accounts with generated credentials.
-        </p>
+        <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">Upload an Excel file to add multiple users at once.</p>
       </div>
-
-      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 p-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* File Input */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Select Excel File</label>
-            <div className="flex items-center justify-center w-full">
-              <label
-                htmlFor="fileInput"
-                className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors"
-              >
-                <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                  <DocumentArrowUpIcon className="h-8 w-8 text-gray-400" />
-                  <p className="mt-2 text-sm text-gray-500">
-                    {file ? file.name : 'Drag and drop or click to select Excel file'}
-                  </p>
-                </div>
-                <input
-                  id="fileInput"
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-              </label>
-            </div>
-          </div>
-
-          {/* Role Selection and Upload Button */}
-          <div className="flex flex-col justify-between">
+      <div className="rounded-2xl shadow-lg border p-6 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Role Selection */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">User Role</label>
+              <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-white">User Role</label>
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
-                className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100"
               >
                 <option value="student">Student</option>
                 <option value="teacher">Teacher</option>
               </select>
             </div>
+            {/* File Upload */}
+            <div>
+              <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-white">Excel File</label>
+              <div className="flex items-center justify-center w-full">
+                <label
+                  htmlFor="fileInput"
+                  className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors"
+                  style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--background-light)' }}
+                >
+                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                    <DocumentArrowUpIcon className="h-8 w-8 text-gray-400" />
+                    <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      {file ? file.name : 'Drag and drop or click to select Excel file'}
+                    </p>
+                  </div>
+                  <input
+                    id="fileInput"
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={(e) => setFile(e.target.files[0])}
+                    className="hidden"
+                    required
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
+          {/* Submit Button */}
+          <div className="flex justify-end">
             <button
-              onClick={handleUpload}
-              disabled={isUploading || !file}
-              className={`mt-4 inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white ${
-                isUploading || !file
-                  ? 'bg-indigo-400 cursor-not-allowed'
-                  : 'bg-indigo-600 hover:bg-indigo-700'
-              } focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300`}
+              type="submit"
+              disabled={isUploading}
+              className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white ${
+                isUploading ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-600 hover:bg-gray-700'
+              } focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-all duration-300`}
             >
               {isUploading ? (
                 <>
@@ -127,11 +110,11 @@ const StudentUpload = () => {
                   Uploading...
                 </>
               ) : (
-                'Upload File'
+                'Upload'
               )}
             </button>
           </div>
-        </div>
+        </form>
 
         {/* Feedback Messages */}
         {message && (
@@ -170,29 +153,22 @@ const StudentUpload = () => {
         )}
 
         {/* Instructions */}
-        <div className="mt-6 bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-3">Excel File Format</h3>
-          <p className="text-sm text-gray-600">
+        <div className="mt-6 rounded-2xl shadow-lg border p-6 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">File Format Requirements</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-300">
             The Excel file must contain the following columns:
           </p>
-          <ul className="list-disc pl-5 space-y-1 text-sm text-gray-600 mt-2">
+          <ul className="list-disc pl-5 space-y-1 text-sm mt-2 text-gray-600 dark:text-gray-300">
+            <li>First row should contain column headers</li>
             <li>
-              <strong>name</strong>: Full name of the student
+              Required columns: <strong>name</strong>, <strong>email</strong>, <strong>number</strong>
             </li>
-            <li>
-              <strong>email</strong>: Email address for login
-            </li>
-            <li>
-              <strong>number</strong>: Contact number
-            </li>
+            <li>File size should not exceed 5MB</li>
           </ul>
-          <p className="text-sm text-gray-600 mt-2">
-            Passwords will be automatically generated and sent to each student's email.
-          </p>
         </div>
       </div>
     </div>
   );
 };
 
-export default StudentUpload;
+export default UploadExcel;

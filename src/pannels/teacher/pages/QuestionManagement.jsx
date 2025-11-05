@@ -1,8 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { Link } from 'react-router-dom';
+import { Tab } from '@headlessui/react';
 import { fetchClasses } from '../../../common/components/redux/classSlice';
 import { getAllQuestions, assignQuestionToClass, searchQuestions } from '../../../common/services/api';
+import { 
+  MagnifyingGlassIcon, 
+  DocumentTextIcon, 
+  AcademicCapIcon, 
+  PencilIcon, 
+  EyeIcon,
+  PlusIcon,
+  CheckCircleIcon,
+  ExclamationTriangleIcon
+} from '@heroicons/react/24/outline';
 
 const QuestionManagement = () => {
   const dispatch = useDispatch();
@@ -28,7 +39,7 @@ const QuestionManagement = () => {
   useEffect(() => {
     if (classStatus === 'idle' && user) {
       console.log('%c[QuestionManagement] Dispatching fetchClasses for user:', 'color: orange;', user.id);
-      dispatch(fetchClasses());
+      dispatch(fetchClasses(''));
     }
   }, [classStatus, dispatch, user]);
 
@@ -143,226 +154,211 @@ const QuestionManagement = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="flex justify-between items-center mb-10">
-        <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight">
-          Question Management
-        </h2>
+      {/* Simple Header */}
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800">Question Management</h2>
         <Link
-          to="/teacher/questions/new"
-          className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300"
+          to="/teacher/questions/create"
+          className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
         >
+          <PlusIcon className="w-5 h-5 mr-2" />
           Create New Question
         </Link>
       </div>
 
       {loading || classStatus === 'loading' ? (
-        <div className="flex justify-center items-center py-16 bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100">
+        <div className="flex justify-center items-center py-16">
           <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
       ) : (
         <>
+          {/* Error Message */}
           {(error || classError) && (
-            <div className="flex items-center p-4 mb-6 bg-red-50/80 backdrop-blur-sm rounded-xl shadow-sm border border-red-200">
-              <svg
-                className="h-6 w-6 text-red-500 mr-3"
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              <div>
-                <h3 className="text-sm font-semibold text-red-800">Error</h3>
-                <p className="mt-1 text-sm text-red-700">{error || classError}</p>
-              </div>
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-700">{error || classError}</p>
             </div>
           )}
 
+          {/* Success Message */}
           {message && (
-            <div className="mb-6 p-4 rounded-xl bg-green-50/80 backdrop-blur-sm border border-green-200 shadow-sm">
-              <div className="flex items-center">
-                <svg
-                  className="h-6 w-6 text-green-500"
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-                <p className="ml-3 text-sm font-semibold text-green-800">{message}</p>
-              </div>
+            <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-sm text-green-700">{message}</p>
             </div>
           )}
 
-          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100 mb-6">
-            <h3 className="text-xl font-semibold text-gray-800 mb-4">Search Questions</h3>
-            <div className="mb-4">
-              <input
-                type="text"
-                value={searchKeyword}
-                onChange={(e) => setSearchKeyword(e.target.value)}
-                placeholder="Search by question title or tags..."
-                className="block w-full rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all duration-200 p-2"
-              />
-            </div>
-          </div>
+          {/* Tabs */}
+          <Tab.Group>
+            <Tab.List className="flex space-x-1 rounded-xl bg-blue-900/20 p-1 mb-6">
+              <Tab
+                className={({ selected }) =>
+                  `w-full rounded-lg py-2.5 text-sm font-medium leading-5 text-blue-700 ring-white ring-opacity-60 ring-offset-2 ring-offset-blue-400 focus:outline-none focus:ring-2 ${
+                    selected ? 'bg-white shadow' : 'text-blue-700 hover:bg-white/[0.12] hover:text-blue-800'
+                  }`
+                }
+              >
+                Questions
+              </Tab>
+              <Tab
+                className={({ selected }) =>
+                  `w-full rounded-lg py-2.5 text-sm font-medium leading-5 text-blue-700 ring-white ring-opacity-60 ring-offset-2 ring-offset-blue-400 focus:outline-none focus:ring-2 ${
+                    selected ? 'bg-white shadow' : 'text-blue-700 hover:bg-white/[0.12] hover:text-blue-800'
+                  }`
+                }
+              >
+                Assign to Classes
+              </Tab>
+            </Tab.List>
 
-          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
-            <h3 className="text-xl font-semibold text-gray-800 mb-4">Assign Question to Classes</h3>
-            <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-              <p className="text-sm text-blue-800">
-                <strong>Note:</strong> Teachers can assign any question to their classes, regardless of who created it.
-              </p>
-            </div>
-            <div className="mb-4">
-              <label className="block text-sm font-semibold text-gray-800 mb-2">Select Question</label>
-              {filteredQuestions.length === 0 ? (
-                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                  <p className="text-sm text-gray-600">
-                    {searchKeyword.trim() 
-                      ? `No questions found matching "${searchKeyword}"`
-                      : 'No questions available. Create your first question to get started.'
-                    }
-                  </p>
-                  {searchKeyword.trim() && (
-                    <Link
-                      to="/teacher/questions/new"
-                      className="text-indigo-600 hover:text-indigo-800 text-sm font-medium mt-2 inline-block"
-                    >
-                      Create a new question
-                    </Link>
+            <Tab.Panels>
+              {/* Questions Tab */}
+              <Tab.Panel>
+                {/* Search */}
+                <div className="bg-white rounded-lg shadow p-6 mb-6">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Search Questions</h3>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={searchKeyword}
+                      onChange={(e) => setSearchKeyword(e.target.value)}
+                      placeholder="Search by title, tags, or content..."
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                    <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 absolute left-3 top-2.5" />
+                  </div>
+                </div>
+
+                {/* Question Bank */}
+                <div className="bg-white rounded-lg shadow p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-800">Question Bank</h3>
+                    <span className="text-sm text-gray-500">
+                      {filteredQuestions.length} question{filteredQuestions.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  
+                  {filteredQuestions.length === 0 ? (
+                    <div className="text-center py-12">
+                      <p className="text-gray-500">No questions match the search criteria.</p>
+                      <p className="text-sm text-gray-400 mt-2">Try adjusting your search terms or create a new question.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Title
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Type
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Classes
+                            </th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Actions
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {filteredQuestions.map((q) => (
+                            <tr key={q._id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                                {stripHtml(q.title)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="px-2 py-1 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-800">
+                                  {q.type}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {q.classes.length}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <Link
+                                  to={`/teacher/questions/${q._id}/edit`}
+                                  className="text-indigo-600 hover:text-indigo-900 mr-4"
+                                >
+                                  Edit
+                                </Link>
+                                <Link
+                                  to={`/teacher/questions/${q._id}/statement`}
+                                  className="text-gray-600 hover:text-gray-900"
+                                >
+                                  View
+                                </Link>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </div>
-              ) : (
-                <select
-                  value={selectedQuestion?._id || ''}
-                  onChange={(e) => {
-                    const question = filteredQuestions.find((q) => q._id === e.target.value);
-                    console.log('[QuestionManagement] Selected question:', question);
-                    setSelectedQuestion(question || null);
-                  }}
-                  className="block w-full rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all duration-200"
-                >
-                  <option value="">Select a question</option>
-                  {filteredQuestions.map((q) => (
-                    <option key={q._id} value={q._id}>
-                      {stripHtml(q.title)} - {q.createdBy?.name || 'Unknown'} ({q.type === 'coding' ? 'Coding' : q.type})
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-            <div className="mb-4">
-              <label className="block text-sm font-semibold text-gray-800 mb-2">Select Classes</label>
-              <div className="space-y-2">
-                {classes
-                  .filter((cls) => cls.teachers.some((t) => t._id === user.id) || cls.createdBy._id === user.id)
-                  .map((cls) => (
-                    <div key={cls._id} className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={selectedClassIds.includes(cls._id)}
-                        onChange={() => handleClassToggle(cls._id)}
-                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-200 rounded"
-                      />
-                      <label className="ml-2 text-sm text-gray-800">{cls.name}</label>
-                    </div>
-                  ))}
-              </div>
-            </div>
-            <button
-              onClick={handleAssignQuestion}
-              disabled={loading || !selectedQuestion || selectedClassIds.length === 0}
-              className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300 disabled:bg-gray-400 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Assigning...' : 'Assign Question'}
-            </button>
-          </div>
+              </Tab.Panel>
 
-          <div className="mt-6 bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
-            <h3 className="text-xl font-semibold text-gray-800 mb-4">Question Bank</h3>
-            {filteredQuestions.length === 0 ? (
-              <div className="text-center py-8">
-                <svg
-                  className="mx-auto h-12 w-12 text-gray-400"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z"
-                  />
-                </svg>
-                <h4 className="mt-3 text-base font-semibold text-gray-800">
-                  {searchKeyword.trim() ? 'No questions found' : 'No questions yet'}
-                </h4>
-                <p className="mt-1 text-sm text-gray-500">
-                  {searchKeyword.trim() 
-                    ? `No questions match "${searchKeyword}"`
-                    : 'Get started by creating your first question'
-                  }
-                </p>
-                <Link
-                  to="/teacher/questions/new"
-                  className="mt-4 inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300"
-                >
-                  Create New Question
-                </Link>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {filteredQuestions.map((q) => (
-                  <div
-                    key={q._id}
-                    className="flex justify-between items-center p-4 bg-gray-50 rounded-lg shadow-sm hover:bg-gray-100 transition-colors"
-                  >
-                    <div className="flex-1">
-                      <h4 className="text-sm font-semibold text-gray-800 mb-1">{stripHtml(q.title)}</h4>
-                      <div className="flex items-center space-x-4 text-xs text-gray-500">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          {q.type === 'coding' ? 'Coding' : 
-                           q.type === 'singleCorrectMcq' ? 'Single Choice' :
-                           q.type === 'multipleCorrectMcq' ? 'Multiple Choice' :
-                           q.type === 'fillInTheBlanks' ? 'Fill in Blanks' :
-                           q.type === 'fillInTheBlanksCoding' ? 'Coding Fill' : q.type}
-                        </span>
-                        <span>Created by: {q.createdBy?.name || 'Unknown'}</span>
-                        <span>Assigned to {q.classes?.length || 0} class{q.classes?.length !== 1 ? 'es' : ''}</span>
-                        {q.type === 'coding' && q.languages && (
-                          <span>Languages: {q.languages.join(', ')}</span>
-                        )}
+              {/* Assign Tab */}
+              <Tab.Panel>
+                {/* Assign Question */}
+                <div className="bg-white rounded-lg shadow p-6 mb-6">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Assign Question to Classes</h3>
+                  
+                  <div className="space-y-4">
+                    {/* Question Selection */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Select Question</label>
+                      <select
+                        value={selectedQuestion?._id || ''}
+                        onChange={(e) => {
+                          const question = filteredQuestions.find((q) => q._id === e.target.value);
+                          setSelectedQuestion(question || null);
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      >
+                        <option value="">Select a question</option>
+                        {filteredQuestions.map((q) => (
+                          <option key={q._id} value={q._id}>
+                            {stripHtml(q.title)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Class Selection */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Select Classes</label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {classes
+                          .filter((cls) => cls.teachers.some((t) => t._id === user.id) || cls.createdBy._id === user.id)
+                          .map((cls) => (
+                            <label key={cls._id} className="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
+                              <input
+                                type="checkbox"
+                                checked={selectedClassIds.includes(cls._id)}
+                                onChange={() => handleClassToggle(cls._id)}
+                                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                              />
+                              <span className="ml-3 text-sm text-gray-800">{cls.name}</span>
+                            </label>
+                          ))}
                       </div>
                     </div>
-                    <div className="flex space-x-2">
-                      <Link
-                        to={`/teacher/questions/${q._id}/edit`}
-                        className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+
+                    {/* Action Button */}
+                    <div className="flex justify-end pt-4 border-t border-gray-200">
+                      <button
+                        onClick={handleAssignQuestion}
+                        disabled={loading || !selectedQuestion || selectedClassIds.length === 0}
+                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
                       >
-                        Edit
-                      </Link>
-                      <Link
-                        to={`/teacher/questions/${q._id}/statement`}
-                        className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
-                      >
-                        View
-                      </Link>
+                        {loading ? 'Assigning...' : 'Assign Question'}
+                      </button>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                </div>
+              </Tab.Panel>
+            </Tab.Panels>
+          </Tab.Group>
         </>
       )}
     </div>

@@ -12,7 +12,7 @@ import {
 import CodeEditor from '../components/CodeEditor';
 
 // Socket.IO initialization
-const socket = io('https://api.algosutra.co.in/', {
+const socket = io('http://localhost:3000/', {
   withCredentials: true,
 });
 
@@ -43,8 +43,126 @@ const QuestionSubmission = () => {
   const [isQuestionActive, setIsQuestionActive] = useState(true);
   const [statusMessage, setStatusMessage] = useState('');
   const [apiResponse, setApiResponse] = useState(null);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(50); // Percentage
+  const [isDragging, setIsDragging] = useState(false);
+  const [editorHeight, setEditorHeight] = useState(60); // Percentage of right panel
+  const [isDraggingVertical, setIsDraggingVertical] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const classId = location.state?.classId || (question?.classes?.length > 0 ? question.classes[0].classId : null);
+
+  // Hide sidebar effect - MUST be at the top before any conditional returns
+  useEffect(() => {
+    document.body.classList.add('hide-sidebar');
+    
+    return () => {
+      document.body.classList.remove('hide-sidebar');
+    };
+  }, []);
+
+  // Handle panel resizing
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isDragging) return;
+      
+      const containerWidth = window.innerWidth;
+      const newLeftWidth = (e.clientX / containerWidth) * 100;
+      
+      // Constrain between 20% and 80%
+      if (newLeftWidth >= 20 && newLeftWidth <= 80) {
+        setLeftPanelWidth(newLeftWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    if (isDragging) {
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging]);
+
+  const handleDividerMouseDown = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  // Handle vertical panel resizing (editor height)
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isDraggingVertical) return;
+      
+      const rightPanel = document.getElementById('right-panel');
+      if (!rightPanel) return;
+      
+      const rect = rightPanel.getBoundingClientRect();
+      const relativeY = e.clientY - rect.top;
+      const newHeight = (relativeY / rect.height) * 100;
+      
+      // Constrain between 30% and 80%
+      if (newHeight >= 30 && newHeight <= 80) {
+        setEditorHeight(newHeight);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingVertical(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    if (isDraggingVertical) {
+      document.body.style.cursor = 'row-resize';
+      document.body.style.userSelect = 'none';
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDraggingVertical]);
+
+  const handleVerticalDividerMouseDown = (e) => {
+    e.preventDefault();
+    setIsDraggingVertical(true);
+  };
+
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen);
+  };
+
+  // Handle keyboard shortcuts for fullscreen
+  useEffect(() => {
+    const handleKeyboard = (e) => {
+      // ESC to exit fullscreen
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+      }
+      // F11 to toggle fullscreen (prevent default browser fullscreen)
+      if (e.key === 'F11') {
+        e.preventDefault();
+        setIsFullscreen(!isFullscreen);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyboard);
+    return () => {
+      document.removeEventListener('keydown', handleKeyboard);
+    };
+  }, [isFullscreen]);
 
   useEffect(() => {
     if (questionId) {
@@ -405,9 +523,9 @@ const QuestionSubmission = () => {
       console.log('[QuestionSubmission] Rendering non-coding question result:', { isCorrect, explanation, submittedAnswer, passedTestCases, totalTestCases });
 
       return (
-        <div className="mt-4 p-4 rounded-xl border shadow-sm">
+        <div className="mt-4 p-4 rounded-xl border shadow-sm backdrop-blur-sm">
           <h3 className="text-lg font-semibold text-gray-800">Submission Result</h3>
-          <div className={`flex items-center p-4 rounded-lg border ${isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+          <div className={`flex items-center p-4 rounded-lg border backdrop-blur-sm ${isCorrect ? 'bg-green-50/80 border-green-200' : 'bg-red-50/80 border-red-200'}`}>
             <div className={`flex-shrink-0 h-6 w-6 ${isCorrect ? 'text-green-500' : 'text-red-500'}`}>
               {isCorrect ? (
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
@@ -449,7 +567,7 @@ const QuestionSubmission = () => {
     if (!results) {
       console.log('[QuestionSubmission] No valid results to render');
       return (
-        <div className="mt-4 p-4 bg-yellow-50 rounded-xl shadow-sm border border-yellow-200">
+        <div className="mt-4 p-4 bg-yellow-50/80 backdrop-blur-sm rounded-xl shadow-sm border border-yellow-200">
           <p className="text-sm text-yellow-700 font-semibold">No test case results available</p>
         </div>
       );
@@ -460,7 +578,7 @@ const QuestionSubmission = () => {
     } else {
       console.log('[QuestionSubmission] Invalid results format:', results);
       return (
-        <div className="mt-4 p-4 bg-yellow-50 rounded-xl shadow-sm border border-yellow-200">
+        <div className="mt-4 p-4 bg-yellow-50/80 backdrop-blur-sm rounded-xl shadow-sm border border-yellow-200">
           <p className="text-sm text-yellow-700 font-semibold">Invalid test case results format</p>
         </div>
       );
@@ -478,7 +596,7 @@ const QuestionSubmission = () => {
           {resultArray.map((result, index) => (
             <div
               key={index}
-              className={`p-4 rounded-xl border ${result.passed ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'} shadow-sm`}
+              className={`p-4 rounded-xl border backdrop-blur-sm ${result.passed ? 'border-green-200 bg-green-50/80' : 'border-red-200 bg-red-50/80'} shadow-sm`}
             >
               <div className="flex items-start">
                 <div className={`flex-shrink-0 h-6 w-6 ${result.passed ? 'text-green-500' : 'text-red-500'}`}>
@@ -530,7 +648,7 @@ const QuestionSubmission = () => {
             </div>
           ))}
           {source === 'submission' && (
-            <div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-200">
+            <div className="mt-4 p-4 bg-blue-50/80 backdrop-blur-sm rounded-xl border border-blue-200">
               <p className="text-sm font-semibold text-blue-800">
                 Test Cases Passed: {passedTestCases}/{totalTestCases}
               </p>
@@ -538,7 +656,7 @@ const QuestionSubmission = () => {
             </div>
           )}
           {source === 'run' && (
-            <div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-200">
+            <div className="mt-4 p-4 bg-blue-50/80 backdrop-blur-sm rounded-xl border border-blue-200">
               <p className="text-sm font-semibold text-blue-800">
                 Public Test Cases Passed: {passedTestCases}/{totalTestCases}
               </p>
@@ -553,8 +671,8 @@ const QuestionSubmission = () => {
   if (status === 'loading') {
     console.log('[QuestionSubmission] Rendering loading state');
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+      <div className="flex justify-center items-center py-16 backdrop-blur-sm rounded-xl shadow-lg" style={{ backgroundColor: 'var(--card-white)' }}>
+        <div className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--text-primary)', borderTopColor: 'transparent' }}></div>
       </div>
     );
   }
@@ -563,11 +681,14 @@ const QuestionSubmission = () => {
     console.log('[QuestionSubmission] Rendering error state:', error);
     return (
       <div className="max-w-4xl mx-auto p-6">
-        <div className="flex items-center p-4 bg-red-50 rounded-xl shadow-sm border border-red-200">
+        <div className="flex items-center p-4 bg-red-50/80 backdrop-blur-sm rounded-xl shadow-sm border border-red-200">
           <svg className="h-6 w-6 text-red-500 mr-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
             <path fillRule="evenodd" d="M10 18a8 0 100-16 8 0 000 16zM8.707 7.293a1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
           </svg>
-          <p className="text-sm text-red-700 font-semibold">Error: {error}</p>
+          <div>
+            <h3 className="text-sm font-semibold text-red-800">Error</h3>
+            <p className="mt-1 text-sm text-red-700">{error}</p>
+          </div>
         </div>
       </div>
     );
@@ -595,40 +716,48 @@ const QuestionSubmission = () => {
   }
 
   console.log('[QuestionSubmission] Rendering main component with question:', question.title);
+  
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: 'var(--background-content)' }}>
+      {/* Top Status Bar */}
       {statusMessage && (
-        <div className="mb-6 p-4 rounded-xl bg-green-50 border border-green-200 shadow-sm">
-          <p className="text-sm font-semibold text-green-800">{statusMessage}</p>
+        <div className="p-3 bg-green-50/80 backdrop-blur-sm border-b border-green-200 shadow-sm">
+          <p className="text-sm font-semibold text-green-800 text-center">{statusMessage}</p>
         </div>
       )}
 
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-        <div className="px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2
-                className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight"
-                dangerouslySetInnerHTML={{ __html: question.title }}
-              />
-              <div className="mt-2 flex flex-wrap gap-2">
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700 shadow-sm">
-                  {question.difficulty}
+      {/* Main Split Layout */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Panel - Question */}
+        <div 
+          className="overflow-y-auto transition-all duration-150" 
+          style={{ 
+            width: `${leftPanelWidth}%`,
+            backgroundColor: 'var(--card-white)', 
+            borderRight: '1px solid var(--card-border)'
+          }}
+        >
+          <div className="px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+            <h2
+              className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight"
+              dangerouslySetInnerHTML={{ __html: question.title }}
+            />
+            <div className="mt-2 flex flex-wrap gap-2">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700 shadow-sm">
+                {question.difficulty}
+              </span>
+              {question.tags?.map((tag, index) => (
+                <span
+                  key={index}
+                  className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 shadow-sm"
+                >
+                  {tag}
                 </span>
-                {question.tags?.map((tag, index) => (
-                  <span
-                    key={index}
-                    className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 shadow-sm"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
+              ))}
             </div>
           </div>
-        </div>
 
-        <div className="px-6 py-6">
+          <div className="px-6 py-6">
           <div className="prose max-w-none">
             <h3 className="text-lg font-semibold text-gray-800">Description</h3>
             <div className="text-gray-600 mt-2 leading-relaxed" dangerouslySetInnerHTML={{ __html: question.description }} />
@@ -671,23 +800,54 @@ const QuestionSubmission = () => {
               </>
             )}
           </div>
+        </div>
+        </div>
 
-          <form onSubmit={handleSubmit} className="mt-8 space-y-6">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-800 mb-3">
-                {question.type === 'coding' || question.type === 'fillInTheBlanksCoding' ? 'Your Solution' : 'Your Answer'}
-              </h3>
+        {/* Draggable Divider */}
+        <div
+          className="flex-shrink-0 relative group"
+          style={{ 
+            width: '4px',
+            cursor: 'col-resize',
+            backgroundColor: isDragging ? 'var(--accent-indigo)' : 'var(--card-border)',
+            transition: isDragging ? 'none' : 'background-color 0.2s'
+          }}
+          onMouseDown={handleDividerMouseDown}
+        >
+          {/* Visual indicator */}
+          <div 
+            className="absolute inset-y-0 left-1/2 transform -translate-x-1/2 w-1 opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{ 
+              backgroundColor: 'var(--accent-indigo)',
+              width: '2px'
+            }}
+          />
+          {/* Hover area (wider for easier grabbing) */}
+          <div className="absolute inset-y-0 -left-1 -right-1" />
+        </div>
 
-              {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding') && (
-                <div className="mb-4">
-                  <label htmlFor="language" className="text-sm font-medium text-gray-700">
-                    Select Language
+        {/* Right Panel - Code Editor & Submission */}
+        <div 
+          id="right-panel"
+          className="flex flex-col overflow-hidden transition-all duration-150" 
+          style={{ 
+            width: `${100 - leftPanelWidth}%`,
+            backgroundColor: 'var(--background-content)' 
+          }}
+        >
+          <div className="flex-1 flex flex-col overflow-hidden p-4 relative">
+            {/* Language Selector and Fullscreen Button */}
+            {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding') && (
+              <div className="mb-3 flex-shrink-0 flex items-end gap-3">
+                <div className="flex-1">
+                  <label htmlFor="language" className="text-xs font-medium text-gray-700">
+                    Language
                   </label>
                   <select
                     id="language"
                     value={selectedLanguage}
                     onChange={handleLanguageChange}
-                    className="mt-1 block w-48 rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    className="mt-1 block w-full rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm disabled:bg-gray-100 disabled:cursor-not-allowed py-1.5"
                     disabled={!isQuestionActive}
                   >
                     {question.languages?.map((lang) => (
@@ -697,88 +857,70 @@ const QuestionSubmission = () => {
                     ))}
                   </select>
                 </div>
-              )}
+                <button
+                  type="button"
+                  onClick={toggleFullscreen}
+                  className="px-3 py-1.5 rounded-lg border transition-all duration-200 hover:shadow text-sm"
+                  style={{ 
+                    backgroundColor: 'var(--card-white)', 
+                    borderColor: 'var(--card-border)', 
+                    color: 'var(--text-primary)' 
+                  }}
+                  title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                >
+                  {isFullscreen ? (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            )}
 
-              {question.type === 'coding' ? (
+            {/* Code Editor or Answer Input */}
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-lg font-semibold text-gray-800">
+                  {question.type === 'coding' || question.type === 'fillInTheBlanksCoding' ? 'Your Solution' : 'Your Answer'}
+                </h3>
+              </div>
+              
+              <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
+                {/* Code Editor Section - Dynamic height */}
+                <div 
+                  className="overflow-auto mb-2 transition-all duration-150"
+                  style={{ 
+                    height: isFullscreen ? '100%' : `${editorHeight}%`
+                  }}
+                >
+                {question.type === 'coding' ? (
                 <>
-                  <CodeEditor
-                    value={answer}
-                    onChange={setAnswer}
-                    defaultValue={question.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || ''}
-                    language={selectedLanguage}
-                    disabled={!isQuestionActive}
-                    isFillInTheBlanks={false}
-                  />
-                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label htmlFor="customInput" className="text-sm font-medium text-gray-700">
-                        Custom Input
-                      </label>
-                      <textarea
-                        id="customInput"
-                        value={customInput}
-                        onChange={(e) => setCustomInput(e.target.value)}
-                        rows={4}
-                        className="block w-full mt-1 rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-                        placeholder="Enter custom input (e.g., [1, 5, 3, 9, 2])"
-                        disabled={!isQuestionActive}
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="expectedOutput" className="text-sm font-medium text-gray-700">
-                        Expected Output
-                      </label>
-                      <textarea
-                        id="expectedOutput"
-                        value={expectedOutput}
-                        onChange={(e) => setExpectedOutput(e.target.value)}
-                        rows={4}
-                        className="block w-full mt-1 rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-                        placeholder="Enter expected output (e.g., 9)"
-                        disabled={!isQuestionActive}
-                      />
-                    </div>
+                  <div className="h-full">
+                    <CodeEditor
+                      value={answer}
+                      onChange={setAnswer}
+                      defaultValue={question.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || ''}
+                      language={selectedLanguage}
+                      disabled={!isQuestionActive}
+                      isFillInTheBlanks={false}
+                    />
                   </div>
                 </>
               ) : question.type === 'fillInTheBlanksCoding' ? (
                 <>
-                  <CodeEditor
-                    value={answer}
-                    onChange={setAnswer}
-                    defaultValue={question.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || question.codeSnippet || ''}
-                    language={selectedLanguage}
-                    disabled={!isQuestionActive}
-                    isFillInTheBlanks={true}
-                  />
-                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label htmlFor="customInput" className="text-sm font-medium text-gray-700">
-                        Custom Input
-                      </label>
-                      <textarea
-                        id="customInput"
-                        value={customInput}
-                        onChange={(e) => setCustomInput(e.target.value)}
-                        rows={4}
-                        className="block w-full mt-1 rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-                        placeholder="Enter custom input (e.g., [1, 5, 3, 9, 2])"
-                        disabled={!isQuestionActive}
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="expectedOutput" className="text-sm font-medium text-gray-700">
-                        Expected Output
-                      </label>
-                      <textarea
-                        id="expectedOutput"
-                        value={expectedOutput}
-                        onChange={(e) => setExpectedOutput(e.target.value)}
-                        rows={4}
-                        className="block w-full mt-1 rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-                        placeholder="Enter expected output (e.g., 9)"
-                        disabled={!isQuestionActive}
-                      />
-                    </div>
+                  <div className="h-full">
+                    <CodeEditor
+                      value={answer}
+                      onChange={setAnswer}
+                      defaultValue={question.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || question.codeSnippet || ''}
+                      language={selectedLanguage}
+                      disabled={!isQuestionActive}
+                      isFillInTheBlanks={true}
+                    />
                   </div>
                 </>
               ) : question.type === 'singleCorrectMcq' && question.options?.length > 0 ? (
@@ -830,7 +972,6 @@ const QuestionSubmission = () => {
                 </div>
               ) : question.type === 'fillInTheBlanks' ? (
                 <div className="mt-4">
-                  <label className="text-sm font-medium text-gray-700">Your Answer</label>
                   <input
                     type="text"
                     value={answer}
@@ -841,9 +982,73 @@ const QuestionSubmission = () => {
                   />
                 </div>
               ) : null}
-            </div>
+                </div>
 
-            <div className="flex justify-end space-x-4">
+                {/* Vertical Divider (Horizontal drag handle for resizing editor height) */}
+                {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding') && !isFullscreen && (
+                  <div
+                    className="flex-shrink-0 relative group"
+                    style={{ 
+                      height: '4px',
+                      cursor: 'row-resize',
+                      backgroundColor: isDraggingVertical ? 'var(--accent-indigo)' : 'var(--card-border)',
+                      transition: isDraggingVertical ? 'none' : 'background-color 0.2s'
+                    }}
+                    onMouseDown={handleVerticalDividerMouseDown}
+                  >
+                    {/* Visual indicator */}
+                    <div 
+                      className="absolute inset-x-0 top-1/2 transform -translate-y-1/2 h-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                      style={{ 
+                        backgroundColor: 'var(--accent-indigo)',
+                        height: '2px'
+                      }}
+                    />
+                    {/* Hover area (taller for easier grabbing) */}
+                    <div className="absolute inset-x-0 -top-1 -bottom-1" />
+                  </div>
+                )}
+
+                {/* Custom Input/Output for Coding Questions - Compact */}
+                {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding') && !isFullscreen && (
+                  <div className="flex-shrink-0 border-t pt-2 space-y-2" style={{ borderColor: 'var(--card-border)' }}>
+                    <h4 className="text-sm font-semibold text-gray-800">Custom Test</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label htmlFor="customInput" className="text-xs font-medium text-gray-700">
+                          Custom Input
+                        </label>
+                        <textarea
+                          id="customInput"
+                          value={customInput}
+                          onChange={(e) => setCustomInput(e.target.value)}
+                          rows={2}
+                          className="block w-full mt-1 rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-xs disabled:bg-gray-100 disabled:cursor-not-allowed"
+                          placeholder="e.g., [1, 5, 3, 9, 2]"
+                          disabled={!isQuestionActive}
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="expectedOutput" className="text-xs font-medium text-gray-700">
+                          Expected Output
+                        </label>
+                        <textarea
+                          id="expectedOutput"
+                          value={expectedOutput}
+                          onChange={(e) => setExpectedOutput(e.target.value)}
+                          rows={2}
+                          className="block w-full mt-1 rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-xs disabled:bg-gray-100 disabled:cursor-not-allowed"
+                          placeholder="e.g., 9"
+                          disabled={!isQuestionActive}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Action Buttons - Compact */}
+                {!isFullscreen && (
+                  <div className="flex-shrink-0 flex justify-end space-x-2 border-t pt-3 mt-2" style={{ borderColor: 'var(--card-border)' }}>
               {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding') && (
                 <>
                   <button
@@ -900,39 +1105,42 @@ const QuestionSubmission = () => {
                   </button>
                 </>
               )}
-              <button
-                type="submit"
-                disabled={isSubmitting || !isQuestionActive}
-                className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
-                  isSubmitting || !isQuestionActive ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
-                }`}
-              >
-                {isSubmitting ? (
-                  <>
-                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      ></path>
-                    </svg>
-                    Submitting...
-                  </>
-                ) : isQuestionActive ? (
-                  'Submit Answer'
-                ) : (
-                  'Question Inactive'
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || !isQuestionActive}
+                    className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
+                      isSubmitting || !isQuestionActive ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+                    }`}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          ></path>
+                        </svg>
+                        Submitting...
+                      </>
+                    ) : isQuestionActive ? (
+                      'Submit Answer'
+                    ) : (
+                      'Question Inactive'
+                    )}
+                  </button>
+                  </div>
                 )}
-              </button>
+              </form>
             </div>
-          </form>
 
-          {(apiResponse || submission) && (
-            <div className="mt-6 p-6 bg-gray-50 rounded-xl border border-gray-200">
+            {/* Results Section - Compact */}
+            {(apiResponse || submission) && !isFullscreen && (
+              <div className="overflow-y-auto border-t p-4 flex-shrink-0 max-h-[40vh]" style={{ backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }}>
               {(apiResponse?.submission || submission) && (
                 <>
-                  <div className={`p-4 rounded-lg border ${apiResponse?.error ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
+                  <div className={`p-4 rounded-lg border backdrop-blur-sm ${apiResponse?.error ? 'bg-red-50/80 border-red-200' : 'bg-blue-50/80 border-blue-200'}`}>
                     <h3 className="text-lg font-semibold">
                       {apiResponse?.error
                         ? 'Error Response'
@@ -943,7 +1151,7 @@ const QuestionSubmission = () => {
 
                   <div className="mt-4">
                     <div
-                      className={`rounded-xl p-4 ${apiResponse?.submission?.isCorrect || submission?.isCorrect ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}
+                      className={`rounded-xl p-4 backdrop-blur-sm ${apiResponse?.submission?.isCorrect || submission?.isCorrect ? 'bg-green-50/80 border border-green-200' : 'bg-red-50/80 border border-red-200'}`}
                     >
                       <div className="flex items-center">
                         <div className="flex-shrink-0">
@@ -987,10 +1195,108 @@ const QuestionSubmission = () => {
               )}
 
               {runResults && !apiResponse?.submission && renderTestCaseResults(runResults, 'run')}
-            </div>
-          )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Fullscreen Editor Overlay */}
+      {isFullscreen && (
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: 'var(--background-content)' }}>
+          {/* Fullscreen Header */}
+          <div className="flex-shrink-0 border-b p-4 flex items-center justify-between" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
+            <div className="flex items-center gap-4">
+              <div>
+                <h3 className="text-lg font-semibold" style={{ color: 'var(--text-heading)' }}>
+                  Code Editor - Fullscreen
+                </h3>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                  Press <kbd className="px-1.5 py-0.5 bg-gray-100 rounded border border-gray-300 text-xs">ESC</kbd> or <kbd className="px-1.5 py-0.5 bg-gray-100 rounded border border-gray-300 text-xs">F11</kbd> to exit
+                </p>
+              </div>
+              {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding') && (
+                <select
+                  id="language-fullscreen"
+                  value={selectedLanguage}
+                  onChange={handleLanguageChange}
+                  className="rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm disabled:bg-gray-100 disabled:cursor-not-allowed px-3 py-1.5"
+                  disabled={!isQuestionActive}
+                >
+                  {question.languages?.map((lang) => (
+                    <option key={lang} value={lang}>
+                      {lang.charAt(0).toUpperCase() + lang.slice(1)}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleRunCode}
+                disabled={isRunning || isRunningCustom || !isQuestionActive}
+                className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
+                  isRunning || isRunningCustom || !isQuestionActive ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+              >
+                {isRunning ? 'Running...' : 'Run Code'}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleSubmit(e);
+                }}
+                disabled={isSubmitting || !isQuestionActive}
+                className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
+                  isSubmitting || !isQuestionActive ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+                }`}
+              >
+                {isSubmitting ? 'Submitting...' : 'Submit Answer'}
+              </button>
+              <button
+                type="button"
+                onClick={toggleFullscreen}
+                className="px-3 py-2 rounded-lg border transition-all duration-200 hover:shadow"
+                style={{ 
+                  backgroundColor: 'var(--card-white)', 
+                  borderColor: 'var(--card-border)', 
+                  color: 'var(--text-primary)' 
+                }}
+                title="Exit Fullscreen"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          {/* Fullscreen Editor */}
+          <div className="flex-1 overflow-hidden p-4">
+            {question.type === 'coding' ? (
+              <CodeEditor
+                value={answer}
+                onChange={setAnswer}
+                defaultValue={question.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || ''}
+                language={selectedLanguage}
+                disabled={!isQuestionActive}
+                isFillInTheBlanks={false}
+              />
+            ) : question.type === 'fillInTheBlanksCoding' ? (
+              <CodeEditor
+                value={answer}
+                onChange={setAnswer}
+                defaultValue={question.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || question.codeSnippet || ''}
+                language={selectedLanguage}
+                disabled={!isQuestionActive}
+                isFillInTheBlanks={true}
+              />
+            ) : null}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+
 import { Link, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import {
@@ -9,12 +10,10 @@ import {
 } from '../../../common/services/api';
 import parse from 'html-react-parser';
 import { TrashIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
-
 const QuestionBank = () => {
   const navigate = useNavigate();
   const { user } = useSelector((state) => state.auth);
   console.log('[QuestionBank] Component mounted, user state:', { user, role: user?.role });
-
   const [questions, setQuestions] = useState([]);
   const [filteredQuestions, setFilteredQuestions] = useState([]);
   const [searchId, setSearchId] = useState('');
@@ -24,7 +23,6 @@ const QuestionBank = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   console.log('[QuestionBank] Initial state:', { questions, filteredQuestions, searchId, isLoading, error, message, currentPage, totalPages });
-
   // Strip HTML tags for safe display
   const stripHtml = (html) => {
     if (!html || typeof html !== 'string') {
@@ -37,7 +35,6 @@ const QuestionBank = () => {
     console.log('[QuestionBank] stripHtml result:', result);
     return result;
   };
-
   // Fetch paginated questions
   useEffect(() => {
     console.log('[QuestionBank] useEffect triggered with dependencies:', { user, currentPage });
@@ -71,7 +68,6 @@ const QuestionBank = () => {
     console.log('[QuestionBank] Initiating fetchQuestions');
     fetchQuestions();
   }, [user, currentPage]);
-
   // Handle search by question ID
   const handleSearch = async () => {
     console.log('[QuestionBank] Search button clicked with searchId:', searchId);
@@ -106,7 +102,6 @@ const QuestionBank = () => {
       console.log('[QuestionBank] Search loading state set to false');
     }
   };
-
   // Handle question deletion
   const handleDeleteQuestion = async (questionId) => {
     console.log('[QuestionBank] Attempting to delete question:', questionId);
@@ -136,7 +131,6 @@ const QuestionBank = () => {
       console.log('[QuestionBank] Delete loading state set to false');
     }
   };
-
   // Handle page change
   const handlePageChange = (newPage) => {
     console.log('[QuestionBank] Attempting to change page to:', newPage);
@@ -147,7 +141,6 @@ const QuestionBank = () => {
       console.log('[QuestionBank] Page change rejected, out of bounds:', { newPage, totalPages });
     }
   };
-
   console.log('[QuestionBank] Rendering component with state:', {
     user,
     questions,
@@ -160,26 +153,24 @@ const QuestionBank = () => {
     totalPages
   });
   console.log('[QuestionBank] Pagination visibility check:', { totalPages, shouldShowPagination: totalPages > 1 });
-
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
       <div className="flex justify-between items-center mb-10">
-        <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight">
+        <h2 className="text-3xl font-bold tracking-tight" style={{ color: 'var(--text-heading)' }}>
           Admin Question Management
         </h2>
         <Link
-          to="/admin/questions/new"
-          className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300"
+          to="/admin/questions/create"
+          className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-all duration-300"
         >
           Create New Question
         </Link>
       </div>
-
       {/* Loading Overlay */}
       {isLoading && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-60 flex items-center justify-center z-50">
-          <div className="bg-white/90 backdrop-blur-sm p-8 rounded-2xl shadow-xl max-w-sm w-full">
+          <div className="p-8 rounded-2xl shadow-xl max-w-sm w-full" style={{ backgroundColor: 'var(--card-white)', backdropFilter: 'blur(8px)' }}>
             <div className="flex items-center justify-center">
               <svg
                 className="animate-spin h-10 w-10 text-indigo-600"
@@ -194,12 +185,11 @@ const QuestionBank = () => {
                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                 ></path>
               </svg>
-              <span className="ml-4 text-lg font-semibold text-gray-800">Loading...</span>
+              <span className="ml-4 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Loading...</span>
             </div>
           </div>
         </div>
       )}
-
       {/* Error Message */}
       {error && (
         <div className="mb-6 p-4 rounded-xl bg-red-50/80 backdrop-blur-sm border border-red-200 shadow-sm">
@@ -220,7 +210,6 @@ const QuestionBank = () => {
           </div>
         </div>
       )}
-
       {/* Success Message */}
       {message && (
         <div className="mb-6 p-4 rounded-xl bg-green-50/80 backdrop-blur-sm border border-green-200 shadow-sm">
@@ -241,10 +230,9 @@ const QuestionBank = () => {
           </div>
         </div>
       )}
-
       {/* Search Bar */}
-      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100 mb-6">
-        <h3 className="text-xl font-semibold text-gray-800 mb-4">Search Questions</h3>
+      <div className="rounded-2xl shadow-lg p-6 border mb-6" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
+        <h3 className="text-xl font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Search Questions</h3>
         <div className="relative flex items-center mb-4">
           <div className="relative flex-grow">
             <input
@@ -255,7 +243,8 @@ const QuestionBank = () => {
                 setSearchId(e.target.value);
               }}
               placeholder="Search by question ID..."
-              className="block w-full rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all duration-200 p-2 pl-10"
+              className="block w-full rounded-lg border shadow-sm sm:text-sm transition-all duration-200 p-2 pl-10"
+              style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--background-content)' }}
             />
             <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
           </div>
@@ -265,18 +254,17 @@ const QuestionBank = () => {
               handleSearch();
             }}
             disabled={isLoading}
-            className="ml-2 inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
+            className="ml-2 inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
             Search
           </button>
         </div>
       </div>
-
       {/* Question List */}
-      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
-        <h3 className="text-xl font-semibold text-gray-800 mb-4">Question Bank</h3>
+      <div className="rounded-2xl shadow-lg p-6 border" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
+        <h3 className="text-xl font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Question Bank</h3>
         {filteredQuestions.length === 0 ? (
-          <p className="text-sm text-gray-500">No questions found.</p>
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>No questions found.</p>
         ) : (
           <div className="space-y-4">
             {filteredQuestions.map((question) => {
@@ -284,10 +272,11 @@ const QuestionBank = () => {
               return (
                 <div
                   key={question._id}
-                  className="flex justify-between items-center p-4 bg-gray-50 rounded-lg shadow-sm"
+                  className="flex justify-between items-center p-4 rounded-lg shadow-sm"
+                  style={{ backgroundColor: 'var(--background-light)' }}
                 >
                   <div>
-                    <h4 className="text-sm font-semibold text-gray-800">{stripHtml(question.title)}</h4>
+                    <h4 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{stripHtml(question.title)}</h4>
                     <div className="mt-2 flex flex-wrap gap-2">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                         Type: {question.type || 'Unknown'}
@@ -295,7 +284,7 @@ const QuestionBank = () => {
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                         Points: {question.points || 0}
                       </span>
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: 'var(--background-light)', color: 'var(--text-primary)' }}>
                         Difficulty: {question.difficulty || 'Unknown'}
                       </span>
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
@@ -306,7 +295,8 @@ const QuestionBank = () => {
                   <div className="flex space-x-2">
                     <Link
                       to={`/admin/questions/${question._id}/edit`}
-                      className="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                      className="inline-flex items-center px-3 py-1 border text-sm font-medium rounded-md bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                      style={{ borderColor: 'var(--card-border)', color: 'white' }}
                       onClick={() => console.log('[QuestionBank] Navigating to edit question:', question._id)}
                     >
                       Edit
@@ -317,7 +307,7 @@ const QuestionBank = () => {
                         handleDeleteQuestion(question._id);
                       }}
                       disabled={isLoading}
-                      className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                      className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
                     >
                       <TrashIcon className="h-4 w-4 mr-1" />
                       Delete
@@ -329,7 +319,6 @@ const QuestionBank = () => {
           </div>
         )}
       </div>
-
       {/* Pagination */}
       {totalPages > 1 ? (
         <div className="mt-6 flex justify-center space-x-2">
@@ -339,11 +328,12 @@ const QuestionBank = () => {
               handlePageChange(currentPage - 1);
             }}
             disabled={currentPage === 1}
-            className="px-4 py-2 rounded-lg text-sm font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 rounded-lg text-sm font-semibold border hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ color: 'var(--text-primary)', backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
           >
             Previous
           </button>
-          <span className="px-4 py-2 text-sm font-semibold text-gray-800">
+          <span className="px-4 py-2 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
             Page {currentPage} of {totalPages}
           </span>
           <button
@@ -352,14 +342,15 @@ const QuestionBank = () => {
               handlePageChange(currentPage + 1);
             }}
             disabled={currentPage === totalPages}
-            className="px-4 py-2 rounded-lg text-sm font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 rounded-lg text-sm font-semibold border hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ color: 'var(--text-primary)', backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
           >
             Next
           </button>
         </div>
       ) : (
         <div className="mt-6 text-center">
-          <p className="text-sm text-gray-500">No pagination available (Total Pages: {totalPages})</p>
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>No pagination available (Total Pages: {totalPages})</p>
         </div>
       )}
     </div>

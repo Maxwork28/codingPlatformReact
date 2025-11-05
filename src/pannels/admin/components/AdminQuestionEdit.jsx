@@ -86,7 +86,7 @@ const AdminQuestionEdit = () => {
   if (isLoading) {
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-60 flex items-center justify-center z-50">
-        <div className="bg-white/90 backdrop-blur-sm p-8 rounded-2xl shadow-xl max-w-sm w-full">
+        <div className="backdrop-blur-sm p-8 rounded-2xl shadow-xl max-w-sm w-full" style={{ backgroundColor: 'var(--card-white)' }}>
           <div className="flex items-center justify-center">
             <svg
               className="animate-spin h-10 w-10 text-indigo-600"
@@ -108,7 +108,7 @@ const AdminQuestionEdit = () => {
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               ></path>
             </svg>
-            <span className="ml-4 text-lg font-semibold text-gray-800">Loading...</span>
+            <span className="ml-4 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Loading...</span>
           </div>
         </div>
       </div>
@@ -144,11 +144,13 @@ const AdminQuestionEdit = () => {
       <div className="flex items-center mb-8">
         <Link
           to="/admin/questions"
-          className="mr-4 p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200"
+          className="mr-4 p-2 rounded-full transition-all duration-200"
+          style={{ backgroundColor: 'var(--background-light)' }}
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
-            className="h-5 w-5 text-gray-600"
+            className="h-5 w-5"
+            style={{ color: 'var(--text-secondary)' }}
             viewBox="0 0 20 20"
             fill="currentColor"
           >
@@ -159,7 +161,7 @@ const AdminQuestionEdit = () => {
             />
           </svg>
         </Link>
-        <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight">
+        <h2 className="text-3xl font-bold tracking-tight" style={{ color: 'var(--text-heading)' }}>
           Edit Question
         </h2>
       </div>
@@ -185,7 +187,7 @@ const AdminQuestionEdit = () => {
       )}
 
       {initialData && (
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
+        <div className="backdrop-blur-sm rounded-2xl shadow-lg p-6 border" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
           <QuestionForm
             onSubmit={handleSubmit}
             initialData={initialData}
