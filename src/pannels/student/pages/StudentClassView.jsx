@@ -6,7 +6,7 @@ import axios from 'axios';
 import { Tab } from '@headlessui/react';
 import StudentQuestionCard from '../components/StudentQuestionCard';
 
-const socket = io('https://api.algosutra.co.in//', {
+const socket = io('https://api.algosutra.co.in/', {
   withCredentials: true,
 });
 
@@ -42,7 +42,7 @@ const StudentClassView = () => {
       console.log('[StudentClassView] Fetching assignments for class', { classId });
       try {
         const response = await axios.get(
-          `https://api.algosutra.co.in//admin/classes/${classId}/assignments`,
+          `https://api.algosutra.co.in/admin/classes/${classId}/assignments`,
           {
             headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
           }
@@ -75,7 +75,7 @@ const StudentClassView = () => {
       console.log('[StudentClassView] Fetching leaderboard for class', { classId });
       try {
         const response = await axios.get(
-          `https://api.algosutra.co.in//questions/classes/${classId}/leaderboard`,
+          `https://api.algosutra.co.in/questions/classes/${classId}/leaderboard`,
           {
             headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
           }

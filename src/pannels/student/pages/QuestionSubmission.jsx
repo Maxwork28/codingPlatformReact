@@ -12,7 +12,7 @@ import {
 import CodeEditor from '../components/CodeEditor';
 
 // Socket.IO initialization
-const socket = io('https://api.algosutra.co.in//', {
+const socket = io('https://api.algosutra.co.in/', {
   withCredentials: true,
 });
 
