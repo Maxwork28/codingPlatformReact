@@ -22,6 +22,9 @@ import QuesionBanks from './pannels/admin/pages/QuesionBanks';
 import AdminCreateNewQuestion from './pannels/admin/pages/AdminCreateNewQuestion';
 import AdminClassDetails from './pannels/admin/pages/AdminClassDetails';
 import AdminQuestionEdit from './pannels/admin/components/AdminQuestionEdit.jsx';
+import AdminQuestionPreview from './pannels/admin/components/AdminQuestionPreview';
+import AdminDraftsPage from './pannels/admin/pages/AdminDraftsPage';
+import TeacherDraftsPage from './pannels/teacher/pages/TeacherDraftsPage';
 
 // Teacher Pages
 import TeacherDashboard from './pannels/teacher/pages/TeacherDashboard';
@@ -95,6 +98,21 @@ const MainContent = () => {
             <AdminCreateNewQuestion />
           </ProtectedRoute>
         } />
+        <Route path="/admin/questions/drafts" element={
+          <ProtectedRoute role="admin">
+            <AdminDraftsPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/questions/:questionId/preview" element={
+          <ProtectedRoute role="admin">
+            <AdminQuestionPreview />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/questions/:questionId/edit" element={
+          <ProtectedRoute role="admin">
+            <AdminQuestionEdit />
+          </ProtectedRoute>
+        } />
         <Route path="/admin/class/:classId" element={
           <ProtectedRoute role="admin">
             <AdminClassDetails />
@@ -149,6 +167,11 @@ const MainContent = () => {
         <Route path="/teacher/questions" element={
           <ProtectedRoute role="teacher">
             <QuestionManagement />
+          </ProtectedRoute>
+        } />
+        <Route path="/teacher/questions/drafts" element={
+          <ProtectedRoute role="teacher">
+            <TeacherDraftsPage />
           </ProtectedRoute>
         } />
         <Route path="/teacher/questions/create" element={

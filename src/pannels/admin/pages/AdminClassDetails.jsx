@@ -415,12 +415,12 @@ const AdminClassDetails = () => {
     }
   };
 
-  const handleManageTeacherPermission = async (teacherId, canCreateClass) => {
-    console.log('handleManageTeacherPermission called', { teacherId, canCreateClass });
+  const handleManageTeacherPermission = async (teacherId, canCreateQuestion) => {
+    console.log('handleManageTeacherPermission called', { teacherId, canCreateQuestion });
     try {
-      await manageTeacherPermission(teacherId, canCreateClass);
+      await manageTeacherPermission(teacherId, canCreateQuestion);
       await fetchClassDetails(classId);
-      setMessage(`Teacher permission ${canCreateClass ? 'granted' : 'revoked'} successfully`);
+      setMessage(`Teacher question permission ${canCreateQuestion ? 'granted' : 'revoked'} successfully`);
       setError('');
       console.log('handleManageTeacherPermission success');
     } catch (err) {
@@ -1874,7 +1874,7 @@ const AdminClassDetails = () => {
                         Email
                       </th>
                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Can Create Class
+                        Can Create Question
                       </th>
                       <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Actions
@@ -1893,22 +1893,22 @@ const AdminClassDetails = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           <div className="flex items-center gap-2">
                             <button
-                              onClick={() => handleManageTeacherPermission(teacher._id, !teacher.canCreateClass)}
+                              onClick={() => handleManageTeacherPermission(teacher._id, !teacher.canCreateQuestion)}
                               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
-                                teacher.canCreateClass ? 'bg-green-500' : 'bg-gray-300'
+                                teacher.canCreateQuestion ? 'bg-green-500' : 'bg-gray-300'
                               }`}
                               role="switch"
-                              aria-checked={teacher.canCreateClass}
-                              title={teacher.canCreateClass ? 'Can create classes' : 'Cannot create classes'}
+                              aria-checked={teacher.canCreateQuestion}
+                              title={teacher.canCreateQuestion ? 'Can create questions' : 'Cannot create questions'}
                             >
                               <span
                                 className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                  teacher.canCreateClass ? 'translate-x-6' : 'translate-x-1'
+                                  teacher.canCreateQuestion ? 'translate-x-6' : 'translate-x-1'
                                 }`}
                               />
                             </button>
                             <span className="text-xs text-gray-600">
-                              {teacher.canCreateClass ? 'Yes' : 'No'}
+                              {teacher.canCreateQuestion ? 'Yes' : 'No'}
                             </span>
                           </div>
                         </td>

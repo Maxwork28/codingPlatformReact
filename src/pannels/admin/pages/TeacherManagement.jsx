@@ -49,11 +49,11 @@ const TeacherManagement = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handlePermissionToggle = async (teacherId, canCreateClass) => {
+  const handlePermissionToggle = async (teacherId, canCreateQuestion) => {
     try {
-      await manageTeacherPermission(teacherId, canCreateClass);
+      await manageTeacherPermission(teacherId, canCreateQuestion);
       setTeachers(teachers.map((t) =>
-        t._id === teacherId ? { ...t, canCreateClass } : t
+        t._id === teacherId ? { ...t, canCreateQuestion } : t
       ));
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to update permission');
@@ -233,17 +233,17 @@ const TeacherManagement = () => {
                     <div className="flex items-center">
                       <ShieldCheckIcon
                         className={`h-5 w-5 mr-2 ${
-                          teacher.canCreateClass ? 'text-green-500' : 'text-gray-400'
+                          teacher.canCreateQuestion ? 'text-green-500' : 'text-gray-400'
                         }`}
                       />
                       <span
                         className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          teacher.canCreateClass
+                          teacher.canCreateQuestion
                             ? 'bg-green-100 text-green-800'
                             : 'bg-gray-100 text-gray-800'
                         }`}
                       >
-                        {teacher.canCreateClass ? 'Can create classes' : 'No permissions'}
+                        {teacher.canCreateQuestion ? 'Can create questions' : 'Cannot create questions'}
                       </span>
                     </div>
                   </td>
@@ -251,7 +251,7 @@ const TeacherManagement = () => {
                     <label className="inline-flex items-center cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={teacher.canCreateClass}
+                        checked={teacher.canCreateQuestion}
                         onChange={(e) => handlePermissionToggle(teacher._id, e.target.checked)}
                         className="sr-only peer"
                       />

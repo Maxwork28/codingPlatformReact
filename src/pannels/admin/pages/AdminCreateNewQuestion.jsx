@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { adminCreateQuestion } from '../../../common/services/api';
@@ -11,25 +11,33 @@ const AdminCreateNewQuestion = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Removed clipboard unlock handler - it was interfering with paste functionality
+  // Native paste events work fine without this handler
+
   console.log('%c[AdminCreateNewQuestion] Component mounted, user state:', { user, role: user?.role }, 'color: orange;');
 
   const handleSubmit = async (data) => {
     setIsLoading(true);
-    console.log('[AdminCreateNewQuestion] Submitting question:', data);
+    console.log('[AdminCreateNewQuestion] Submitting question as draft:', data);
     try {
       // Remove classIds since admin creates questions globally
       const { classIds, ...questionData } = data;
-      await adminCreateQuestion(questionData);
-      setMessage('Question created successfully!');
+      // Save as draft
+      await adminCreateQuestion({
+        ...questionData,
+        status: 'draft',
+        isDraft: true
+      });
+      setMessage('Draft saved successfully! Redirecting to drafts page...');
       setError('');
-      console.log('[AdminCreateNewQuestion] Question created successfully');
+      console.log('[AdminCreateNewQuestion] Draft saved successfully');
       setTimeout(() => {
-        console.log('[AdminCreateNewQuestion] Navigating to /admin/questions');
-        navigate('/admin/questions');
-      }, 2000);
+        console.log('[AdminCreateNewQuestion] Navigating to /admin/questions/drafts');
+        navigate('/admin/questions/drafts');
+      }, 1500);
     } catch (err) {
-      console.error('[AdminCreateNewQuestion] Error submitting question:', err.message, err.response?.data);
-      const errorMessage = err.response?.data?.error || err.message || 'Failed to create question';
+      console.error('[AdminCreateNewQuestion] Error submitting draft:', err.message, err.response?.data);
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to save draft';
       setError(errorMessage);
       setMessage('');
     } finally {
@@ -61,7 +69,7 @@ const AdminCreateNewQuestion = () => {
           </svg>
         </Link>
         <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-500 tracking-tight">
-          Create New Question
+          Create New Draft
         </h2>
       </div>
 
@@ -73,7 +81,7 @@ const AdminCreateNewQuestion = () => {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
-            <span className="text-lg font-semibold text-gray-800">Creating Question...</span>
+            <span className="text-lg font-semibold text-gray-800">Saving Draft...</span>
           </div>
         </div>
       )}

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { io } from 'socket.io-client';
@@ -9,6 +9,18 @@ import StudentQuestionCard from '../components/StudentQuestionCard';
 const socket = io('https://api.algosutra.co.in/', {
   withCredentials: true,
 });
+
+const stripHtml = (html) => {
+  if (!html) return '';
+  try {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    return tmp.textContent || tmp.innerText || '';
+  } catch (err) {
+    console.warn('[StudentClassView] stripHtml fallback used', { html, error: err });
+    return typeof html === 'string' ? html.replace(/<[^>]*>/g, '') : '';
+  }
+};
 
 const StudentClassView = () => {
   const { classId } = useParams();
@@ -109,16 +121,18 @@ const StudentClassView = () => {
         questionCount: cls.questions.length,
         userId: user.id,
       });
-      const updatedQuestions = cls.questions.map((q) => {
+        const updatedQuestions = cls.questions.map((q) => {
+          const plainTitle = stripHtml(q.title);
         const classInfo = q.classes.find((c) => c.classId === classId);
         console.log('[StudentClassView] Processing question', {
           questionId: q._id,
-          questionTitle: q.title,
+          questionTitle: plainTitle,
           isPublished: classInfo?.isPublished,
           isDisabled: classInfo?.isDisabled,
         });
         return {
           ...q,
+            title: plainTitle,
           isPublished: classInfo ? classInfo.isPublished : false,
           isDisabled: classInfo ? classInfo.isDisabled : false,
         };
@@ -152,17 +166,20 @@ const StudentClassView = () => {
           console.warn('[StudentClassView] No classData for questionPublished', { questionId });
           return prev;
         }
-        const updatedQuestions = prev.questions.map((q) =>
-          q._id === questionId
-            ? {
-                ...q,
-                isPublished,
-                classes: q.classes.map((c) =>
-                  c.classId === classId ? { ...c, isPublished } : c
-                ),
-              }
-            : q
-        );
+        const updatedQuestions = prev.questions.map((q) => {
+          if (q._id !== questionId) return q;
+          const updated = {
+            ...q,
+            isPublished,
+            classes: q.classes.map((c) =>
+              c.classId === classId ? { ...c, isPublished } : c
+            ),
+          };
+          if (updated.title) {
+            updated.title = stripHtml(updated.title);
+          }
+          return updated;
+        });
         console.log('[StudentClassView] Updated classData for questionPublished', {
           questionId,
           updatedQuestions: updatedQuestions.map((q) => ({
@@ -183,17 +200,20 @@ const StudentClassView = () => {
           console.warn('[StudentClassView] No classData for questionDisabled', { questionId });
           return prev;
         }
-        const updatedQuestions = prev.questions.map((q) =>
-          q._id === questionId
-            ? {
-                ...q,
-                isDisabled,
-                classes: q.classes.map((c) =>
-                  c.classId === classId ? { ...c, isDisabled } : c
-                ),
-              }
-            : q
-        );
+        const updatedQuestions = prev.questions.map((q) => {
+          if (q._id !== questionId) return q;
+          const updated = {
+            ...q,
+            isDisabled,
+            classes: q.classes.map((c) =>
+              c.classId === classId ? { ...c, isDisabled } : c
+            ),
+          };
+          if (updated.title) {
+            updated.title = stripHtml(updated.title);
+          }
+          return updated;
+        });
         console.log('[StudentClassView] Updated classData for questionDisabled', {
           questionId,
           updatedQuestions: updatedQuestions.map((q) => ({
@@ -232,9 +252,14 @@ const StudentClassView = () => {
           console.warn('[StudentClassView] No classData for questionUpdated', { questionId });
           return prev;
         }
-        const updatedQuestions = prev.questions.map((q) =>
-          q._id === questionId ? { ...q, ...updatedFields } : q
-        );
+        const updatedQuestions = prev.questions.map((q) => {
+          if (q._id !== questionId) return q;
+          const updated = { ...q, ...updatedFields };
+          if (updated.title) {
+            updated.title = stripHtml(updated.title);
+          }
+          return updated;
+        });
         console.log('[StudentClassView] Updated classData for questionUpdated', {
           questionId,
           updatedFields,
@@ -514,6 +539,7 @@ const StudentClassView = () => {
                       (q) => q._id === (assignment.questionId?._id || assignment.questionId)
                     );
                     const classInfo = question?.classes.find((c) => c.classId === classId);
+                    const plainTitle = question ? stripHtml(question.title) : '';
                     console.log('[StudentClassView] Rendering assignment', {
                       assignmentId: assignment._id,
                       questionId: assignment.questionId?._id || assignment.questionId,
@@ -521,7 +547,7 @@ const StudentClassView = () => {
                       hasQuestion: !!question,
                       isPublished: classInfo?.isPublished,
                       isDisabled: classInfo?.isDisabled,
-                      questionTitle: question?.title,
+                      questionTitle: plainTitle,
                     });
                     if (!question) {
                       console.warn('[StudentClassView] Question not found for assignment', {
@@ -622,9 +648,10 @@ const StudentClassView = () => {
                 {classData.questions
                   .map((question) => {
                     const classInfo = question.classes.find((c) => c.classId === classId);
+                    const plainTitle = stripHtml(question.title);
                     console.log('[StudentClassView] Rendering attached question', {
                       questionId: question._id,
-                      questionTitle: question.title,
+                      questionTitle: plainTitle,
                       classId,
                       isPublished: classInfo?.isPublished,
                       isDisabled: classInfo?.isDisabled,

@@ -1,20 +1,105 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Slate, Editable, withReact, useSlate } from 'slate-react';
-import { createEditor, Transforms, Editor, Text } from 'slate';
+import { createEditor, Transforms, Editor, Text, Range } from 'slate';
 import { withHistory } from 'slate-history';
 import isHotkey from 'is-hotkey';
 import { ChevronDownIcon, ChevronUpIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { useNavigate } from 'react-router-dom';
+import CodeEditor from '../../student/components/CodeEditor';
+import { teacherTestQuestion } from '../../../common/services/api';
 
-// Unchanged: withFormatting, serializeToHTML, deserializeFromHTML, Leaf, Element, Toolbar, RichTextEditor, CollapsibleSection
+// Enhanced withFormatting to properly handle formatting and multi-line paste
 const withFormatting = editor => {
-  const { insertData, insertText } = editor;
+  const { insertData: originalInsertData, isInline, isVoid } = editor;
+  
+  editor.isInline = element => {
+    return element.type === 'link' ? true : isInline(element);
+  };
+  
+  editor.isVoid = element => {
+    return element.type === 'code-block' ? true : isVoid(element);
+  };
+  
+  // Override insertData to properly handle multi-line plain text paste
   editor.insertData = data => {
-    if (data.get('Text')) {
-      insertText(data.get('Text'));
-    } else {
-      insertData(data);
+    try {
+      const text = data.getData('text/plain');
+      const html = data.getData('text/html');
+      
+      // If we have HTML content, use original Slate behavior (it handles HTML well)
+      if (html && html.trim() && html.includes('<')) {
+        originalInsertData(data);
+        return;
+      }
+      
+      // For plain text, handle multi-line paste
+      if (text && text.trim()) {
+        const lines = text.split(/\r?\n/);
+        
+        // Single line - use simple insert
+        if (lines.length <= 1) {
+          Transforms.insertText(editor, text);
+          return;
+        }
+        
+        // Multi-line: ensure we have a valid selection
+        if (!editor.selection) {
+          const end = Editor.end(editor, []);
+          Transforms.select(editor, end);
+        }
+        
+        // Delete selected content first if any
+        if (editor.selection && !Range.isCollapsed(editor.selection)) {
+          Transforms.delete(editor);
+        }
+        
+        // Insert all lines as separate paragraphs
+        // Convert all lines to paragraph nodes first
+        const paragraphNodes = lines
+          .filter(line => line !== undefined && line !== null)
+          .map(line => ({
+            type: 'paragraph',
+            children: [{ text: line || '' }]
+          }));
+        
+        if (paragraphNodes.length > 0) {
+          // Insert all paragraphs at once
+          // First paragraph replaces current content or inserts at cursor
+          // Subsequent paragraphs are inserted after
+          if (paragraphNodes.length === 1) {
+            // Single paragraph: just insert the text
+            Transforms.insertText(editor, lines[0] || '');
+          } else {
+            // Multiple paragraphs: insert first one, then the rest
+            const [firstParagraph, ...restParagraphs] = paragraphNodes;
+            
+            // Insert first paragraph text
+            Transforms.insertText(editor, firstParagraph.children[0].text || '');
+            
+            // Insert remaining paragraphs
+            restParagraphs.forEach((paragraph, index) => {
+              // Insert paragraph break and then the paragraph node
+              Transforms.insertNodes(editor, paragraph);
+            });
+          }
+        }
+        
+        return;
+      }
+      
+      // Fallback: use original behavior
+      originalInsertData(data);
+    } catch (error) {
+      console.error('[withFormatting] Error in insertData:', error);
+      // Fallback to original on error
+      try {
+        originalInsertData(data);
+      } catch (fallbackError) {
+        console.error('[withFormatting] Fallback also failed:', fallbackError);
+      }
     }
   };
+  
   return editor;
 };
 
@@ -264,6 +349,41 @@ const RichTextEditor = ({ value, onChange, placeholder, className }) => {
     }
   };
 
+  const handleCopy = useCallback((event) => {
+    const selection = window.getSelection();
+    const selectedText = selection ? selection.toString() : '';
+
+    if (!selectedText || !event.clipboardData) {
+      return;
+    }
+
+    event.clipboardData.setData('text/plain', selectedText);
+    event.preventDefault();
+  }, []);
+
+  const handleCut = useCallback((event) => {
+    if (!editor.selection || !event.clipboardData) {
+      return;
+    }
+
+    const selectedText = Editor.string(editor, editor.selection);
+    if (!selectedText) {
+      return;
+    }
+
+    event.clipboardData.setData('text/plain', selectedText);
+    Editor.deleteFragment(editor);
+    event.preventDefault();
+  }, [editor]);
+
+  // Paste handler - let Slate's insertData (via withFormatting) handle it
+  // We don't need to prevent default, as Slate will call insertData
+  const handlePaste = useCallback((event) => {
+    // Let Slate handle paste normally through insertData
+    // The withFormatting wrapper will properly handle multi-line content
+    // No need to prevent default or stop propagation
+  }, []);
+
   return (
     <div className={`border border-gray-200 rounded-lg bg-white ${className}`}>
       <Slate editor={editor} initialValue={initialValue} onChange={handleChange}>
@@ -273,6 +393,8 @@ const RichTextEditor = ({ value, onChange, placeholder, className }) => {
           renderLeaf={renderLeaf}
           placeholder={placeholder}
           onKeyDown={handleKeyDown}
+          onCopy={handleCopy}
+          onCut={handleCut}
           className="p-3 min-h-[100px] focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-b-lg"
         />
       </Slate>
@@ -343,6 +465,13 @@ const AdminQuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId
     initialData?.classes?.map(c => c.classId?.toString()) || (defaultClassId ? [defaultClassId] : [])
   );
   const [inputErrors, setInputErrors] = useState(testCases.map(() => ''));
+  
+  // Solution state
+  const [solutionCode, setSolutionCode] = useState(initialData?.solutionCode || '');
+  const [solutionLanguage, setSolutionLanguage] = useState(initialData?.languages?.[0] || 'javascript');
+  const [testResults, setTestResults] = useState(null);
+  const [isTestingSolution, setIsTestingSolution] = useState(false);
+  const navigate = useNavigate();
 
   // Log initial state for debugging
   useEffect(() => {
@@ -447,6 +576,13 @@ func main() {
     }
   }, [languages, type]);
 
+  // Sync solution language with available languages
+  useEffect(() => {
+    if (languages.length > 0 && !languages.includes(solutionLanguage)) {
+      setSolutionLanguage(languages[0]);
+    }
+  }, [languages, solutionLanguage]);
+
   // Validate test case input for C/C++
   const validateTestCaseInput = (input, lang) => {
     if (lang === 'c' || lang === 'cpp') {
@@ -547,6 +683,134 @@ func main() {
     const updatedStarterCode = [...starterCode];
     updatedStarterCode[index].code = value;
     setStarterCode(updatedStarterCode);
+  };
+
+  // Test solution against test cases (client-side validation)
+  const handleTestSolution = async () => {
+    console.log('========================================');
+    console.log('[AdminQuestionForm] ====== TEST SOLUTION START ======');
+    console.log('[AdminQuestionForm] Current state:', {
+      solutionCodeLength: solutionCode?.length || 0,
+      solutionLanguage,
+      testCasesCount: testCases?.length || 0,
+      questionId: initialData?._id,
+      questionType: type,
+      initialData: initialData ? {
+        _id: initialData._id,
+        type: initialData.type,
+        title: initialData.title,
+        languages: initialData.languages,
+        isDraft: initialData.isDraft,
+        status: initialData.status
+      } : null
+    });
+
+    if (!solutionCode.trim()) {
+      console.error('[AdminQuestionForm] ERROR: Solution code is empty');
+      alert('Please write a solution first');
+      return;
+    }
+    if (testCases.length === 0) {
+      console.error('[AdminQuestionForm] ERROR: No test cases found');
+      alert('Please add at least one test case');
+      return;
+    }
+    if (testCases.some(tc => !tc.input.trim() || !tc.expectedOutput.trim())) {
+      console.error('[AdminQuestionForm] ERROR: Some test cases are incomplete:', testCases.map((tc, idx) => ({
+        index: idx,
+        hasInput: !!tc.input?.trim(),
+        hasOutput: !!tc.expectedOutput?.trim()
+      })));
+      alert('All test cases must have input and expected output');
+      return;
+    }
+
+    // Check if question exists (for drafts that have been saved)
+    if (!initialData?._id) {
+      console.error('[AdminQuestionForm] ERROR: Question ID is missing. initialData:', initialData);
+      alert('Please save the draft first before testing. The question needs to be saved to test the solution.');
+      return;
+    }
+
+    // Check if it's a coding question
+    if (type !== 'coding' && type !== 'fillInTheBlanksCoding') {
+      console.error('[AdminQuestionForm] ERROR: Not a coding question. Type:', type);
+      alert('Solution testing is only available for coding questions');
+      return;
+    }
+
+    console.log('[AdminQuestionForm] All validations passed. Starting test...');
+    setIsTestingSolution(true);
+    setTestResults(null);
+
+    try {
+      console.log('[AdminQuestionForm] Calling teacherTestQuestion API with:', {
+        questionId: initialData._id,
+        solutionCodeLength: solutionCode.length,
+        solutionLanguage,
+        classId: null
+      });
+      
+      // Call the teacher test API (which also works for admins and drafts)
+      const response = await teacherTestQuestion(
+        initialData._id,
+        solutionCode,
+        null, // classId is optional for drafts
+        solutionLanguage
+      );
+
+      console.log('[AdminQuestionForm] API call successful. Processing response...');
+      console.log('[AdminQuestionForm] Response data:', {
+        hasTestResults: !!response.data.testResults,
+        testResultsCount: response.data.testResults?.length || 0,
+        passedTestCases: response.data.passedTestCases,
+        totalTestCases: response.data.totalTestCases,
+        isCorrect: response.data.isCorrect,
+        publicTestCases: response.data.publicTestCases,
+        hiddenTestCases: response.data.hiddenTestCases,
+        fullResponse: response.data
+      });
+
+      const { testResults, passedTestCases, totalTestCases, isCorrect, publicTestCases, hiddenTestCases } = response.data;
+
+      if (!testResults || !Array.isArray(testResults) || testResults.length === 0) {
+        console.error('[AdminQuestionForm] ERROR: Invalid test results in response:', response.data);
+        throw new Error('Invalid test results received from server');
+      }
+
+      console.log('[AdminQuestionForm] Setting test results in state');
+      setTestResults({
+        message: isCorrect 
+          ? `✅ All ${totalTestCases} test cases passed! (${publicTestCases} public, ${hiddenTestCases} hidden)`
+          : `⚠️ ${passedTestCases}/${totalTestCases} test cases passed (${publicTestCases} public, ${hiddenTestCases} hidden)`,
+        results: testResults,
+        totalTestCases,
+        passedTestCases,
+        isCorrect,
+        publicTestCases,
+        hiddenTestCases
+      });
+      
+      console.log('[AdminQuestionForm] ====== TEST SOLUTION SUCCESS ======');
+      console.log('========================================');
+    } catch (err) {
+      console.error('[AdminQuestionForm] ====== ERROR TESTING SOLUTION ======');
+      console.error('[AdminQuestionForm] Error type:', err.constructor.name);
+      console.error('[AdminQuestionForm] Error message:', err.message);
+      console.error('[AdminQuestionForm] Error stack:', err.stack);
+      console.error('[AdminQuestionForm] Error response:', err.response?.data);
+      console.error('[AdminQuestionForm] Error response status:', err.response?.status);
+      console.error('[AdminQuestionForm] Full error:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
+      console.error('========================================');
+      
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to test solution';
+      setTestResults({
+        error: true,
+        message: `Error: ${errorMessage}`
+      });
+    } finally {
+      setIsTestingSolution(false);
+    }
   };
 
   const handleFormSubmit = (e) => {
@@ -691,6 +955,10 @@ func main() {
       }));
       questionData.timeLimit = Number(timeLimit);
       questionData.memoryLimit = Number(memoryLimit);
+      if (solutionCode.trim()) {
+        questionData.solutionCode = solutionCode;
+        questionData.solutionLanguage = solutionLanguage;
+      }
     }
 
     if (maxAttempts) {
@@ -1159,16 +1427,154 @@ func main() {
               </div>
             </div>
           </CollapsibleSection>
+
+          <CollapsibleSection title="Solution Code (Optional)">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Solution Language</label>
+                <select
+                  value={solutionLanguage}
+                  onChange={(e) => setSolutionLanguage(e.target.value)}
+                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
+                >
+                  {languages.map(lang => (
+                    <option key={lang} value={lang}>
+                      {lang.charAt(0).toUpperCase() + lang.slice(1)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Solution Code</label>
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <CodeEditor
+                    value={solutionCode}
+                    onChange={setSolutionCode}
+                    language={solutionLanguage}
+                    disabled={false}
+                    isFillInTheBlanks={false}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-gray-500">
+                  Write the solution code here. Save the draft first, then you can test it against all test cases (including hidden ones).
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleTestSolution}
+                  disabled={isTestingSolution || !solutionCode.trim() || testCases.length === 0}
+                  className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  {isTestingSolution ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Testing...
+                    </>
+                  ) : (
+                    'Test Solution'
+                  )}
+                </button>
+              </div>
+              {testResults && (
+                <div className={`mt-4 p-4 rounded-lg border ${
+                  testResults.error 
+                    ? 'bg-red-50 border-red-200' 
+                    : testResults.isCorrect 
+                      ? 'bg-green-50 border-green-200' 
+                      : 'bg-yellow-50 border-yellow-200'
+                }`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold text-gray-800">
+                      {testResults.error ? 'Error' : 'Test Results'}
+                    </h4>
+                    {!testResults.error && (
+                      <span className={`text-xs font-semibold ${
+                        testResults.isCorrect ? 'text-green-700' : 'text-yellow-700'
+                      }`}>
+                        {testResults.passedTestCases}/{testResults.totalTestCases} Passed
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-700 mb-3">{testResults.message}</p>
+                  {testResults.results && testResults.results.length > 0 && (
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {testResults.results.map((result, idx) => (
+                        <div 
+                          key={idx} 
+                          className={`p-3 rounded border ${
+                            result.passed 
+                              ? 'bg-green-50 border-green-200' 
+                              : 'bg-red-50 border-red-200'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-semibold text-gray-700">
+                              Test Case {idx + 1}
+                            </span>
+                            <span className={`text-xs font-bold ${
+                              result.passed ? 'text-green-700' : 'text-red-700'
+                            }`}>
+                              {result.passed ? '✓ PASSED' : '✗ FAILED'}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-600 space-y-1">
+                            <div><strong>Input:</strong> <code className="bg-gray-100 px-1 rounded">{result.input}</code></div>
+                            <div><strong>Expected:</strong> <code className="bg-gray-100 px-1 rounded">{result.expected || result.expectedOutput}</code></div>
+                            <div><strong>Output:</strong> <code className="bg-gray-100 px-1 rounded">{result.output || 'N/A'}</code></div>
+                            {result.error && (
+                              <div className="mt-1 text-red-600"><strong>Error:</strong> {result.error}</div>
+                            )}
+                            {!result.isPublic && (
+                              <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded">
+                                Hidden Test Case
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </CollapsibleSection>
         </>
       )}
 
-      <div className="flex justify-end pt-6">
-        <button
-          type="submit"
-          className="inline-flex items-center px-6 py-3 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all"
-        >
-          {initialData ? 'Update Question' : 'Create Question'}
-        </button>
+      <div className="flex justify-between items-center pt-6">
+        {initialData && initialData._id && (
+          <button
+            type="button"
+            onClick={() => {
+              if (!initialData._id) {
+                console.error('[AdminQuestionForm] Cannot preview: question ID is missing');
+                alert('Cannot preview question: Question ID is missing. Please save the question first.');
+                return;
+              }
+              console.log('[AdminQuestionForm] Navigating to preview:', initialData._id);
+              navigate(`/admin/questions/${initialData._id}/preview`);
+            }}
+            className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all"
+          >
+            <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+            Preview as Student
+          </button>
+        )}
+        <div className={initialData ? "ml-auto" : ""}>
+          <button
+            type="submit"
+            className="inline-flex items-center px-6 py-3 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all"
+          >
+            {initialData ? (initialData.status === 'draft' || initialData.isDraft ? 'Update Draft' : 'Update Question') : 'Save as Draft'}
+          </button>
+        </div>
       </div>
     </form>
   );

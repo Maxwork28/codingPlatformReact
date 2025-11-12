@@ -261,17 +261,17 @@ export const getClassTeachers = async (classId) => {
 /**
  * Manages teacher permissions
  * @param {string} teacherId - Teacher ID
- * @param {boolean} canCreateClass - Permission to create classes
+ * @param {boolean} canCreateQuestion - Permission to create questions
  * @returns {Promise} Axios response
  */
-export const manageTeacherPermission = async (teacherId, canCreateClass) => {
-  console.log('manageTeacherPermission called', { teacherId, canCreateClass });
+export const manageTeacherPermission = async (teacherId, canCreateQuestion) => {
+  console.log('manageTeacherPermission called', { teacherId, canCreateQuestion });
   try {
-    const response = await api.post('/admin/teacher-permission', { teacherId, canCreateClass });
-    console.log('manageTeacherPermission success', { teacherId, canCreateClass, response: response.data });
+    const response = await api.post('/admin/teacher-permission', { teacherId, canCreateQuestion });
+    console.log('manageTeacherPermission success', { teacherId, canCreateQuestion, response: response.data });
     return response;
   } catch (err) {
-    console.error('manageTeacherPermission error', { teacherId, canCreateClass, error: err.response?.data?.error || 'Failed to manage teacher permission' });
+    console.error('manageTeacherPermission error', { teacherId, canCreateQuestion, error: err.response?.data?.error || 'Failed to manage teacher permission' });
     throw err.response?.data?.error || 'Failed to manage teacher permission';
   }
 };
@@ -605,14 +605,174 @@ export const adminDeleteQuestion = async (questionId) => {
  * @returns {Promise} Axios response
  */
 export const adminSearchQuestionsById = async (questionId) => {
-  console.log('adminSearchQuestionsById called', { questionId });
+  console.log('adminSearchQuestionsById called', { questionId, type: typeof questionId });
+  
+  // Validate questionId
+  if (!questionId || questionId === 'undefined' || questionId === 'null' || (typeof questionId === 'string' && questionId.trim() === '')) {
+    const errorMsg = 'Question ID is required';
+    console.error('adminSearchQuestionsById validation failed:', { questionId, error: errorMsg });
+    throw new Error(errorMsg);
+  }
+  
+  // Basic MongoDB ObjectId format validation (24 hex characters)
+  const objectIdPattern = /^[0-9a-fA-F]{24}$/;
+  if (typeof questionId === 'string' && !objectIdPattern.test(questionId)) {
+    const errorMsg = `Invalid question ID format: ${questionId}`;
+    console.error('adminSearchQuestionsById validation failed:', { questionId, error: errorMsg });
+    throw new Error(errorMsg);
+  }
+  
   try {
     const response = await api.get('/admin/questions/search-by-id', { params: { questionId } });
-    console.log('adminSearchQuestionsById success', { questionId, question: response.data.question });
+    console.log('adminSearchQuestionsById success', { questionId, question: response.data?.question });
+    if (!response.data?.question) {
+      throw new Error('Question not found');
+    }
     return response;
   } catch (err) {
-    console.error('adminSearchQuestionsById error', { questionId, error: err.response?.data?.error || 'Failed to search question' });
-    throw err.response?.data?.error || 'Failed to search question';
+    console.error('adminSearchQuestionsById error', { 
+      questionId, 
+      error: err,
+      errorMessage: err.message,
+      responseError: err.response?.data?.error,
+      responseStatus: err.response?.status,
+      responseData: err.response?.data
+    });
+    // Handle different error formats
+    if (typeof err === 'string') {
+      throw new Error(err);
+    } else if (err.response?.data?.error) {
+      throw new Error(err.response.data.error);
+    } else if (err.message) {
+      throw err;
+    } else {
+      throw new Error('Failed to search question');
+    }
+  }
+};
+
+// Draft Question Routes
+/**
+ * Creates a draft question
+ * @param {Object} questionData - Draft question data
+ * @returns {Promise} Axios response
+ */
+export const createDraftQuestion = async (questionData) => {
+  console.log('createDraftQuestion called', { questionData });
+  try {
+    const response = await api.post('/admin/questions/draft', {
+      ...questionData,
+      status: 'draft',
+      isDraft: true
+    });
+    console.log('createDraftQuestion success', { question: response.data.question });
+    return response;
+  } catch (err) {
+    console.error('createDraftQuestion error', { error: err.response?.data?.error || 'Failed to create draft' });
+    throw err.response?.data?.error || 'Failed to create draft';
+  }
+};
+
+/**
+ * Gets all draft questions
+ * @param {Object} params - Query parameters (page, limit, search)
+ * @returns {Promise} Axios response
+ */
+export const getDrafts = async (params = {}) => {
+  console.log('getDrafts called', { params });
+  try {
+    const response = await api.get('/admin/questions/drafts', { params });
+    console.log('getDrafts success', { drafts: response.data.drafts });
+    return response;
+  } catch (err) {
+    console.error('getDrafts error', { error: err.response?.data?.error || 'Failed to fetch drafts' });
+    throw err.response?.data?.error || 'Failed to fetch drafts';
+  }
+};
+
+/**
+ * Gets draft count
+ * @returns {Promise} Axios response
+ */
+export const getDraftCount = async () => {
+  console.log('getDraftCount called');
+  try {
+    const response = await api.get('/admin/questions/drafts/count');
+    console.log('getDraftCount success', { count: response.data.count });
+    return response;
+  } catch (err) {
+    console.error('getDraftCount error', { error: err.response?.data?.error || 'Failed to fetch draft count' });
+    throw err.response?.data?.error || 'Failed to fetch draft count';
+  }
+};
+
+/**
+ * Gets a single draft question
+ * @param {string} questionId - Draft question ID
+ * @returns {Promise} Axios response
+ */
+export const getDraftQuestion = async (questionId) => {
+  console.log('getDraftQuestion called', { questionId });
+  try {
+    const response = await api.get(`/admin/questions/drafts/${questionId}`);
+    console.log('getDraftQuestion success', { question: response.data.question });
+    return response;
+  } catch (err) {
+    console.error('getDraftQuestion error', { error: err.response?.data?.error || 'Failed to fetch draft' });
+    throw err.response?.data?.error || 'Failed to fetch draft';
+  }
+};
+
+/**
+ * Updates a draft question
+ * @param {string} questionId - Draft question ID
+ * @param {Object} questionData - Updated question data
+ * @returns {Promise} Axios response
+ */
+export const updateDraftQuestion = async (questionId, questionData) => {
+  console.log('updateDraftQuestion called', { questionId, questionData });
+  try {
+    const response = await api.put(`/admin/questions/drafts/${questionId}`, questionData);
+    console.log('updateDraftQuestion success', { question: response.data.question });
+    return response;
+  } catch (err) {
+    console.error('updateDraftQuestion error', { error: err.response?.data?.error || 'Failed to update draft' });
+    throw err.response?.data?.error || 'Failed to update draft';
+  }
+};
+
+/**
+ * Publishes a draft question
+ * @param {string} questionId - Draft question ID
+ * @param {Object} questionData - Optional final question data
+ * @returns {Promise} Axios response
+ */
+export const publishDraftQuestion = async (questionId, questionData = {}) => {
+  console.log('publishDraftQuestion called', { questionId, questionData });
+  try {
+    const response = await api.put(`/admin/questions/drafts/${questionId}/publish`, questionData);
+    console.log('publishDraftQuestion success', { question: response.data.question });
+    return response;
+  } catch (err) {
+    console.error('publishDraftQuestion error', { error: err.response?.data?.error || 'Failed to publish draft' });
+    throw err.response?.data?.error || 'Failed to publish draft';
+  }
+};
+
+/**
+ * Deletes a draft question
+ * @param {string} questionId - Draft question ID
+ * @returns {Promise} Axios response
+ */
+export const deleteDraftQuestion = async (questionId) => {
+  console.log('deleteDraftQuestion called', { questionId });
+  try {
+    const response = await api.delete(`/admin/questions/drafts/${questionId}`);
+    console.log('deleteDraftQuestion success', { message: response.data.message });
+    return response;
+  } catch (err) {
+    console.error('deleteDraftQuestion error', { error: err.response?.data?.error || 'Failed to delete draft' });
+    throw err.response?.data?.error || 'Failed to delete draft';
   }
 };
 
@@ -1013,24 +1173,56 @@ export const runCodeWithCustomInput = async (questionId, answer, classId, langua
  * @returns {Promise} Axios response with all test results
  */
 export const teacherTestQuestion = async (questionId, answer, classId, language) => {
-  console.log('teacherTestQuestion called', { questionId, classId, language });
+  console.log('========================================');
+  console.log('[API] teacherTestQuestion called');
+  console.log('[API] Parameters:', { 
+    questionId, 
+    classId: classId || 'null (draft)', 
+    language,
+    answerLength: answer?.length || 0
+  });
+  
   try {
+    console.log('[API] Making POST request to:', `/questions/${questionId}/teacher-test`);
+    console.log('[API] Request payload:', {
+      answer: answer ? `${answer.substring(0, 100)}... (length: ${answer.length})` : 'MISSING',
+      classId: classId || null,
+      language
+    });
+    
     const response = await api.post(`/questions/${questionId}/teacher-test`, {
       answer,
       classId,
       language
     });
-    console.log('teacherTestQuestion success', { 
-      testResults: response.data.testResults,
+    
+    console.log('[API] ====== SUCCESS ======');
+    console.log('[API] Response status:', response.status);
+    console.log('[API] Response data:', {
+      message: response.data.message,
+      testResultsCount: response.data.testResults?.length || 0,
       passedTestCases: response.data.passedTestCases,
       totalTestCases: response.data.totalTestCases,
       publicTestCases: response.data.publicTestCases,
-      hiddenTestCases: response.data.hiddenTestCases
+      hiddenTestCases: response.data.hiddenTestCases,
+      isCorrect: response.data.isCorrect
     });
+    console.log('[API] Full response data:', JSON.stringify(response.data, null, 2));
+    console.log('========================================');
+    
     return response;
   } catch (err) {
-    console.error('teacherTestQuestion error', { error: err.response?.data?.error || 'Failed to test question' });
-    throw err.response?.data?.error || 'Failed to test question';
+    console.error('[API] ====== ERROR ======');
+    console.error('[API] Error type:', err.constructor.name);
+    console.error('[API] Error message:', err.message);
+    console.error('[API] Error response status:', err.response?.status);
+    console.error('[API] Error response data:', err.response?.data);
+    console.error('[API] Error response headers:', err.response?.headers);
+    console.error('[API] Full error:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
+    console.error('========================================');
+    
+    const errorMessage = err.response?.data?.error || err.message || 'Failed to test question';
+    throw new Error(errorMessage);
   }
 };
 

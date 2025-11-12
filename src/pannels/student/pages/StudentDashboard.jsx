@@ -9,6 +9,18 @@ import { GiNotebook } from "react-icons/gi";
 import { MdOutlineAssignment } from "react-icons/md";
 import { VscCode } from "react-icons/vsc";
 
+const stripHtml = (html) => {
+  if (!html) return '';
+  try {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    return tmp.textContent || tmp.innerText || '';
+  } catch (err) {
+    console.warn('[StudentDashboard] stripHtml fallback used', { html, error: err });
+    return typeof html === 'string' ? html.replace(/<[^>]*>/g, '') : '';
+  }
+};
+
 const StudentDashboard = () => {
   const dispatch = useDispatch();
   const { classes, status, error } = useSelector((state) => state.classes);
@@ -343,6 +355,8 @@ const StudentDashboard = () => {
                 // Handle both string questionId and populated questionId object
                 const questionId = assignment.questionId?._id || assignment.questionId;
                 const question = cls?.questions?.find((q) => q._id === questionId);
+                const plainTitle = stripHtml(question.title);
+
                 console.log('[StudentDashboard] Rendering assignment', {
                   assignmentId: assignment._id,
                   questionId: questionId,
@@ -352,7 +366,7 @@ const StudentDashboard = () => {
                   classQuestionsCount: cls?.questions?.length || 0,
                   hasQuestion: !!question,
                   className: cls?.name,
-                  questionTitle: question?.title,
+                  questionTitle: plainTitle,
                 });
                 if (!question) {
                   console.warn('[StudentDashboard] Question not found for assignment', {
@@ -388,7 +402,7 @@ const StudentDashboard = () => {
                     }
                   >
                     <div className="px-6 py-4">
-                      <h4 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{question.title}</h4>
+                      <h4 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{plainTitle || 'Untitled Question'}</h4>
                       <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Class: {cls?.name}</p>
                       <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                         Due: {new Date(assignment.dueDate).toLocaleDateString()}

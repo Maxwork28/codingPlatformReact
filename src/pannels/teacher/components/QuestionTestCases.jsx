@@ -1,13 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import { getQuestion } from '../../../common/services/api';
 import parse from 'html-react-parser';
 
 const QuestionTestCases = () => {
   const { questionId } = useParams();
+  const location = useLocation();
   const [question, setQuestion] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [classId, setClassId] = useState(location.state?.classId || '');
+
+  const resolveClassId = (questionData) => {
+    if (!questionData) return '';
+    const classEntry = questionData.classes?.[0];
+    if (classEntry?.classId?._id) return classEntry.classId._id;
+    if (classEntry?.classId) return classEntry.classId;
+    if (Array.isArray(questionData.classIds) && questionData.classIds.length > 0) return questionData.classIds[0];
+    return '';
+  };
 
   // Strip HTML tags for test cases
   const stripHtml = (html) => {
@@ -22,7 +33,12 @@ const QuestionTestCases = () => {
         setIsLoading(true);
         const response = await getQuestion(questionId);
         console.log('[QuestionTestCases] Question fetched:', response.data.question);
-        setQuestion(response.data.question);
+        const fetchedQuestion = response.data.question;
+        setQuestion(fetchedQuestion);
+        const derivedClassId = resolveClassId(fetchedQuestion);
+        if (!classId && derivedClassId) {
+          setClassId(derivedClassId);
+        }
       } catch (err) {
         console.error('[QuestionTestCases] Fetch error:', err.message, err.response?.data);
         setError(err.response?.data?.error || 'Failed to load test cases');
@@ -89,13 +105,18 @@ const QuestionTestCases = () => {
     );
   }
 
+  const fallbackClassId = classId || resolveClassId(question);
+  const backHref = fallbackClassId ? `/teacher/classes/${fallbackClassId}` : '/teacher/questions';
+  const backState = fallbackClassId ? { classId: fallbackClassId } : undefined;
+
   if (question.type !== 'coding') {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
           <div className="flex items-center mb-6">
             <Link
-              to={`/teacher/classes/${question.classIds?.[0] || ''}`}
+              to={backHref}
+              state={backState}
               className="mr-4 p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200"
             >
               <svg
@@ -126,7 +147,8 @@ const QuestionTestCases = () => {
       <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
         <div className="flex items-center mb-6">
           <Link
-            to={`/teacher/classes/${question.classIds?.[0] || ''}`}
+            to={backHref}
+            state={backState}
             className="mr-4 p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200"
           >
             <svg

@@ -2,7 +2,7 @@
 import { useParams, Link } from 'react-router-dom';
 import { useSelector, shallowEqual } from 'react-redux';
 import { format } from 'date-fns';
-import { Menu, Transition, Dialog, Disclosure, Tab } from '@headlessui/react';
+import { Menu, Transition, Dialog, Disclosure, Tab, Portal } from '@headlessui/react';
 import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -455,7 +455,7 @@ const ClassDetails = () => {
     const isBlocked = studentData?.isBlocked || false;
 
     return (
-      <div className={`${isBlocked ? 'bg-gray-800 text-white' : 'bg-white/90'} backdrop-blur-sm rounded-xl shadow-lg p-6 border border-gray-100 transition-all duration-300 hover:shadow-xl`}>
+      <div className={`${isBlocked ? 'bg-gray-800 text-white' : 'bg-white/90'} backdrop-blur-sm rounded-xl shadow-lg p-6 border border-gray-100 transition-all duration-300 hover:shadow-xl overflow-visible`} style={{ position: 'relative', zIndex: 1 }}>
         <div className="flex justify-between items-center">
           <div className="flex items-center">
             <div>
@@ -474,7 +474,7 @@ const ClassDetails = () => {
               </svg>
             )}
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2" style={{ position: 'relative', zIndex: 100 }}>
             <button
               onClick={() => openStudentModal(student)}
               className={`p-2 rounded-full ${isBlocked ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'} focus:outline-none transition-colors duration-200`}
@@ -493,8 +493,11 @@ const ClassDetails = () => {
                 />
               </svg>
             </button>
-            <Menu as="div" className="relative inline-block text-left">
-              <Menu.Button className={`inline-flex items-center p-2 rounded-full ${isBlocked ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'} focus:outline-none transition-colors duration-200`} aria-label="Student actions">
+            <Menu as="div" className="relative">
+              <Menu.Button 
+                className={`inline-flex items-center p-2 rounded-full ${isBlocked ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'} focus:outline-none transition-colors duration-200`} 
+                aria-label="Student actions"
+              >
                 <svg
                   className="h-5 w-5"
                   xmlns="http://www.w3.org/2000/svg"
@@ -513,12 +516,14 @@ const ClassDetails = () => {
                 leaveFrom="transform opacity-100 scale-100"
                 leaveTo="transform opacity-0 scale-95"
               >
-                <Menu.Items className="absolute right-0 mt-2 w-48 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-10">
+                <Menu.Items className="absolute right-0 mt-2 w-48 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-[9999]">
                   <div className="py-1">
                     <Menu.Item>
                       {({ active }) => (
                         <button
-                          onClick={() => handleFocusUser(id, !isFocused)}
+                          onClick={() => {
+                            handleFocusUser(id, !isFocused);
+                          }}
                           className={`${
                             active ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
                           } block w-full px-4 py-2 text-sm text-left`}
@@ -530,7 +535,9 @@ const ClassDetails = () => {
                     <Menu.Item>
                       {({ active }) => (
                         <button
-                          onClick={() => handleBlockUser(id, !isBlocked)}
+                          onClick={() => {
+                            handleBlockUser(id, !isBlocked);
+                          }}
                           className={`${
                             active ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
                           } block w-full px-4 py-2 text-sm text-left`}
@@ -978,9 +985,9 @@ const ClassDetails = () => {
       {/* Student Cards */}
       <section className="mb-12">
         <h2 className="text-2xl font-semibold text-gray-800 mb-4">Students</h2>
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
+        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100 overflow-visible">
           {runSubmitStats?.studentStats?.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 overflow-visible" style={{ position: 'relative' }}>
               {runSubmitStats.studentStats.map((student, index) => (
                 <StudentCard key={student.student.id || index} student={student} />
               ))}

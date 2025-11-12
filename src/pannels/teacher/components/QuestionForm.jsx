@@ -4,6 +4,8 @@ import { createEditor, Transforms, Editor, Text } from 'slate';
 import { withHistory } from 'slate-history';
 import isHotkey from 'is-hotkey';
 import { ChevronDownIcon, ChevronUpIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
+import CodeEditor from '../../student/components/CodeEditor';
+import { teacherTestQuestion } from '../../../common/services/api';
 
 // Custom Slate editor with formatting
 const withFormatting = editor => {
@@ -434,6 +436,10 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
     (defaultClassId ? [defaultClassId] : [])
   );
   const [inputErrors, setInputErrors] = useState(testCases.map(() => ''));
+  const [solutionCode, setSolutionCode] = useState(initialData?.solutionCode || '');
+  const [solutionLanguage, setSolutionLanguage] = useState(initialData?.solutionLanguage || (initialData?.languages?.[0] || 'python'));
+  const [isTestingSolution, setIsTestingSolution] = useState(false);
+  const [testResults, setTestResults] = useState(null);
   // Use initialData ID or timestamp to force editor remount only when question changes
   const editorResetKey = useMemo(() => initialData?._id || initialData?.id || Date.now(), [initialData?._id, initialData?.id]);
 
@@ -481,8 +487,19 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
         initialData.classes?.map(c => c.classId?.toString()) || 
         (defaultClassId ? [defaultClassId] : [])
       );
+      setSolutionCode(initialData.solutionCode || '');
+      setSolutionLanguage(initialData.solutionLanguage || (initialData.languages?.[0] || 'python'));
     }
   }, [initialData, defaultClassId]);
+
+  // Update solutionLanguage when languages change (if current language is not in the list)
+  useEffect(() => {
+    if ((type === 'coding' || type === 'fillInTheBlanksCoding') && languages.length > 0) {
+      if (!languages.includes(solutionLanguage)) {
+        setSolutionLanguage(languages[0]);
+      }
+    }
+  }, [languages, type, solutionLanguage]);
 
   const supportedLanguages = ['javascript', 'c', 'cpp', 'java', 'python', 'php', 'ruby', 'go'];
 
@@ -665,6 +682,75 @@ func main() {
     setStarterCode(updatedStarterCode);
   };
 
+  // Test solution against test cases
+  const handleTestSolution = async () => {
+    if (!solutionCode.trim()) {
+      alert('Please write a solution first');
+      return;
+    }
+    if (testCases.length === 0) {
+      alert('Please add at least one test case');
+      return;
+    }
+    if (testCases.some(tc => !tc.input.trim() || !tc.expectedOutput.trim())) {
+      alert('All test cases must have input and expected output');
+      return;
+    }
+
+    // Check if question exists (for questions that have been saved)
+    if (!initialData?._id) {
+      alert('Please save the question first before testing. The question needs to be saved to test the solution.');
+      return;
+    }
+
+    // Check if it's a coding question
+    if (type !== 'coding' && type !== 'fillInTheBlanksCoding') {
+      alert('Solution testing is only available for coding questions');
+      return;
+    }
+
+    setIsTestingSolution(true);
+    setTestResults(null);
+
+    try {
+      console.log('[QuestionForm] Testing solution for question:', initialData._id);
+      
+      // Use the first classId if available, otherwise null (for testing purposes)
+      const classIdForTest = classIds && classIds.length > 0 ? classIds[0] : null;
+      
+      // Call the teacher test API (which also works for admins and drafts)
+      const response = await teacherTestQuestion(
+        initialData._id,
+        solutionCode,
+        classIdForTest, // classId is optional for drafts
+        solutionLanguage
+      );
+
+      const { testResults, passedTestCases, totalTestCases, isCorrect, publicTestCases, hiddenTestCases } = response.data;
+
+      setTestResults({
+        message: isCorrect 
+          ? `✅ All ${totalTestCases} test cases passed! (${publicTestCases} public, ${hiddenTestCases} hidden)`
+          : `⚠️ ${passedTestCases}/${totalTestCases} test cases passed (${publicTestCases} public, ${hiddenTestCases} hidden)`,
+        results: testResults,
+        totalTestCases,
+        passedTestCases,
+        isCorrect,
+        publicTestCases,
+        hiddenTestCases
+      });
+    } catch (err) {
+      console.error('[QuestionForm] Error testing solution:', err);
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to test solution';
+      setTestResults({
+        error: true,
+        message: `Error: ${errorMessage}`
+      });
+    } finally {
+      setIsTestingSolution(false);
+    }
+  };
+
   const handleFormSubmit = (e) => {
     e.preventDefault();
 
@@ -681,7 +767,9 @@ func main() {
       return;
     }
 
-    if (classIds.length === 0) {
+    // For drafts, classIds are optional (can be empty)
+    // For published questions, classIds are required
+    if (!initialData?.isDraft && classIds.length === 0) {
       alert('Please select at least one class.');
       return;
     }
@@ -770,6 +858,10 @@ func main() {
       }));
       questionData.timeLimit = Number(timeLimit);
       questionData.memoryLimit = Number(memoryLimit);
+      if (solutionCode.trim()) {
+        questionData.solutionCode = solutionCode;
+        questionData.solutionLanguage = solutionLanguage;
+      }
     } else if (type === 'coding') {
       questionData.languages = languages;
       questionData.templateCode = starterCode.map(sc => ({
@@ -783,6 +875,10 @@ func main() {
       }));
       questionData.timeLimit = Number(timeLimit);
       questionData.memoryLimit = Number(memoryLimit);
+      if (solutionCode.trim()) {
+        questionData.solutionCode = solutionCode;
+        questionData.solutionLanguage = solutionLanguage;
+      }
     }
 
     console.log('QuestionForm: Submitting', questionData);
@@ -1220,6 +1316,121 @@ func main() {
               </div>
             </div>
           </CollapsibleSection>
+
+          <CollapsibleSection title="Solution Code (Optional)">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Solution Language</label>
+                <select
+                  value={solutionLanguage}
+                  onChange={(e) => setSolutionLanguage(e.target.value)}
+                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
+                >
+                  {languages.map(lang => (
+                    <option key={lang} value={lang}>
+                      {lang.charAt(0).toUpperCase() + lang.slice(1)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Solution Code</label>
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <CodeEditor
+                    value={solutionCode}
+                    onChange={setSolutionCode}
+                    language={solutionLanguage}
+                    disabled={false}
+                    isFillInTheBlanks={false}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-gray-500">
+                  Write the solution code here. Save the question first, then you can test it against all test cases (including hidden ones).
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleTestSolution}
+                  disabled={isTestingSolution || !solutionCode.trim() || testCases.length === 0 || !initialData?._id}
+                  className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  {isTestingSolution ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Testing...
+                    </>
+                  ) : (
+                    'Test Solution'
+                  )}
+                </button>
+              </div>
+              {testResults && (
+                <div className={`mt-4 p-4 rounded-lg border ${
+                  testResults.error 
+                    ? 'bg-red-50 border-red-200' 
+                    : testResults.isCorrect 
+                      ? 'bg-green-50 border-green-200' 
+                      : 'bg-yellow-50 border-yellow-200'
+                }`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold text-gray-800">
+                      {testResults.error ? 'Error' : 'Test Results'}
+                    </h4>
+                    {!testResults.error && (
+                      <span className={`text-xs font-semibold ${
+                        testResults.isCorrect ? 'text-green-700' : 'text-yellow-700'
+                      }`}>
+                        {testResults.passedTestCases}/{testResults.totalTestCases} Passed
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-700 mb-3">{testResults.message}</p>
+                  {testResults.results && testResults.results.length > 0 && (
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {testResults.results.map((result, idx) => (
+                        <div 
+                          key={idx} 
+                          className={`p-3 rounded border ${
+                            result.passed 
+                              ? 'bg-green-50 border-green-200' 
+                              : 'bg-red-50 border-red-200'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-semibold text-gray-700">
+                              Test Case {idx + 1}
+                            </span>
+                            <span className={`text-xs font-bold ${
+                              result.passed ? 'text-green-700' : 'text-red-700'
+                            }`}>
+                              {result.passed ? '✓ PASSED' : '✗ FAILED'}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-600 space-y-1">
+                            <div><strong>Input:</strong> <code className="bg-gray-100 px-1 rounded">{result.input}</code></div>
+                            <div><strong>Expected:</strong> <code className="bg-gray-100 px-1 rounded">{result.expected || result.expectedOutput}</code></div>
+                            <div><strong>Output:</strong> <code className="bg-gray-100 px-1 rounded">{result.output || 'N/A'}</code></div>
+                            {result.error && (
+                              <div className="mt-1 text-red-600"><strong>Error:</strong> {result.error}</div>
+                            )}
+                            {!result.isPublic && (
+                              <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded">
+                                Hidden Test Case
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </CollapsibleSection>
         </>
       )}
 
@@ -1229,7 +1440,9 @@ func main() {
           type="submit"
           className="inline-flex items-center px-6 py-3 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all"
         >
-          {initialData ? 'Update Question' : 'Create Question'}
+          {initialData?._id
+            ? (initialData?.isDraft ? 'Update Draft' : 'Update Question')
+            : 'Save as Draft'}
         </button>
       </div>
     </form>

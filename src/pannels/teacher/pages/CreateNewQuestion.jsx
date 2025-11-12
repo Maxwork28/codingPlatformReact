@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { fetchClasses } from '../../../common/components/redux/classSlice';
-import { assignQuestion } from '../../../common/services/api';
+import { createDraftQuestion } from '../../../common/services/api';
 import QuestionForm from '../components/QuestionForm';
 import { ArrowLeftIcon, CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 
@@ -26,14 +26,20 @@ const CreateNewQuestion = () => {
   const handleSubmit = async (data) => {
     setIsLoading(true);
     try {
-      const classIds = data.classIds && data.classIds.length > 0 ? data.classIds : classId ? [classId] : [];
-      await assignQuestion({ ...data, classIds });
-      setMessage('Question created successfully!');
+      // Remove classIds since we're creating a draft (not publishing yet)
+      const { classIds, ...questionData } = data;
+      // Save as draft
+      await createDraftQuestion({
+        ...questionData,
+        status: 'draft',
+        isDraft: true
+      });
+      setMessage('Draft saved successfully! Redirecting to drafts page...');
       setError('');
-      setTimeout(() => navigate(classId ? `/teacher/classes/${classId}` : '/teacher/questions/manage'), 2000);
+      setTimeout(() => navigate('/teacher/questions/drafts'), 1500);
     } catch (err) {
-      console.error('[CreateNewQuestion] Error submitting question:', err.message, err.response?.data);
-      const errorMessage = err.response?.data?.error || err.message || 'Failed to create question';
+      console.error('[CreateNewQuestion] Error submitting draft:', err.message, err.response?.data);
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to create draft';
       setError(errorMessage);
       setMessage('');
     } finally {
@@ -63,7 +69,7 @@ const CreateNewQuestion = () => {
         </Link>
         <div>
           <h2 className="text-3xl font-bold tracking-tight" style={{ color: 'var(--text-heading)' }}>
-            Create New Question
+            Create New Draft
           </h2>
           <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>Build engaging questions for your students</p>
         </div>
@@ -77,7 +83,7 @@ const CreateNewQuestion = () => {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
-            <span className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Creating Question...</span>
+            <span className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Saving Draft...</span>
           </div>
         </div>
       )}

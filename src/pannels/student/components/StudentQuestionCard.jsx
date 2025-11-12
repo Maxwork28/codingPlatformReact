@@ -1,10 +1,28 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 
+const stripHtml = (html) => {
+  if (!html) return '';
+  try {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    return tmp.textContent || tmp.innerText || '';
+  } catch (err) {
+    console.warn('StudentQuestionCard: stripHtml fallback used', { html, error: err });
+    return typeof html === 'string' ? html.replace(/<[^>]*>/g, '') : '';
+  }
+};
+
 const StudentQuestionCard = ({ question, assignment }) => {
+  const titleText = useMemo(() => stripHtml(question.title), [question.title]);
+  const descriptionText = useMemo(
+    () => stripHtml(question.description),
+    [question.description]
+  );
+
   console.log('StudentQuestionCard: Rendered with question', {
     id: question._id,
-    title: question.title,
+    title: titleText,
     isDisabled: question.isDisabled,
     isPublished: question.isPublished,
     classes: question.classes,
@@ -16,10 +34,10 @@ const StudentQuestionCard = ({ question, assignment }) => {
       <div className="flex justify-between items-start">
         <div>
           <h3 className="text-lg font-semibold text-gray-800 tracking-tight">
-            {question.title || 'No Title'}
+            {titleText || 'No Title'}
           </h3>
           <p className="mt-2 text-sm text-gray-600 leading-relaxed">
-            {question.description || 'No Description'}
+            {descriptionText || 'No Description'}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 shadow-sm">

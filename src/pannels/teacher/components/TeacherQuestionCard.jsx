@@ -7,6 +7,7 @@ import parse from 'html-react-parser';
 const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const linkState = classId ? { classId } : undefined;
 
   // Get class-specific settings
   const classEntry = question.classes?.find((c) => c.classId?.toString() === classId || c.classId?._id?.toString() === classId);
@@ -87,6 +88,7 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
                   {({ active }) => (
                     <Link
                       to={`/teacher/questions/${question._id}/view`}
+                      state={linkState}
                       className={`${active ? 'bg-indigo-50' : ''} group flex items-center px-4 py-2 text-sm`}
                       style={{ color: 'var(--text-primary)' }}
                     >
@@ -101,6 +103,7 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
                   {({ active }) => (
                     <Link
                       to={`/teacher/questions/${question._id}/statement`}
+                      state={linkState}
                       className={`${active ? 'bg-indigo-50' : ''} group flex items-center px-4 py-2 text-sm`}
                       style={{ color: 'var(--text-primary)' }}
                     >
@@ -115,6 +118,7 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
                   {({ active }) => (
                     <Link
                       to={`/teacher/questions/${question._id}/solution`}
+                      state={linkState}
                       className={`${active ? 'bg-indigo-50' : ''} group flex items-center px-4 py-2 text-sm`}
                       style={{ color: 'var(--text-primary)' }}
                     >
@@ -130,6 +134,7 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
                     {({ active }) => (
                       <Link
                         to={`/teacher/questions/${question._id}/test-cases`}
+                      state={linkState}
                         className={`${active ? 'bg-indigo-50' : ''} group flex items-center px-4 py-2 text-sm`}
                         style={{ color: 'var(--text-primary)' }}
                       >
@@ -147,6 +152,7 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
                   {({ active }) => (
                     <Link
                       to={`/teacher/questions/${question._id}/edit`}
+                      state={linkState}
                       className={`${active ? 'bg-indigo-50' : ''} group flex items-center px-4 py-2 text-sm`}
                       style={{ color: 'var(--text-primary)' }}
                     >
@@ -161,6 +167,7 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
                   {({ active }) => (
                     <Link
                       to={`/teacher/questions/${question._id}/preview`}
+                      state={linkState}
                       className={`${active ? 'bg-indigo-50' : ''} group flex items-center px-4 py-2 text-sm`}
                       style={{ color: 'var(--text-primary)' }}
                     >

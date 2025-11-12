@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { fetchClasses } from '../../../common/components/redux/classSlice';
-import { getQuestion, editQuestion } from '../../../common/services/api';
+import { getQuestion, editQuestion, getDraftQuestion, updateDraftQuestion, publishDraftQuestion } from '../../../common/services/api';
 import QuestionForm from './QuestionForm';
 import { ArrowLeftIcon, CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 
@@ -16,6 +16,7 @@ const QuestionEdit = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [isDraft, setIsDraft] = useState(false);
 
   console.log('[QuestionEdit] Component mounted', { questionId });
 
@@ -31,8 +32,25 @@ const QuestionEdit = () => {
       try {
         setIsLoading(true);
         console.log('[QuestionEdit] Fetching question with ID:', questionId);
-        const response = await getQuestion(questionId);
-        const question = response.data.question || response.data;
+        
+        // Try to fetch as draft first
+        let question = null;
+        let draft = false;
+        try {
+          const draftResponse = await getDraftQuestion(questionId);
+          question = draftResponse.data.question;
+          draft = true;
+          setIsDraft(true);
+          console.log('[QuestionEdit] Question fetched as draft');
+        } catch (draftErr) {
+          // If not a draft, fetch as regular question
+          console.log('[QuestionEdit] Not a draft, fetching as regular question');
+          const response = await getQuestion(questionId);
+          question = response.data.question || response.data;
+          draft = false;
+          setIsDraft(false);
+        }
+        
         console.log('[QuestionEdit] Question fetched:', {
           id: question._id,
           title: question.title,
@@ -44,19 +62,16 @@ const QuestionEdit = () => {
           tagsIsArray: Array.isArray(question.tags),
           languages: question.languages,
           templateCode: question.templateCode,
+          isDraft: draft,
         });
 
         // Extract classIds from question.classes array
         const classIds = question.classes?.map(cls => cls.classId?.toString()).filter(id => id) || [];
-        // Removed strict class ID validation to allow questions without classes
-        // if (classIds.length === 0) {
-        //   console.warn('[QuestionEdit] No valid classIds found in question.classes:', question.classes);
-        //   setError('No valid class IDs found in question data.');
-        //   return;
-        // }
+        // Removed strict class ID validation to allow questions without classes (drafts)
 
         // Prepare initialData for QuestionForm
         const preparedData = {
+          _id: question._id, // Include _id for preview and testing functionality
           type: question.type || 'mcq',
           title: question.title || '',
           description: question.description || '',
@@ -77,6 +92,10 @@ const QuestionEdit = () => {
           memoryLimit: question.memoryLimit || 256,
           classIds, // Use array of class IDs
           classId: classIds[0] || '', // For backward compatibility
+          solutionCode: question.solutionCode || '',
+          solutionLanguage: question.solutionLanguage || question.languages?.[0] || 'javascript',
+          status: question.status || (draft ? 'draft' : 'published'),
+          isDraft: draft,
         };
         console.log('[QuestionEdit] initialData set:', preparedData);
         setInitialData(preparedData);
@@ -100,14 +119,47 @@ const QuestionEdit = () => {
         questionId,
         classIds: questionData.classIds,
         data: questionData,
+        isDraft,
       });
-      await editQuestion(questionId, questionData);
-      setMessage('Question updated successfully!');
-      console.log('[QuestionEdit] Question updated successfully, navigating to:', `/teacher/classes/${questionData.classIds[0] || initialData?.classId || 'manage'}`);
-      setTimeout(() => navigate(`/teacher/classes/${questionData.classIds[0] || initialData?.classId || 'manage'}`), 2000);
+      
+      if (isDraft) {
+        // Update draft
+        await updateDraftQuestion(questionId, questionData);
+        setMessage('Draft updated successfully!');
+        console.log('[QuestionEdit] Draft updated successfully, navigating to /teacher/questions/drafts');
+        setTimeout(() => navigate('/teacher/questions/drafts'), 2000);
+      } else {
+        // Update published question
+        await editQuestion(questionId, questionData);
+        setMessage('Question updated successfully!');
+        console.log('[QuestionEdit] Question updated successfully, navigating to:', `/teacher/classes/${questionData.classIds[0] || initialData?.classId || 'manage'}`);
+        setTimeout(() => navigate(`/teacher/classes/${questionData.classIds[0] || initialData?.classId || 'manage'}`), 2000);
+      }
     } catch (err) {
       console.error('[QuestionEdit] Update error:', err.message, err.response?.data);
       setError(err.response?.data?.error || 'Failed to update question');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handlePublish = async () => {
+    if (!window.confirm('Are you sure you want to publish this draft? Once published, it will be available to assign to classes.')) {
+      return;
+    }
+    setIsLoading(true);
+    setError('');
+    setMessage('');
+    try {
+      console.log('[QuestionEdit] Publishing draft:', questionId);
+      await publishDraftQuestion(questionId);
+      setMessage('Draft published successfully!');
+      setIsDraft(false);
+      console.log('[QuestionEdit] Draft published successfully, navigating to /teacher/questions/drafts');
+      setTimeout(() => navigate('/teacher/questions/drafts'), 2000);
+    } catch (err) {
+      console.error('[QuestionEdit] Publish error:', err.message, err.response?.data);
+      setError(err.response?.data?.error || 'Failed to publish draft');
     } finally {
       setIsLoading(false);
     }
@@ -202,11 +254,31 @@ const QuestionEdit = () => {
         </Link>
         <div>
           <h2 className="text-3xl font-bold tracking-tight" style={{ color: 'var(--text-heading)' }}>
-            Edit Question
+            {isDraft ? 'Edit Draft' : 'Edit Question'}
           </h2>
           <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>Update question details and settings</p>
         </div>
+        {isDraft && (
+          <button
+            onClick={handlePublish}
+            className="ml-auto px-4 py-2 rounded-lg text-sm font-semibold text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all"
+          >
+            Publish Draft
+          </button>
+        )}
       </div>
+
+      {/* Draft Warning Banner */}
+      {isDraft && (
+        <div className="mb-6 p-4 rounded-xl bg-yellow-50/80 backdrop-blur-sm border border-yellow-200 shadow-sm">
+          <div className="flex items-center">
+            <ExclamationTriangleIcon className="h-5 w-5 text-yellow-600 flex-shrink-0 mr-3" />
+            <p className="text-sm font-semibold text-yellow-800">
+              This is a draft question. Update it and publish when ready.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Enhanced Success Message */}
       {message && (

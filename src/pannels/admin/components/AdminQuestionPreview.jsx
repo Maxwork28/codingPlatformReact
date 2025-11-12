@@ -1,98 +1,124 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { getQuestion, getDraftQuestion } from '../../../common/services/api';
-import QuestionStatement from './QuestionStatement';
+import { useParams, useNavigate } from 'react-router-dom';
+import { adminSearchQuestionsById, getDraftQuestion } from '../../../common/services/api';
+import QuestionStatement from '../../teacher/components/QuestionStatement';
 
-const QuestionPreview = () => {
+const AdminQuestionPreview = () => {
   const { questionId } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
   const [question, setQuestion] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [classId, setClassId] = useState(location.state?.classId || '');
-
-  const resolveClassId = (questionData) => {
-    if (!questionData) return '';
-    const classEntry = questionData.classes?.[0];
-    if (classEntry?.classId?._id) return classEntry.classId._id;
-    if (classEntry?.classId) return classEntry.classId;
-    if (Array.isArray(questionData.classIds) && questionData.classIds.length > 0) return questionData.classIds[0];
-    return '';
-  };
 
   useEffect(() => {
-    console.log('[QuestionPreview] Fetching question:', { questionId });
+    console.log('[AdminQuestionPreview] Component mounted/updated', { 
+      questionId, 
+      questionIdType: typeof questionId,
+      questionIdLength: questionId?.length,
+      questionIdValid: questionId && questionId !== 'undefined' && questionId !== 'null',
+      urlParams: window.location.pathname
+    });
+    
     const fetchQuestion = async () => {
+      // Validate questionId - check for undefined, null, empty string, or literal "undefined"/"null" strings
+      if (!questionId || 
+          questionId === 'undefined' || 
+          questionId === 'null' || 
+          (typeof questionId === 'string' && questionId.trim() === '') ||
+          questionId === undefined ||
+          questionId === null) {
+        console.error('[AdminQuestionPreview] Invalid questionId:', { 
+          questionId, 
+          type: typeof questionId,
+          pathname: window.location.pathname 
+        });
+        setError('Question ID is required. Please navigate from the question edit page.');
+        setLoading(false);
+        return;
+      }
+      
+      // Check if questionId is a valid MongoDB ObjectId format (24 hex characters)
+      const objectIdPattern = /^[0-9a-fA-F]{24}$/;
+      if (!objectIdPattern.test(questionId)) {
+        console.error('[AdminQuestionPreview] Invalid questionId format:', questionId);
+        setError(`Invalid question ID format: ${questionId}. Please check the URL and try again.`);
+        setLoading(false);
+        return;
+      }
+      
+      console.log('[AdminQuestionPreview] Valid questionId received:', questionId);
+
       try {
         setLoading(true);
         setError('');
-        
-        // Validate questionId
-        if (!questionId || questionId === 'undefined' || questionId === 'null' || (typeof questionId === 'string' && questionId.trim() === '')) {
-          console.error('[QuestionPreview] Invalid questionId:', questionId);
-          setError('Valid questionId is required');
-          setLoading(false);
-          return;
-        }
-        
-        // Check if questionId is a valid MongoDB ObjectId format
-        const objectIdPattern = /^[0-9a-fA-F]{24}$/;
-        if (!objectIdPattern.test(questionId)) {
-          console.error('[QuestionPreview] Invalid questionId format:', questionId);
-          setError('Invalid question ID format');
-          setLoading(false);
-          return;
-        }
+        console.log('[AdminQuestionPreview] Calling API with:', questionId);
         
         // Try to fetch as draft first
         let fetchedQuestion = null;
         try {
           const draftResponse = await getDraftQuestion(questionId);
           fetchedQuestion = draftResponse.data.question;
-          console.log('[QuestionPreview] Fetched as draft');
+          console.log('[AdminQuestionPreview] Fetched as draft');
         } catch (draftErr) {
           // If not a draft, fetch as regular question
-          console.log('[QuestionPreview] Not a draft, fetching as regular question');
-          const response = await getQuestion(questionId);
-          fetchedQuestion = response.data.question || response.data;
+          console.log('[AdminQuestionPreview] Not a draft, fetching as regular question');
+          const response = await adminSearchQuestionsById(questionId);
+          fetchedQuestion = response?.data?.question;
         }
         
-        console.log('[QuestionPreview] Question fetched:', {
-          id: fetchedQuestion._id,
-          title: fetchedQuestion.title,
-          classes: fetchedQuestion.classes,
-          isDraft: fetchedQuestion.isDraft,
-        });
+        console.log('[AdminQuestionPreview] Fetched question:', fetchedQuestion);
         
-        setQuestion(fetchedQuestion);
-        const derivedClassId = resolveClassId(fetchedQuestion);
-        if (!classId && derivedClassId) {
-          setClassId(derivedClassId);
-        }
-
-        // For drafts, don't require classes
-        if (!fetchedQuestion.isDraft) {
-          // Check if question has classes assigned or a class context provided (only for published questions)
-          if ((!fetchedQuestion.classes || fetchedQuestion.classes.length === 0) && !derivedClassId && !classId) {
-            console.warn('[QuestionPreview] No classes found, redirecting to /teacher/questions');
-            navigate('/teacher/questions');
-            return;
-          }
+        if (fetchedQuestion) {
+          setQuestion(fetchedQuestion);
+          setError('');
+        } else {
+          console.warn('[AdminQuestionPreview] No question in response');
+          setError('Question not found in response');
         }
       } catch (err) {
-        console.error('[QuestionPreview] Fetch error:', err.message, err.response?.data);
-        const errorMessage = err.response?.data?.error || err.message || 'Failed to fetch question';
+        console.error('[AdminQuestionPreview] Fetch error:', err);
+        console.error('[AdminQuestionPreview] Error type:', typeof err);
+        console.error('[AdminQuestionPreview] Error details:', {
+          message: err?.message,
+          response: err?.response?.data,
+          status: err?.response?.status,
+          statusText: err?.response?.statusText,
+          error: err?.error
+        });
+        
+        // Handle error message extraction
+        let errorMessage = 'Failed to fetch question';
+        try {
+          if (typeof err === 'string') {
+            errorMessage = err;
+          } else if (err?.message) {
+            errorMessage = err.message;
+          } else if (err?.response?.data?.error) {
+            errorMessage = err.response.data.error;
+          } else if (err?.response?.data?.message) {
+            errorMessage = err.response.data.message;
+          } else if (err?.error) {
+            errorMessage = typeof err.error === 'string' ? err.error : 'Failed to fetch question';
+          } else if (err?.response?.statusText) {
+            errorMessage = `${err.response.status}: ${err.response.statusText}`;
+          }
+        } catch (parseErr) {
+          console.error('[AdminQuestionPreview] Error parsing error message:', parseErr);
+          errorMessage = 'Failed to fetch question. Please check the console for details.';
+        }
+        
+        console.error('[AdminQuestionPreview] Setting error message:', errorMessage);
         setError(errorMessage);
       } finally {
         setLoading(false);
       }
     };
+    
     fetchQuestion();
-  }, [questionId, navigate, classId]);
+  }, [questionId]);
 
   if (loading) {
-    console.log('[QuestionPreview] Rendering loading state');
+    console.log('[AdminQuestionPreview] Rendering loading state');
     return (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-60 flex items-center justify-center z-50">
         <div className="bg-white/90 backdrop-blur-sm p-8 rounded-2xl shadow-xl max-w-sm w-full">
@@ -125,7 +151,7 @@ const QuestionPreview = () => {
   }
 
   if (error) {
-    console.log('[QuestionPreview] Rendering error state:', error);
+    console.log('[AdminQuestionPreview] Rendering error state:', error);
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-6 p-4 rounded-xl bg-red-50/80 backdrop-blur-sm border border-red-200 shadow-sm">
@@ -154,7 +180,7 @@ const QuestionPreview = () => {
   }
 
   if (!question) {
-    console.log('[QuestionPreview] Rendering question not found state');
+    console.log('[AdminQuestionPreview] Rendering question not found state');
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
@@ -164,15 +190,11 @@ const QuestionPreview = () => {
     );
   }
 
-  const fallbackClassId = classId || resolveClassId(question);
-  const backHref = fallbackClassId ? `/teacher/classes/${fallbackClassId}` : '/teacher/questions';
-  const backState = fallbackClassId ? { classId: fallbackClassId } : undefined;
-
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="flex items-center mb-8">
         <button
-          onClick={() => navigate(backHref, backState ? { state: backState } : undefined)}
+          onClick={() => navigate('/admin/questions')}
           className="mr-4 p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200"
         >
           <svg
@@ -205,4 +227,5 @@ const QuestionPreview = () => {
   );
 };
 
-export default QuestionPreview;
+export default AdminQuestionPreview;
+

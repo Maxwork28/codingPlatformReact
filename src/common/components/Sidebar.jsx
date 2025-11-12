@@ -3,12 +3,14 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { useSidebar } from '../context/SidebarContext';
 import { fetchClasses } from './redux/classSlice';
+import { getDraftCount } from '../services/api';
 
 const Sidebar = () => {
   const { role, user } = useSelector((state) => state.auth);
   const { classes, status } = useSelector((state) => state.classes || { classes: [], status: 'idle' });
   const { isCollapsed, toggleSidebar } = useSidebar();
   const dispatch = useDispatch();
+  const [draftCount, setDraftCount] = useState(0);
   
   // Fetch classes if not already loaded
   useEffect(() => {
@@ -17,6 +19,25 @@ const Sidebar = () => {
       dispatch(fetchClasses(''));
     }
   }, [dispatch, classes.length, status]);
+  
+  // Fetch draft count for admin and teacher
+  useEffect(() => {
+    if (role === 'admin' || role === 'teacher') {
+      const fetchDraftCount = async () => {
+        try {
+          const response = await getDraftCount();
+          setDraftCount(response.data.count || 0);
+        } catch (error) {
+          console.error('Failed to fetch draft count:', error);
+          setDraftCount(0);
+        }
+      };
+      fetchDraftCount();
+      // Refresh draft count every 30 seconds
+      const interval = setInterval(fetchDraftCount, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [role]);
   
   // Debug Redux state
   console.log('[Sidebar] Redux state:', {
@@ -58,7 +79,8 @@ const Sidebar = () => {
     { to: '/admin/teachers', label: 'Teachers', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' },
     { to: '/admin/students', label: 'Students', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' },
     { to: '/admin/upload', label: 'Data Import', icon: 'M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12' },
-     { to: '/admin/questions', label: 'Question Bank', icon: 'M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12' },
+    { to: '/admin/questions', label: 'Question Bank', icon: 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
+    { to: '/admin/questions/drafts', label: 'Drafts', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', badge: draftCount > 0 ? draftCount : null },
   ];
 
   const teacherLinks = [
@@ -66,6 +88,7 @@ const Sidebar = () => {
     { to: '/teacher/classes', label: 'My Classes', icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253' },
     { to: '/teacher/take-class', label: 'Take Class', icon: 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' },
     { to: '/teacher/questions', label: 'Questions', icon: 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
+    { to: '/teacher/questions/drafts', label: 'Drafts', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', badge: draftCount > 0 ? draftCount : null },
   ];
 
   const studentLinks = [
@@ -156,7 +179,8 @@ const Sidebar = () => {
                     fontSize: '14px',
                     fontWeight: isActive ? '600' : '500',
                     padding: isCollapsed ? '12px' : '12px 16px',
-                    justifyContent: isCollapsed ? 'center' : 'flex-start'
+                    justifyContent: isCollapsed ? 'center' : 'flex-start',
+                    position: 'relative'
                   })}
                   onMouseEnter={(e) => {
                     const isActive = e.currentTarget.getAttribute('aria-current') === 'page';
@@ -196,8 +220,18 @@ const Sidebar = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={link.icon} />
                       </svg>
                       {!isCollapsed && (
-                        <span className="transition-all duration-300">
+                        <span className="transition-all duration-300 flex-1 flex items-center justify-between">
                           {link.label}
+                          {link.badge !== null && link.badge !== undefined && link.badge > 0 && (
+                            <span className="ml-2 px-2 py-0.5 text-xs font-bold rounded-full bg-red-500 text-white flex-shrink-0">
+                              {link.badge}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                      {isCollapsed && link.badge !== null && link.badge !== undefined && link.badge > 0 && (
+                        <span className="absolute -top-1 -right-1 px-1.5 py-0.5 text-xs font-bold rounded-full bg-red-500 text-white flex-shrink-0 min-w-[20px] text-center">
+                          {link.badge > 9 ? '9+' : link.badge}
                         </span>
                       )}
                     </>
