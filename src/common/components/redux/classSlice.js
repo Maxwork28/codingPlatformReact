@@ -5,10 +5,16 @@ import { API_BASE_URL } from '../../constants';
 export const fetchClasses = createAsyncThunk('classes/fetchClasses', async (search = '', { getState, rejectWithValue }) => {
   try {
     const { auth } = getState();
-    console.log('classSlice: Fetching classes with token', auth.token, 'search:', search);
+    // Use token from Redux state, fallback to localStorage if not available
+    const token = auth.token || localStorage.getItem('token');
+    if (!token) {
+      console.error('classSlice: No token available');
+      return rejectWithValue('Please authenticate');
+    }
+    console.log('classSlice: Fetching classes with token', token ? 'Present' : 'Not present', 'search:', search);
     const params = search ? { search } : {};
     const response = await axios.get(`${API_BASE_URL}/admin/classes`, {
-      headers: { Authorization: `Bearer ${auth.token}` },
+      headers: { Authorization: `Bearer ${token}` },
       params,
     });
     console.log('classSlice: Fetch classes response', response.data);

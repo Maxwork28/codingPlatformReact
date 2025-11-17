@@ -11,7 +11,7 @@ import 'ace-builds/src-noconflict/mode-php';
 import 'ace-builds/src-noconflict/mode-golang';
 import 'ace-builds/src-noconflict/theme-monokai';
 
-const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px', disabled, isFillInTheBlanks = false }) => {
+const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px', disabled, isFillInTheBlanks = false, copyPasteDisabled = false }) => {
   const languageModeMap = {
     javascript: 'javascript',
     python: 'python',
@@ -118,6 +118,46 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
     setEditorValue(newValue);
     onChange(templateWithUserInput);
   };
+
+  // Add event listeners to disable copy/paste in the editor
+  useEffect(() => {
+    const editor = editorRef.current?.editor;
+    if (!editor || !copyPasteDisabled) return;
+
+    const preventCopyPaste = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    };
+
+    const editorContainer = editor.container;
+    editorContainer.addEventListener('copy', preventCopyPaste, true);
+    editorContainer.addEventListener('paste', preventCopyPaste, true);
+    editorContainer.addEventListener('cut', preventCopyPaste, true);
+
+    // Also disable keyboard shortcuts
+    editor.commands.addCommand({
+      name: 'disableCopy',
+      bindKey: { win: 'Ctrl-C', mac: 'Cmd-C' },
+      exec: () => false
+    });
+    editor.commands.addCommand({
+      name: 'disablePaste',
+      bindKey: { win: 'Ctrl-V', mac: 'Cmd-V' },
+      exec: () => false
+    });
+    editor.commands.addCommand({
+      name: 'disableCut',
+      bindKey: { win: 'Ctrl-X', mac: 'Cmd-X' },
+      exec: () => false
+    });
+
+    return () => {
+      editorContainer.removeEventListener('copy', preventCopyPaste, true);
+      editorContainer.removeEventListener('paste', preventCopyPaste, true);
+      editorContainer.removeEventListener('cut', preventCopyPaste, true);
+    };
+  }, [copyPasteDisabled]);
 
   useEffect(() => {
     // Parse the code to identify editable sections
@@ -276,10 +316,28 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
     onChange(defaultCode);
   };
 
-  const handleCopy = () => {
+  const handleCopy = (e) => {
+    if (copyPasteDisabled) {
+      e?.preventDefault?.();
+      return false;
+    }
     navigator.clipboard.writeText(editorValue).catch(err => {
       console.error('Failed to copy text: ', err);
     });
+  };
+
+  const handlePaste = (e) => {
+    if (copyPasteDisabled) {
+      e.preventDefault();
+      return false;
+    }
+  };
+
+  const handleCut = (e) => {
+    if (copyPasteDisabled) {
+      e.preventDefault();
+      return false;
+    }
   };
 
   return (
@@ -297,14 +355,16 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
           >
             Reset
           </button>
-          <button
-            type="button"
-            className="text-sm font-medium text-gray-300 hover:text-white disabled:text-gray-500 disabled:cursor-not-allowed transition-colors duration-200"
-            onClick={handleCopy}
-            disabled={disabled}
-          >
-            Copy
-          </button>
+          {!copyPasteDisabled && (
+            <button
+              type="button"
+              className="text-sm font-medium text-gray-300 hover:text-white disabled:text-gray-500 disabled:cursor-not-allowed transition-colors duration-200"
+              onClick={handleCopy}
+              disabled={disabled}
+            >
+              Copy
+            </button>
+          )}
         </div>
       </div>
       <AceEditor
@@ -330,7 +390,9 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
         }}
         editorProps={{ $blockScrolling: true }}
         className="rounded-b-xl"
-        onPaste={isFillInTheBlanks ? (e) => e.preventDefault() : undefined}
+        onPaste={copyPasteDisabled || isFillInTheBlanks ? handlePaste : undefined}
+        onCopy={copyPasteDisabled ? handleCopy : undefined}
+        onCut={copyPasteDisabled ? handleCut : undefined}
       />
       <style jsx global>{`
         .ace-monokai .ace_gutter {
@@ -375,6 +437,7 @@ CodeEditor.propTypes = {
   height: PropTypes.string,
   disabled: PropTypes.bool,
   isFillInTheBlanks: PropTypes.bool,
+  copyPasteDisabled: PropTypes.bool,
 };
 
 export default CodeEditor;

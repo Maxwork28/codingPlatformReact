@@ -13,10 +13,10 @@ export const fetchQuestion = createAsyncThunk('questions/fetchQuestion', async (
   }
 });
 
-export const submitQuestionAnswer = createAsyncThunk('questions/submitAnswer', async ({ questionId, answer, classId, language }, { rejectWithValue }) => {
+export const submitQuestionAnswer = createAsyncThunk('questions/submitAnswer', async ({ questionId, answer, classId, language, examContext }, { rejectWithValue }) => {
   try {
-    console.log('questionSlice: Submitting answer', { questionId, answer, classId, language });
-    const response = await submitAnswer(questionId, answer, classId, language);
+    console.log('questionSlice: Submitting answer', { questionId, answer, classId, language, examContext });
+    const response = await submitAnswer(questionId, answer, classId, language, false, examContext);
     console.log('questionSlice: Submit answer response', response.data);
     return response.data;
   } catch (error) {
@@ -25,10 +25,10 @@ export const submitQuestionAnswer = createAsyncThunk('questions/submitAnswer', a
   }
 });
 
-export const runQuestionCode = createAsyncThunk('questions/runQuestionCode', async ({ questionId, answer, classId, language }, { rejectWithValue }) => {
+export const runQuestionCode = createAsyncThunk('questions/runQuestionCode', async ({ questionId, answer, classId, language, examContext }, { rejectWithValue }) => {
   try {
-    console.log('questionSlice: Running code', { questionId, answer, classId, language });
-    const response = await runCode(questionId, answer, classId, language);
+    console.log('questionSlice: Running code', { questionId, answer, classId, language, examContext });
+    const response = await runCode(questionId, answer, classId, language, examContext);
     console.log('questionSlice: Run code response', response.data);
     return response.data;
   } catch (error) {
@@ -39,10 +39,10 @@ export const runQuestionCode = createAsyncThunk('questions/runQuestionCode', asy
 
 export const runQuestionCodeWithCustomInput = createAsyncThunk(
   'questions/runQuestionCodeWithCustomInput',
-  async ({ questionId, answer, classId, language, customInput,expectedOutput }, { rejectWithValue }) => {
+  async ({ questionId, answer, classId, language, customInput, expectedOutput, examContext }, { rejectWithValue }) => {
     try {
-      console.log('questionSlice: Running code with custom input', { questionId, answer, classId, language, customInput,expectedOutput });
-      const response = await runCodeWithCustomInput(questionId, answer, classId, language, customInput,expectedOutput);
+      console.log('questionSlice: Running code with custom input', { questionId, answer, classId, language, customInput, expectedOutput, examContext });
+      const response = await runCodeWithCustomInput(questionId, answer, classId, language, customInput, expectedOutput, examContext);
       console.log('questionSlice: Run code with custom input response', response.data);
       return response.data;
     } catch (error) {

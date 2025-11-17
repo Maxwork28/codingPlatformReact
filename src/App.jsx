@@ -38,12 +38,15 @@ import QuestionStatement from '../src/pannels/teacher/components/QuestionStateme
 import QuestionPreview from '../src/pannels/teacher/components/QuestionPreview';
 import QuestionSolution from '../src/pannels/teacher/components/QuestionSolution.jsx';
 import QuestionTestCases from '../src/pannels/teacher/components/QuestionTestCases.jsx';
+import TeacherExamManagement from './pannels/teacher/pages/TeacherExamManagement';
 
 // Student Pages
 import StudentDashboard from './pannels/student/pages/StudentDashboard';
 import StudentClassView from './pannels/student/pages/StudentClassView';
 import QuestionSubmission from './pannels/student/pages/QuestionSubmission';
 import Leaderboard from './pannels/student/pages/Leaderboard';
+import StudentExamList from './pannels/student/pages/StudentExamList';
+import StudentExamScreen from './pannels/student/pages/StudentExamScreen';
 
 // Main content wrapper component
 const MainContent = () => {
@@ -219,6 +222,11 @@ const MainContent = () => {
                 </ProtectedRoute>
               }
             />
+        <Route path="/teacher/exams" element={
+          <ProtectedRoute role="teacher">
+            <TeacherExamManagement />
+          </ProtectedRoute>
+        } />
 
 
         {/* Student Routes */}
@@ -257,6 +265,16 @@ const MainContent = () => {
             <Leaderboard />
           </ProtectedRoute>
         } />
+        <Route path="/student/exams" element={
+          <ProtectedRoute role="student">
+            <StudentExamList />
+          </ProtectedRoute>
+        } />
+        <Route path="/student/exams/:examId" element={
+          <ProtectedRoute role="student">
+            <StudentExamScreen />
+          </ProtectedRoute>
+        } />
 
         {/* Default redirect to login */}
         <Route path="/" element={
@@ -277,11 +295,12 @@ function App() {
 
   // Automatically fetch user details when app loads with a valid token
   useEffect(() => {
-    if (hasToken && token && !user?.name && status === 'idle') {
+    const needsProfile = !!hasToken && (!user || !user.name || !user.email || !user.role);
+    if (needsProfile && status !== 'loading') {
       console.log('App: Auto-fetching user details');
       dispatch(validateToken());
     }
-  }, [dispatch, hasToken, token, user?.name, status]);
+  }, [dispatch, hasToken, user, status]);
 
   // If not authenticated, show login page
   if (!hasToken || !user) {

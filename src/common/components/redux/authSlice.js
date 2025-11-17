@@ -54,7 +54,10 @@ let initialRole = null;
 if (token) {
   try {
     const decodedToken = jwtDecode(token);
-    initialUser = { id: decodedToken.id };
+    initialUser = { 
+      id: decodedToken.id,
+      // Note: name and email will be fetched via validateToken if needed
+    };
     initialRole = decodedToken.role;
     console.log('authSlice: Initialized with token', { id: decodedToken.id, role: initialRole });
   } catch (error) {
