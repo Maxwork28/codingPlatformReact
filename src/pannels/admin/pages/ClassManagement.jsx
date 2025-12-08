@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { fetchClasses } from '../../../common/components/redux/classSlice';
-import { createClass, getStudents, getTeachers } from '../../../common/services/api';
+import { createClass, getStudents, getTeachers, listClassExams } from '../../../common/services/api';
 
 const ClassManagement = () => {
   const [name, setName] = useState('');
@@ -17,6 +17,7 @@ const ClassManagement = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { classes, status } = useSelector((state) => state.classes);
+  const [examCounts, setExamCounts] = useState({});
 
   // Calculate pagination
   const indexOfLastItem = currentPage * itemsPerPage;
@@ -27,6 +28,37 @@ const ClassManagement = () => {
   useEffect(() => {
     dispatch(fetchClasses(''));
   }, [dispatch]);
+
+  // Fetch exam counts per class so admin can see how many exams are attached to each class
+  useEffect(() => {
+    const fetchExamCounts = async () => {
+      try {
+        const counts = {};
+        // Avoid spamming if no classes
+        if (!classes || classes.length === 0) {
+          setExamCounts(counts);
+          return;
+        }
+
+        // Fetch exams for each class and count them
+        for (const cls of classes) {
+          try {
+            const res = await listClassExams(cls._id);
+            counts[cls._id] = res.data?.exams?.length || 0;
+          } catch (err) {
+            console.error('Failed to fetch exams for class', cls._id, err);
+            counts[cls._id] = 0;
+          }
+        }
+
+        setExamCounts(counts);
+      } catch (err) {
+        console.error('Failed to fetch exam counts', err);
+      }
+    };
+
+    fetchExamCounts();
+  }, [classes]);
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -256,6 +288,9 @@ const ClassManagement = () => {
                     Description
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    Exams
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Status
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
@@ -270,14 +305,22 @@ const ClassManagement = () => {
                 {currentClasses.map((cls) => (
                   <tr 
                     key={cls._id}
-                    className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200 cursor-pointer"
-                    onClick={() => handleClassClick(cls._id)}
+                    className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200"
                   >
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td
+                      className="px-6 py-4 whitespace-nowrap cursor-pointer"
+                      onClick={() => handleClassClick(cls._id)}
+                    >
                       <div className="text-sm font-medium text-gray-900 dark:text-white">{cls.name}</div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td
+                      className="px-6 py-4 cursor-pointer"
+                      onClick={() => handleClassClick(cls._id)}
+                    >
                       <div className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2 max-w-md">{cls.description}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-200">
+                      {examCounts[cls._id] !== undefined ? examCounts[cls._id] : '...'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
@@ -293,13 +336,22 @@ const ClassManagement = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
                       {cls.createdBy?.name || 'Unknown'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/admin/classes/${cls._id}/exams`);
+                        }}
+                        className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-500 hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-300"
+                      >
+                        Manage Exams
+                      </button>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleClassClick(cls._id);
                         }}
-                        className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300"
+                        className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-700 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-all duration-300"
                       >
                         View Details
                       </button>

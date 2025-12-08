@@ -1,26 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { useSelector } from 'react-redux';
-import { io } from 'socket.io-client';
-import axios from 'axios';
-import { Tab } from '@headlessui/react';
-import StudentQuestionCard from '../components/StudentQuestionCard';
+import React, { useEffect, useState } from "react";
+import { useParams, Link } from "react-router-dom";
+import { useSelector } from "react-redux";
+import { io } from "socket.io-client";
+import axios from "axios";
+import { Tab } from "@headlessui/react";
+import StudentQuestionCard from "../components/StudentQuestionCard";
+import { API_BASE_URL } from "../../../common/constants";
+import { listClassExams } from "../../../common/services/api";
 
-const socket = io('https://api.algosutra.co.in/', {
+const socket = io(`${API_BASE_URL}/`, {
   withCredentials: true,
 });
-
-const stripHtml = (html) => {
-  if (!html) return '';
-  try {
-    const tmp = document.createElement('div');
-    tmp.innerHTML = html;
-    return tmp.textContent || tmp.innerText || '';
-  } catch (err) {
-    console.warn('[StudentClassView] stripHtml fallback used', { html, error: err });
-    return typeof html === 'string' ? html.replace(/<[^>]*>/g, '') : '';
-  }
-};
 
 const StudentClassView = () => {
   const { classId } = useParams();
@@ -28,14 +18,16 @@ const StudentClassView = () => {
   const { user } = useSelector((state) => state.auth);
   const [classData, setClassData] = useState(null);
   const [assignments, setAssignments] = useState([]);
+  const [exams, setExams] = useState([]);
+  const [examsLoading, setExamsLoading] = useState(false);
   const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState("");
   const [error, setError] = useState(null);
-  const [leaderboardSearch, setLeaderboardSearch] = useState('');
+  const [leaderboardSearch, setLeaderboardSearch] = useState("");
 
   // Log initial render state
-  console.log('[StudentClassView] Rendered', {
+  console.log("[StudentClassView] Rendered", {
     classId,
     classesCount: classes.length,
     user: user ? { id: user.id, name: user.name, role: user.role } : null,
@@ -43,7 +35,7 @@ const StudentClassView = () => {
 
   useEffect(() => {
     // Log useEffect trigger
-    console.log('[StudentClassView] useEffect triggered', {
+    console.log("[StudentClassView] useEffect triggered", {
       classId,
       classes: classes.map((c) => ({ id: c._id, name: c.name })),
       userId: user?.id,
@@ -51,12 +43,16 @@ const StudentClassView = () => {
 
     // Fetch assignments for the class
     const fetchAssignments = async () => {
-      console.log('[StudentClassView] Fetching assignments for class', { classId });
+      console.log("[StudentClassView] Fetching assignments for class", {
+        classId,
+      });
       try {
         const response = await axios.get(
-          `https://api.algosutra.co.in/admin/classes/${classId}/assignments`,
+          `${API_BASE_URL}/admin/classes/${classId}/assignments`,
           {
-            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
           }
         );
         const assignmentsArray = Array.isArray(response.data.assignments)
@@ -64,42 +60,65 @@ const StudentClassView = () => {
           : Array.isArray(response.data)
           ? response.data
           : [];
-        console.log('[StudentClassView] Assignments fetched', {
+        console.log("[StudentClassView] Assignments fetched", {
           classId,
           assignmentCount: assignmentsArray.length,
           assignments: assignmentsArray,
         });
         setAssignments(assignmentsArray);
       } catch (err) {
-        console.error('[StudentClassView] Failed to fetch assignments', {
+        console.error("[StudentClassView] Failed to fetch assignments", {
           classId,
           error: err.message,
           response: err.response
             ? { status: err.response.status, data: err.response.data }
             : null,
         });
-        setError(err.response?.data?.message || 'Failed to fetch assignments');
+        setError(err.response?.data?.message || "Failed to fetch assignments");
+      }
+    };
+
+    // Fetch exams for the class
+    const fetchExams = async () => {
+      if (!classId) return;
+      try {
+        setExamsLoading(true);
+        const response = await listClassExams(classId);
+        // Filter out draft and archived exams - students shouldn't see them
+        const allExams = response.data.exams || [];
+        const visibleExams = allExams.filter(exam => 
+          exam.status !== 'draft' && exam.status !== 'archived'
+        );
+        setExams(visibleExams);
+        setExamsLoading(false);
+      } catch (error) {
+        console.error("Failed to fetch exams:", error);
+        setExamsLoading(false);
       }
     };
 
     // Fetch leaderboard for the class
     const fetchLeaderboard = async () => {
-      console.log('[StudentClassView] Fetching leaderboard for class', { classId });
+      console.log("[StudentClassView] Fetching leaderboard for class", {
+        classId,
+      });
       try {
         const response = await axios.get(
-          `https://api.algosutra.co.in/questions/classes/${classId}/leaderboard`,
+          `${API_BASE_URL}/questions/classes/${classId}/leaderboard`,
           {
-            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
           }
         );
-        console.log('[StudentClassView] Leaderboard fetched', {
+        console.log("[StudentClassView] Leaderboard fetched", {
           classId,
           leaderboardCount: response.data.leaderboard?.length || 0,
           leaderboard: response.data.leaderboard,
         });
         setLeaderboard(response.data.leaderboard || []);
       } catch (err) {
-        console.error('[StudentClassView] Failed to fetch leaderboard', {
+        console.error("[StudentClassView] Failed to fetch leaderboard", {
           classId,
           error: err.message,
           errorResponse: err.response?.data,
@@ -114,25 +133,23 @@ const StudentClassView = () => {
     // Find class and verify user enrollment
     const cls = classes.find((c) => c._id === classId);
     if (cls && cls.students.some((s) => s._id === user?.id)) {
-      console.log('[StudentClassView] Class found and user authorized', {
+      console.log("[StudentClassView] Class found and user authorized", {
         classId,
         className: cls.name,
         studentCount: cls.students.length,
         questionCount: cls.questions.length,
         userId: user.id,
       });
-        const updatedQuestions = cls.questions.map((q) => {
-          const plainTitle = stripHtml(q.title);
+      const updatedQuestions = cls.questions.map((q) => {
         const classInfo = q.classes.find((c) => c.classId === classId);
-        console.log('[StudentClassView] Processing question', {
+        console.log("[StudentClassView] Processing question", {
           questionId: q._id,
-          questionTitle: plainTitle,
+          questionTitle: q.title,
           isPublished: classInfo?.isPublished,
           isDisabled: classInfo?.isDisabled,
         });
         return {
           ...q,
-            title: plainTitle,
           isPublished: classInfo ? classInfo.isPublished : false,
           isDisabled: classInfo ? classInfo.isDisabled : false,
         };
@@ -142,156 +159,191 @@ const StudentClassView = () => {
         questions: updatedQuestions,
       });
       fetchAssignments();
+      fetchExams();
       fetchLeaderboard();
     } else {
-      console.warn('[StudentClassView] Class not found or user not authorized', {
-        classId,
-        classes: classes.map((c) => c._id),
-        userId: user?.id,
-        isEnrolled: cls ? cls.students.some((s) => s._id === user?.id) : false,
-      });
-      setError('Class not found or you are not enrolled.');
+      console.warn(
+        "[StudentClassView] Class not found or user not authorized",
+        {
+          classId,
+          classes: classes.map((c) => c._id),
+          userId: user?.id,
+          isEnrolled: cls
+            ? cls.students.some((s) => s._id === user?.id)
+            : false,
+        }
+      );
+      setError("Class not found or you are not enrolled.");
     }
     setLoading(false);
 
     // Join socket room for class
-    console.log('[StudentClassView] Emitting joinClass', { classId });
-    socket.emit('joinClass', classId);
+    console.log("[StudentClassView] Emitting joinClass", { classId });
+    socket.emit("joinClass", classId);
 
     // Socket event listeners
-    socket.on('questionPublished', ({ questionId, isPublished }) => {
-      console.log('[StudentClassView] questionPublished event', { questionId, isPublished });
+    socket.on("questionPublished", ({ questionId, isPublished }) => {
+      console.log("[StudentClassView] questionPublished event", {
+        questionId,
+        isPublished,
+      });
       setClassData((prev) => {
         if (!prev) {
-          console.warn('[StudentClassView] No classData for questionPublished', { questionId });
+          console.warn(
+            "[StudentClassView] No classData for questionPublished",
+            { questionId }
+          );
           return prev;
         }
-        const updatedQuestions = prev.questions.map((q) => {
-          if (q._id !== questionId) return q;
-          const updated = {
-            ...q,
-            isPublished,
-            classes: q.classes.map((c) =>
-              c.classId === classId ? { ...c, isPublished } : c
-            ),
-          };
-          if (updated.title) {
-            updated.title = stripHtml(updated.title);
+        const updatedQuestions = prev.questions.map((q) =>
+          q._id === questionId
+            ? {
+                ...q,
+                isPublished,
+                classes: q.classes.map((c) =>
+                  c.classId === classId ? { ...c, isPublished } : c
+                ),
+              }
+            : q
+        );
+        console.log(
+          "[StudentClassView] Updated classData for questionPublished",
+          {
+            questionId,
+            updatedQuestions: updatedQuestions.map((q) => ({
+              id: q._id,
+              isPublished: q.isPublished,
+            })),
           }
-          return updated;
-        });
-        console.log('[StudentClassView] Updated classData for questionPublished', {
-          questionId,
-          updatedQuestions: updatedQuestions.map((q) => ({
-            id: q._id,
-            isPublished: q.isPublished,
-          })),
-        });
+        );
         return { ...prev, questions: updatedQuestions };
       });
-      setMessage(`Question ${isPublished ? 'published' : 'unpublished'}`);
-      setTimeout(() => setMessage(''), 3000);
+      setMessage(`Question ${isPublished ? "published" : "unpublished"}`);
+      setTimeout(() => setMessage(""), 3000);
     });
 
-    socket.on('questionDisabled', ({ questionId, isDisabled }) => {
-      console.log('[StudentClassView] questionDisabled event', { questionId, isDisabled });
+    socket.on("questionDisabled", ({ questionId, isDisabled }) => {
+      console.log("[StudentClassView] questionDisabled event", {
+        questionId,
+        isDisabled,
+      });
       setClassData((prev) => {
         if (!prev) {
-          console.warn('[StudentClassView] No classData for questionDisabled', { questionId });
+          console.warn("[StudentClassView] No classData for questionDisabled", {
+            questionId,
+          });
           return prev;
         }
-        const updatedQuestions = prev.questions.map((q) => {
-          if (q._id !== questionId) return q;
-          const updated = {
-            ...q,
-            isDisabled,
-            classes: q.classes.map((c) =>
-              c.classId === classId ? { ...c, isDisabled } : c
-            ),
-          };
-          if (updated.title) {
-            updated.title = stripHtml(updated.title);
+        const updatedQuestions = prev.questions.map((q) =>
+          q._id === questionId
+            ? {
+                ...q,
+                isDisabled,
+                classes: q.classes.map((c) =>
+                  c.classId === classId ? { ...c, isDisabled } : c
+                ),
+              }
+            : q
+        );
+        console.log(
+          "[StudentClassView] Updated classData for questionDisabled",
+          {
+            questionId,
+            updatedQuestions: updatedQuestions.map((q) => ({
+              id: q._id,
+              isDisabled: q.isDisabled,
+            })),
           }
-          return updated;
-        });
-        console.log('[StudentClassView] Updated classData for questionDisabled', {
-          questionId,
-          updatedQuestions: updatedQuestions.map((q) => ({
-            id: q._id,
-            isDisabled: q.isDisabled,
-          })),
-        });
+        );
         return { ...prev, questions: updatedQuestions };
       });
-      setMessage(`Question ${isDisabled ? 'disabled' : 'enabled'}`);
-      setTimeout(() => setMessage(''), 3000);
+      setMessage(`Question ${isDisabled ? "disabled" : "enabled"}`);
+      setTimeout(() => setMessage(""), 3000);
     });
 
-    socket.on('questionDeleted', ({ questionId }) => {
-      console.log('[StudentClassView] questionDeleted event', { questionId });
+    socket.on("questionDeleted", ({ questionId }) => {
+      console.log("[StudentClassView] questionDeleted event", { questionId });
       setClassData((prev) => {
         if (!prev) {
-          console.warn('[StudentClassView] No classData for questionDeleted', { questionId });
+          console.warn("[StudentClassView] No classData for questionDeleted", {
+            questionId,
+          });
           return prev;
         }
-        const updatedQuestions = prev.questions.filter((q) => q._id !== questionId);
-        console.log('[StudentClassView] Updated classData for questionDeleted', {
-          questionId,
-          remainingQuestions: updatedQuestions.length,
-        });
+        const updatedQuestions = prev.questions.filter(
+          (q) => q._id !== questionId
+        );
+        console.log(
+          "[StudentClassView] Updated classData for questionDeleted",
+          {
+            questionId,
+            remainingQuestions: updatedQuestions.length,
+          }
+        );
         return { ...prev, questions: updatedQuestions };
       });
-      setMessage('Question deleted');
-      setTimeout(() => setMessage(''), 3000);
+      setMessage("Question deleted");
+      setTimeout(() => setMessage(""), 3000);
     });
 
-    socket.on('questionUpdated', ({ questionId, updatedFields }) => {
-      console.log('[StudentClassView] questionUpdated event', { questionId, updatedFields });
+    socket.on("questionUpdated", ({ questionId, updatedFields }) => {
+      console.log("[StudentClassView] questionUpdated event", {
+        questionId,
+        updatedFields,
+      });
       setClassData((prev) => {
         if (!prev) {
-          console.warn('[StudentClassView] No classData for questionUpdated', { questionId });
+          console.warn("[StudentClassView] No classData for questionUpdated", {
+            questionId,
+          });
           return prev;
         }
-        const updatedQuestions = prev.questions.map((q) => {
-          if (q._id !== questionId) return q;
-          const updated = { ...q, ...updatedFields };
-          if (updated.title) {
-            updated.title = stripHtml(updated.title);
+        const updatedQuestions = prev.questions.map((q) =>
+          q._id === questionId ? { ...q, ...updatedFields } : q
+        );
+        console.log(
+          "[StudentClassView] Updated classData for questionUpdated",
+          {
+            questionId,
+            updatedFields,
+            updatedQuestions: updatedQuestions.map((q) => ({
+              id: q._id,
+              title: q.title,
+            })),
           }
-          return updated;
-        });
-        console.log('[StudentClassView] Updated classData for questionUpdated', {
-          questionId,
-          updatedFields,
-          updatedQuestions: updatedQuestions.map((q) => ({
-            id: q._id,
-            title: q.title,
-          })),
-        });
+        );
         return { ...prev, questions: updatedQuestions };
       });
-      setMessage('Question updated');
-      setTimeout(() => setMessage(''), 3000);
+      setMessage("Question updated");
+      setTimeout(() => setMessage(""), 3000);
     });
 
     // Cleanup socket listeners
     return () => {
-      console.log('[StudentClassView] Cleaning up socket listeners', { classId });
-      socket.off('questionPublished');
-      socket.off('questionDisabled');
-      socket.off('questionDeleted');
-      socket.off('questionUpdated');
-      socket.emit('leaveClass', classId);
+      console.log("[StudentClassView] Cleaning up socket listeners", {
+        classId,
+      });
+      socket.off("questionPublished");
+      socket.off("questionDisabled");
+      socket.off("questionDeleted");
+      socket.off("questionUpdated");
+      socket.emit("leaveClass", classId);
     };
-  }, [classId, classes, user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classId, user?.id, classes.length, classes.map(c => c._id).join(',')]);
 
   // Log render state
-  console.log('[StudentClassView] Rendering', {
+  console.log("[StudentClassView] Rendering", {
     classId,
     classData: classData
-      ? { id: classData._id, name: classData.name, questionCount: classData.questions.length }
+      ? {
+          id: classData._id,
+          name: classData.name,
+          questionCount: classData.questions.length,
+        }
       : null,
     assignmentsCount: assignments.length,
+    examsCount: exams.length,
     loading,
     error,
     message,
@@ -299,8 +351,17 @@ const StudentClassView = () => {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center py-16 backdrop-blur-sm rounded-xl shadow-lg" style={{ backgroundColor: 'var(--card-white)' }}>
-        <div className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--text-primary)', borderTopColor: 'transparent' }}></div>
+      <div
+        className="flex justify-center items-center py-16 backdrop-blur-sm rounded-xl shadow-lg"
+        style={{ backgroundColor: "var(--card-white)" }}
+      >
+        <div
+          className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin"
+          style={{
+            borderColor: "var(--text-primary)",
+            borderTopColor: "transparent",
+          }}
+        ></div>
       </div>
     );
   }
@@ -322,7 +383,7 @@ const StudentClassView = () => {
             />
           </svg>
           <p className="text-sm text-red-700 font-semibold">
-            {error || 'Class not found or you are not enrolled.'}
+            {error || "Class not found or you are not enrolled."}
           </p>
         </div>
       </div>
@@ -340,10 +401,18 @@ const StudentClassView = () => {
       <div className="mb-10">
         <div className="flex justify-between items-start">
           <div>
-            <h2 className="text-3xl font-bold" style={{ color: 'var(--text-heading)' }}>
+            <h2
+              className="text-3xl font-bold"
+              style={{ color: "var(--text-heading)" }}
+            >
               {classData.name}
             </h2>
-            <p className="mt-2 text-lg font-medium" style={{ color: 'var(--text-secondary)' }}>{classData.description}</p>
+            <p
+              className="mt-2 text-lg font-medium"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              {classData.description}
+            </p>
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-3">
@@ -353,29 +422,45 @@ const StudentClassView = () => {
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 shadow-sm">
             {assignments.length} Assignments
           </span>
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700 shadow-sm">
+            {exams.length} Exams
+          </span>
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 shadow-sm">
-            {classData.questions.filter(q => {
-              const classInfo = q.classes.find(c => c.classId === classId);
-              return classInfo?.isPublished;
-            }).length} Attached Questions
+            {
+              classData.questions.filter((q) => {
+                const classInfo = q.classes.find((c) => c.classId === classId);
+                return classInfo?.isPublished;
+              }).length
+            }{" "}
+            Attached Questions
           </span>
         </div>
       </div>
 
       {/* Tab Navigation */}
       <Tab.Group>
-        <Tab.List className="flex gap-2 rounded-xl p-1.5 mb-8 border" style={{ backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }}>
-          {['Leaderboard', 'Assignments', 'Questions'].map((tabName) => (
+        <Tab.List
+          className="flex gap-2 rounded-xl p-1.5 mb-8 border"
+          style={{
+            backgroundColor: "var(--background-light)",
+            borderColor: "var(--card-border)",
+          }}
+        >
+          {["Leaderboard", "Assignments", "Exams", "Questions"].map((tabName) => (
             <Tab key={tabName} className="flex-1">
               {({ selected }) => (
                 <button
                   className={`w-full rounded-lg py-3 px-4 text-sm font-semibold leading-5 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 text-center ${
-                    selected ? 'shadow-lg' : 'hover:shadow'
+                    selected ? "shadow-lg" : "hover:shadow"
                   }`}
                   style={{
-                    backgroundColor: selected ? 'var(--accent-indigo)' : 'var(--card-white)',
-                    color: 'var(--text-primary)',
-                    border: selected ? '2px solid var(--accent-indigo)' : '1px solid var(--card-border)',
+                    backgroundColor: selected
+                      ? "var(--accent-indigo)"
+                      : "var(--card-white)",
+                    color: "var(--text-primary)",
+                    border: selected
+                      ? "2px solid var(--accent-indigo)"
+                      : "1px solid var(--card-border)",
                   }}
                 >
                   {tabName}
@@ -388,9 +473,20 @@ const StudentClassView = () => {
         <Tab.Panels className="mt-2">
           {/* Leaderboard Tab */}
           <Tab.Panel className="rounded-xl p-3">
-            <div className="backdrop-blur-sm rounded-2xl shadow-lg p-6 border transition-all duration-300 hover:shadow-xl" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
+            <div
+              className="backdrop-blur-sm rounded-2xl shadow-lg p-6 border transition-all duration-300 hover:shadow-xl"
+              style={{
+                backgroundColor: "var(--card-white)",
+                borderColor: "var(--card-border)",
+              }}
+            >
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-semibold" style={{ color: 'var(--text-heading)' }}>Class Leaderboard</h3>
+                <h3
+                  className="text-xl font-semibold"
+                  style={{ color: "var(--text-heading)" }}
+                >
+                  Class Leaderboard
+                </h3>
               </div>
 
               {/* Search and Filter */}
@@ -398,8 +494,18 @@ const StudentClassView = () => {
                 <div className="flex gap-3">
                   <div className="flex-1 relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      <svg
+                        className="h-5 w-5 text-gray-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                        />
                       </svg>
                     </div>
                     <input
@@ -408,21 +514,21 @@ const StudentClassView = () => {
                       onChange={(e) => setLeaderboardSearch(e.target.value)}
                       placeholder="Search by student name..."
                       className="block w-full pl-10 pr-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all duration-200"
-                      style={{ 
-                        borderColor: 'var(--card-border)', 
-                        backgroundColor: 'var(--background-light)', 
-                        color: 'var(--text-primary)' 
+                      style={{
+                        borderColor: "var(--card-border)",
+                        backgroundColor: "var(--background-light)",
+                        color: "var(--text-primary)",
                       }}
                     />
                   </div>
                   {leaderboardSearch && (
                     <button
-                      onClick={() => setLeaderboardSearch('')}
+                      onClick={() => setLeaderboardSearch("")}
                       className="px-4 py-2 rounded-lg text-sm font-semibold border transition-all duration-300"
-                      style={{ 
-                        color: 'var(--text-primary)', 
-                        backgroundColor: 'var(--card-white)', 
-                        borderColor: 'var(--card-border)' 
+                      style={{
+                        color: "var(--text-primary)",
+                        backgroundColor: "var(--card-white)",
+                        borderColor: "var(--card-border)",
                       }}
                     >
                       Clear
@@ -430,77 +536,175 @@ const StudentClassView = () => {
                   )}
                 </div>
               </div>
-              
+
               {(() => {
                 // Filter leaderboard based on search
                 const filteredLeaderboard = leaderboardSearch
                   ? leaderboard.filter((entry) => {
-                      const studentName = (entry.studentId?.name || entry.student?.name || '').toLowerCase();
-                      return studentName.includes(leaderboardSearch.toLowerCase());
+                      const studentName = (
+                        entry.studentId?.name ||
+                        entry.student?.name ||
+                        ""
+                      ).toLowerCase();
+                      return studentName.includes(
+                        leaderboardSearch.toLowerCase()
+                      );
                     })
                   : leaderboard;
 
                 return filteredLeaderboard.length === 0 ? (
-                <div className="text-center py-12">
-                  <svg className="mx-auto h-14 w-14 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                  </svg>
-                  <h4 className="mt-3 text-base font-medium" style={{ color: 'var(--text-primary)' }}>
-                    {leaderboardSearch ? `No students found matching "${leaderboardSearch}"` : 'No leaderboard data available'}
-                  </h4>
-                  <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    {leaderboardSearch ? 'Try a different search term' : 'Start submitting answers to appear on the leaderboard'}
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y" style={{ borderColor: 'var(--card-border)' }}>
-                    <thead style={{ backgroundColor: 'var(--background-light)' }}>
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>Rank</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>Student</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>Total Score</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>Submissions</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y" style={{ borderColor: 'var(--card-border)' }}>
-                      {filteredLeaderboard.map((entry, index) => (
-                        <tr key={entry.studentId?._id || entry.studentId} className="hover:bg-opacity-50 transition-colors" style={{ backgroundColor: index === 0 ? 'var(--background-light)' : 'transparent' }}>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center">
-                              {index === 0 && <span className="text-2xl mr-2">🥇</span>}
-                              {index === 1 && <span className="text-2xl mr-2">🥈</span>}
-                              {index === 2 && <span className="text-2xl mr-2">🥉</span>}
-                              <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{index + 1}</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                              {entry.studentId?.name || entry.student?.name || 'Unknown'}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-semibold" style={{ color: 'var(--accent-indigo)' }}>{entry.totalScore || 0}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>{entry.totalSubmits || 0}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              entry.activityStatus === 'active' ? 'bg-green-100 text-green-800' :
-                              entry.activityStatus === 'focused' ? 'bg-blue-100 text-blue-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}>
-                              {entry.activityStatus || 'inactive'}
-                            </span>
-                          </td>
+                  <div className="text-center py-12">
+                    <svg
+                      className="mx-auto h-14 w-14 text-gray-400"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.5}
+                        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                      />
+                    </svg>
+                    <h4
+                      className="mt-3 text-base font-medium"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {leaderboardSearch
+                        ? `No students found matching "${leaderboardSearch}"`
+                        : "No leaderboard data available"}
+                    </h4>
+                    <p
+                      className="mt-1 text-sm"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      {leaderboardSearch
+                        ? "Try a different search term"
+                        : "Start submitting answers to appear on the leaderboard"}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table
+                      className="min-w-full divide-y"
+                      style={{ borderColor: "var(--card-border)" }}
+                    >
+                      <thead
+                        style={{ backgroundColor: "var(--background-light)" }}
+                      >
+                        <tr>
+                          <th
+                            className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                            style={{ color: "var(--text-secondary)" }}
+                          >
+                            Rank
+                          </th>
+                          <th
+                            className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                            style={{ color: "var(--text-secondary)" }}
+                          >
+                            Student
+                          </th>
+                          <th
+                            className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                            style={{ color: "var(--text-secondary)" }}
+                          >
+                            Total Score
+                          </th>
+                          <th
+                            className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                            style={{ color: "var(--text-secondary)" }}
+                          >
+                            Submissions
+                          </th>
+                          <th
+                            className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                            style={{ color: "var(--text-secondary)" }}
+                          >
+                            Status
+                          </th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              );
+                      </thead>
+                      <tbody
+                        className="divide-y"
+                        style={{ borderColor: "var(--card-border)" }}
+                      >
+                        {filteredLeaderboard.map((entry, index) => (
+                          <tr
+                            key={entry.studentId?._id || entry.studentId}
+                            className="hover:bg-opacity-50 transition-colors"
+                            style={{
+                              backgroundColor:
+                                index === 0
+                                  ? "var(--background-light)"
+                                  : "transparent",
+                            }}
+                          >
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center">
+                                {index === 0 && (
+                                  <span className="text-2xl mr-2">🥇</span>
+                                )}
+                                {index === 1 && (
+                                  <span className="text-2xl mr-2">🥈</span>
+                                )}
+                                {index === 2 && (
+                                  <span className="text-2xl mr-2">🥉</span>
+                                )}
+                                <span
+                                  className="text-sm font-medium"
+                                  style={{ color: "var(--text-primary)" }}
+                                >
+                                  {index + 1}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div
+                                className="text-sm font-medium"
+                                style={{ color: "var(--text-primary)" }}
+                              >
+                                {entry.studentId?.name ||
+                                  entry.student?.name ||
+                                  "Unknown"}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div
+                                className="text-sm font-semibold"
+                                style={{ color: "var(--accent-indigo)" }}
+                              >
+                                {entry.totalScore || 0}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div
+                                className="text-sm"
+                                style={{ color: "var(--text-secondary)" }}
+                              >
+                                {entry.totalSubmits || 0}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span
+                                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                  entry.activityStatus === "active"
+                                    ? "bg-green-100 text-green-800"
+                                    : entry.activityStatus === "focused"
+                                    ? "bg-blue-100 text-blue-800"
+                                    : "bg-gray-100 text-gray-800"
+                                }`}
+                              >
+                                {entry.activityStatus || "inactive"}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
               })()}
             </div>
           </Tab.Panel>
@@ -508,26 +712,45 @@ const StudentClassView = () => {
           {/* Assignments Tab */}
           <Tab.Panel className="rounded-xl p-3">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-semibold" style={{ color: 'var(--text-heading)' }}>Assignments</h3>
+              <h3
+                className="text-xl font-semibold"
+                style={{ color: "var(--text-heading)" }}
+              >
+                Assignments
+              </h3>
             </div>
 
             {assignments.length === 0 ? (
-              <div className="backdrop-blur-sm rounded-2xl shadow-lg p-8 text-center border" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-            <svg
-              className="mx-auto h-14 w-14 text-gray-400"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={1.5}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-              />
-            </svg>
-                <h4 className="mt-3 text-base font-medium" style={{ color: 'var(--text-primary)' }}>No assignments yet</h4>
-                <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
+              <div
+                className="backdrop-blur-sm rounded-2xl shadow-lg p-8 text-center border"
+                style={{
+                  backgroundColor: "var(--card-white)",
+                  borderColor: "var(--card-border)",
+                }}
+              >
+                <svg
+                  className="mx-auto h-14 w-14 text-gray-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                  />
+                </svg>
+                <h4
+                  className="mt-3 text-base font-medium"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  No assignments yet
+                </h4>
+                <p
+                  className="mt-1 text-sm"
+                  style={{ color: "var(--text-secondary)" }}
+                >
                   Check back later for assignments from your teacher
                 </p>
               </div>
@@ -536,25 +759,33 @@ const StudentClassView = () => {
                 {assignments
                   .map((assignment) => {
                     const question = classData.questions.find(
-                      (q) => q._id === (assignment.questionId?._id || assignment.questionId)
+                      (q) =>
+                        q._id ===
+                        (assignment.questionId?._id || assignment.questionId)
                     );
-                    const classInfo = question?.classes.find((c) => c.classId === classId);
-                    const plainTitle = question ? stripHtml(question.title) : '';
-                    console.log('[StudentClassView] Rendering assignment', {
+                    const classInfo = question?.classes.find(
+                      (c) => c.classId === classId
+                    );
+                    console.log("[StudentClassView] Rendering assignment", {
                       assignmentId: assignment._id,
-                      questionId: assignment.questionId?._id || assignment.questionId,
+                      questionId:
+                        assignment.questionId?._id || assignment.questionId,
                       classId,
                       hasQuestion: !!question,
                       isPublished: classInfo?.isPublished,
                       isDisabled: classInfo?.isDisabled,
-                      questionTitle: plainTitle,
+                      questionTitle: question?.title,
                     });
                     if (!question) {
-                      console.warn('[StudentClassView] Question not found for assignment', {
-                        assignmentId: assignment._id,
-                        questionId: assignment.questionId?._id || assignment.questionId,
-                        classId,
-                      });
+                      console.warn(
+                        "[StudentClassView] Question not found for assignment",
+                        {
+                          assignmentId: assignment._id,
+                          questionId:
+                            assignment.questionId?._id || assignment.questionId,
+                          classId,
+                        }
+                      );
                       return null;
                     }
                     // Only show published questions
@@ -564,7 +795,7 @@ const StudentClassView = () => {
                     return {
                       assignment,
                       question,
-                      classInfo
+                      classInfo,
                     };
                   })
                   .filter(Boolean)
@@ -572,44 +803,210 @@ const StudentClassView = () => {
                     <div
                       key={assignment._id}
                       className="backdrop-blur-sm rounded-2xl shadow-lg overflow-hidden border transition-all duration-300 hover:shadow-2xl hover:-translate-y-1"
-                      style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
+                      style={{
+                        backgroundColor: "var(--card-white)",
+                        borderColor: "var(--card-border)",
+                      }}
                     >
-                  <div className="p-6">
-                    <div className="flex justify-between items-start">
-                      <StudentQuestionCard
-                        question={{
-                          ...question,
-                          isPublished: classInfo?.isPublished,
-                          isDisabled: classInfo?.isDisabled,
-                        }}
-                        assignment={assignment}
-                      />
-                      <div className="ml-4 flex-shrink-0">
-                        <Link
-                          to={`/student/questions/${
-                            assignment.questionId?._id || assignment.questionId
-                          }/submit`}
-                          state={{ classId }}
-                          className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-300 ${
-                            !classInfo?.isDisabled
-                              ? 'bg-indigo-600 hover:bg-indigo-700'
-                              : 'bg-gray-400 cursor-not-allowed'
-                          }`}
-                          disabled={classInfo?.isDisabled}
-                          onClick={() =>
-                            console.log('[StudentClassView] Navigating to question submission', {
-                              questionId: assignment.questionId?._id || assignment.questionId,
-                              classId,
-                            })
-                          }
-                        >
-                          {!classInfo?.isDisabled ? 'Submit Answer' : 'Disabled'}
-                        </Link>
+                      <div className="p-6">
+                        <div className="flex justify-between items-start">
+                          <StudentQuestionCard
+                            question={{
+                              ...question,
+                              isPublished: classInfo?.isPublished,
+                              isDisabled: classInfo?.isDisabled,
+                            }}
+                            assignment={assignment}
+                          />
+                          <div className="ml-4 flex-shrink-0">
+                            <Link
+                              to={`/student/questions/${
+                                assignment.questionId?._id ||
+                                assignment.questionId
+                              }/submit`}
+                              state={{ classId }}
+                              className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-300 ${
+                                !classInfo?.isDisabled
+                                  ? "bg-indigo-600 hover:bg-indigo-700"
+                                  : "bg-gray-400 cursor-not-allowed"
+                              }`}
+                              disabled={classInfo?.isDisabled}
+                              onClick={() =>
+                                console.log(
+                                  "[StudentClassView] Navigating to question submission",
+                                  {
+                                    questionId:
+                                      assignment.questionId?._id ||
+                                      assignment.questionId,
+                                    classId,
+                                  }
+                                )
+                              }
+                            >
+                              {!classInfo?.isDisabled
+                                ? "Submit Answer"
+                                : "Disabled"}
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </Tab.Panel>
+
+          {/* Exams Tab */}
+          <Tab.Panel className="rounded-xl p-3">
+            <div className="flex justify-between items-center mb-6">
+              <h3
+                className="text-xl font-semibold"
+                style={{ color: "var(--text-heading)" }}
+              >
+                Exams
+              </h3>
+              <Link
+                to={`/student/classes/${classId}/exams`}
+                className="text-sm text-blue-500 hover:underline"
+              >
+                View All Exams
+              </Link>
+            </div>
+
+            {examsLoading ? (
+              <div className="text-center py-8">
+                <div
+                  className="w-8 h-8 border-4 border-t-transparent rounded-full animate-spin mx-auto"
+                  style={{
+                    borderColor: "var(--text-primary)",
+                    borderTopColor: "transparent",
+                  }}
+                ></div>
+                <p className="mt-2 text-sm" style={{ color: "var(--text-secondary)" }}>
+                  Loading exams...
+                </p>
+              </div>
+            ) : exams.length === 0 ? (
+              <div
+                className="backdrop-blur-sm rounded-2xl shadow-lg p-8 text-center border"
+                style={{
+                  backgroundColor: "var(--card-white)",
+                  borderColor: "var(--card-border)",
+                }}
+              >
+                <svg
+                  className="mx-auto h-14 w-14 text-gray-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
+                </svg>
+                <h4
+                  className="mt-3 text-base font-medium"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  No exams available
+                </h4>
+                <p
+                  className="mt-1 text-sm"
+                  style={{ color: "var(--text-secondary)" }}
+                >
+                  Check back later for exams from your teacher
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {exams.map((exam) => (
+                  <div
+                    key={exam._id}
+                    className="backdrop-blur-sm rounded-2xl shadow-lg overflow-hidden border transition-all duration-300 hover:shadow-2xl hover:-translate-y-1"
+                    style={{
+                      backgroundColor: "var(--card-white)",
+                      borderColor: "var(--card-border)",
+                    }}
+                  >
+                    <div className="p-6">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <h4 className="text-lg font-semibold mb-2" style={{ color: "var(--text-heading)" }}>
+                            {exam.title}
+                          </h4>
+                          {exam.description && (
+                            <p className="text-sm mb-3" style={{ color: "var(--text-secondary)" }}>
+                              {exam.description}
+                            </p>
+                          )}
+                          <div className="flex flex-wrap gap-2 mb-3">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              {exam.proctoring?.durationMinutes || 0} minutes
+                            </span>
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              {exam.questions?.length || 0} questions
+                            </span>
+                            {exam.status && (
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                exam.status === 'active' ? 'bg-green-100 text-green-800' :
+                                exam.status === 'scheduled' ? 'bg-yellow-100 text-yellow-800' :
+                                exam.status === 'completed' ? 'bg-gray-100 text-gray-800' :
+                                'bg-blue-100 text-blue-800'
+                              }`}>
+                                {exam.status}
+                              </span>
+                            )}
+                          </div>
+                          {exam.proctoring?.startTime && (
+                            <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                              Starts: {new Date(exam.proctoring.startTime).toLocaleString()}
+                            </p>
+                          )}
+                          {exam.proctoring?.endTime && (
+                            <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                              Ends: {new Date(exam.proctoring.endTime).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+                        <div className="ml-4 flex-shrink-0">
+                          {exam.studentAttemptStatus === 'in_progress' ? (
+                            <Link
+                              to={`/student/exams/${exam._id}/take`}
+                              className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500 transition-all duration-300"
+                            >
+                              Continue Exam
+                            </Link>
+                          ) : (exam.studentAttemptStatus === 'submitted' || 
+                                exam.studentAttemptStatus === 'auto_submitted' || 
+                                exam.studentAttemptStatus === 'terminated') ? (
+                            <Link
+                              to={`/student/exams/${exam._id}/results`}
+                              className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all duration-300"
+                            >
+                              View Results
+                            </Link>
+                          ) : (exam.status === 'active' || 
+                                (exam.status === 'scheduled' && exam.proctoring?.startTime && 
+                                 new Date(exam.proctoring.startTime) <= new Date())) ? (
+                            <Link
+                              to={`/student/classes/${classId}/exams`}
+                              className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-300"
+                            >
+                              Start Exam
+                            </Link>
+                          ) : (
+                            <span className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-gray-500 bg-gray-200 cursor-not-allowed">
+                              Not Available
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-                  ))}
+                ))}
               </div>
             )}
           </Tab.Panel>
@@ -617,29 +1014,48 @@ const StudentClassView = () => {
           {/* Questions Tab */}
           <Tab.Panel className="rounded-xl p-3">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-semibold" style={{ color: 'var(--text-heading)' }}>Attached Questions</h3>
+              <h3
+                className="text-xl font-semibold"
+                style={{ color: "var(--text-heading)" }}
+              >
+                Attached Questions
+              </h3>
             </div>
 
-            {classData.questions.filter(q => {
-              const classInfo = q.classes.find(c => c.classId === classId);
+            {classData.questions.filter((q) => {
+              const classInfo = q.classes.find((c) => c.classId === classId);
               return classInfo?.isPublished;
             }).length === 0 ? (
-              <div className="backdrop-blur-sm rounded-2xl shadow-lg p-8 text-center border" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-            <svg
-              className="mx-auto h-14 w-14 text-gray-400"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={1.5}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-              />
-            </svg>
-                <h4 className="mt-3 text-base font-medium" style={{ color: 'var(--text-primary)' }}>No attached questions yet</h4>
-                <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
+              <div
+                className="backdrop-blur-sm rounded-2xl shadow-lg p-8 text-center border"
+                style={{
+                  backgroundColor: "var(--card-white)",
+                  borderColor: "var(--card-border)",
+                }}
+              >
+                <svg
+                  className="mx-auto h-14 w-14 text-gray-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                  />
+                </svg>
+                <h4
+                  className="mt-3 text-base font-medium"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  No attached questions yet
+                </h4>
+                <p
+                  className="mt-1 text-sm"
+                  style={{ color: "var(--text-secondary)" }}
+                >
                   Check back later for questions from your teacher
                 </p>
               </div>
@@ -647,22 +1063,26 @@ const StudentClassView = () => {
               <div className="space-y-6">
                 {classData.questions
                   .map((question) => {
-                    const classInfo = question.classes.find((c) => c.classId === classId);
-                    const plainTitle = stripHtml(question.title);
-                    console.log('[StudentClassView] Rendering attached question', {
-                      questionId: question._id,
-                      questionTitle: plainTitle,
-                      classId,
-                      isPublished: classInfo?.isPublished,
-                      isDisabled: classInfo?.isDisabled,
-                    });
+                    const classInfo = question.classes.find(
+                      (c) => c.classId === classId
+                    );
+                    console.log(
+                      "[StudentClassView] Rendering attached question",
+                      {
+                        questionId: question._id,
+                        questionTitle: question.title,
+                        classId,
+                        isPublished: classInfo?.isPublished,
+                        isDisabled: classInfo?.isDisabled,
+                      }
+                    );
                     // Only show published questions
                     if (!classInfo?.isPublished) {
                       return null;
                     }
                     return {
                       question,
-                      classInfo
+                      classInfo,
                     };
                   })
                   .filter(Boolean)
@@ -670,40 +1090,48 @@ const StudentClassView = () => {
                     <div
                       key={question._id}
                       className="backdrop-blur-sm rounded-2xl shadow-lg overflow-hidden border transition-all duration-300 hover:shadow-2xl hover:-translate-y-1"
-                      style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
+                      style={{
+                        backgroundColor: "var(--card-white)",
+                        borderColor: "var(--card-border)",
+                      }}
                     >
-                  <div className="p-6">
-                    <div className="flex justify-between items-start">
-                      <StudentQuestionCard
-                        question={{
-                          ...question,
-                          isPublished: classInfo?.isPublished,
-                          isDisabled: classInfo?.isDisabled,
-                        }}
-                      />
-                      <div className="ml-4 flex-shrink-0">
-                        <Link
-                          to={`/student/questions/${question._id}/submit`}
-                          state={{ classId }}
-                          className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-300 ${
-                            !classInfo?.isDisabled
-                              ? 'bg-indigo-600 hover:bg-indigo-700'
-                              : 'bg-gray-400 cursor-not-allowed'
-                          }`}
-                          disabled={classInfo?.isDisabled}
-                          onClick={() =>
-                            console.log('[StudentClassView] Navigating to question submission', {
-                              questionId: question._id,
-                              classId,
-                            })
-                          }
-                        >
-                          {!classInfo?.isDisabled ? 'Submit Answer' : 'Disabled'}
-                        </Link>
+                      <div className="p-6">
+                        <div className="flex justify-between items-start">
+                          <StudentQuestionCard
+                            question={{
+                              ...question,
+                              isPublished: classInfo?.isPublished,
+                              isDisabled: classInfo?.isDisabled,
+                            }}
+                          />
+                          <div className="ml-4 flex-shrink-0">
+                            <Link
+                              to={`/student/questions/${question._id}/submit`}
+                              state={{ classId }}
+                              className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-300 ${
+                                !classInfo?.isDisabled
+                                  ? "bg-indigo-600 hover:bg-indigo-700"
+                                  : "bg-gray-400 cursor-not-allowed"
+                              }`}
+                              disabled={classInfo?.isDisabled}
+                              onClick={() =>
+                                console.log(
+                                  "[StudentClassView] Navigating to question submission",
+                                  {
+                                    questionId: question._id,
+                                    classId,
+                                  }
+                                )
+                              }
+                            >
+                              {!classInfo?.isDisabled
+                                ? "Submit Answer"
+                                : "Disabled"}
+                            </Link>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
                   ))}
               </div>
             )}

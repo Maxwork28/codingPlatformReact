@@ -27,6 +27,10 @@ const QuestionManagement = () => {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [searchKeyword, setSearchKeyword] = useState('');
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Strip HTML tags for safe display
   const stripHtml = (html) => {
@@ -46,22 +50,21 @@ const QuestionManagement = () => {
   useEffect(() => {
     const fetchQuestions = async () => {
       try {
-        console.log('[QuestionManagement] Fetching all questions for teacher:', user.id);
+        console.log('[QuestionManagement] Fetching questions for teacher:', user.id);
         const response = await getAllQuestions();
-        console.log('[QuestionManagement] All questions response:', response.data);
-        // Show all questions, not just user's questions
-        const allQuestions = response.data.questions;
-        console.log('[QuestionManagement] All questions fetched:', allQuestions.length);
-        console.log('[QuestionManagement] Questions details:', allQuestions.map(q => ({
+        console.log('[QuestionManagement] Questions response:', response.data);
+        // Backend already filters to only teacher's questions, so no need to filter again
+        const teacherQuestions = response.data.questions;
+        console.log('[QuestionManagement] Teacher questions fetched:', teacherQuestions.length);
+        console.log('[QuestionManagement] Questions details:', teacherQuestions.map(q => ({
           id: q._id,
           title: q.title,
           type: q.type,
-          createdBy: q.createdBy._id,
-          createdByName: q.createdBy.name,
+          createdBy: q.createdBy?._id || q.createdBy,
           classes: q.classes?.length || 0
         })));
-        setQuestions(allQuestions);
-        setFilteredQuestions(allQuestions);
+        setQuestions(teacherQuestions);
+        setFilteredQuestions(teacherQuestions);
       } catch (err) {
         console.error('[QuestionManagement] Fetch error:', err.message, err.response?.data);
         setError(err.response?.data?.error || 'Failed to fetch questions');
@@ -78,16 +81,21 @@ const QuestionManagement = () => {
     const searchQuestionsAsync = async () => {
       if (!searchKeyword.trim()) {
         setFilteredQuestions(questions);
+        setCurrentPage(1); // Reset to first page when clearing search
         return;
       }
       try {
         console.log('[QuestionManagement] Searching questions with keyword:', searchKeyword);
         const response = await searchQuestions({ title: searchKeyword });
         console.log('[QuestionManagement] Search response:', response);
-        // Use all questions from search, not just user's questions
+        // Filter to only show questions created by this teacher (search returns all questions)
         const allQuestions = response.data.questions;
-        console.log('[QuestionManagement] Filtered questions:', allQuestions.length);
-        setFilteredQuestions(allQuestions);
+        const teacherQuestions = allQuestions.filter(q => 
+          q.createdBy && (q.createdBy._id === user.id || q.createdBy === user.id)
+        );
+        console.log('[QuestionManagement] Filtered teacher questions:', teacherQuestions.length, 'out of', allQuestions.length);
+        setFilteredQuestions(teacherQuestions);
+        setCurrentPage(1); // Reset to first page on new search
       } catch (err) {
         console.error('[QuestionManagement] Search error:', err.message, err.response?.data);
         // Fallback to client-side filtering if search fails
@@ -96,6 +104,7 @@ const QuestionManagement = () => {
           (q.tags && q.tags.some(tag => tag.toLowerCase().includes(searchKeyword.toLowerCase())))
         );
         setFilteredQuestions(filtered);
+        setCurrentPage(1); // Reset to first page
         setError(err.response?.data?.error || 'Search failed, showing filtered results');
       }
     };
@@ -299,75 +308,159 @@ const QuestionManagement = () => {
                 {/* Question Bank */}
                 <div className="bg-white rounded-lg shadow p-6">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-gray-800">Question Bank</h3>
-                    <span className="text-sm text-gray-500">
-                      {filteredQuestions.length} question{filteredQuestions.length !== 1 ? 's' : ''}
-                    </span>
+                    <div className="flex items-center gap-4">
+                      <h3 className="text-lg font-semibold text-gray-800">Question Bank</h3>
+                      <span className="text-sm text-gray-500">
+                        {filteredQuestions.length} question{filteredQuestions.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm text-gray-600">Items per page:</label>
+                      <select
+                        value={itemsPerPage}
+                        onChange={(e) => {
+                          setItemsPerPage(Number(e.target.value));
+                          setCurrentPage(1);
+                        }}
+                        className="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      >
+                        <option value={10}>10</option>
+                        <option value={20}>20</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                      </select>
+                    </div>
                   </div>
                   
                   {filteredQuestions.length === 0 ? (
                     <div className="text-center py-12">
-                      <p className="text-gray-500">No questions match the search criteria.</p>
-                      <p className="text-sm text-gray-400 mt-2">Try adjusting your search terms or create a new question.</p>
+                      <p className="text-gray-500">No questions found.</p>
+                      <p className="text-sm text-gray-400 mt-2">Create a new question to get started.</p>
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Question ID
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Title
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Type
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Classes
-                            </th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Actions
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                          {filteredQuestions.map((q) => (
-                            <tr key={q._id} className="hover:bg-gray-50">
-                              <td className="px-6 py-4 whitespace-nowrap text-xs font-mono text-gray-600">
-                                {q._id}
-                              </td>
-                              <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                                {stripHtml(q.title)}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <span className="px-2 py-1 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-800">
-                                  {q.type}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {q.classes.length}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                <Link
-                                  to={`/teacher/questions/${q._id}/edit`}
-                                  className="text-indigo-600 hover:text-indigo-900 mr-4"
-                                >
-                                  Edit
-                                </Link>
-                                <Link
-                                  to={`/teacher/questions/${q._id}/statement`}
-                                  className="text-gray-600 hover:text-gray-900"
-                                >
-                                  View
-                                </Link>
-                              </td>
+                    <>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Question ID
+                              </th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Title
+                              </th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Type
+                              </th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Classes
+                              </th>
+                              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Actions
+                              </th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {filteredQuestions
+                              .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                              .map((q) => (
+                                <tr key={q._id} className="hover:bg-gray-50">
+                                  <td className="px-6 py-4 whitespace-nowrap text-xs font-mono text-gray-600">
+                                    {q._id}
+                                  </td>
+                                  <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                                    {stripHtml(q.title)}
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-800">
+                                      {q.type}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {q.classes?.length || 0}
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <Link
+                                      to={`/teacher/questions/${q._id}/edit`}
+                                      className="text-indigo-600 hover:text-indigo-900 mr-4"
+                                    >
+                                      Edit
+                                    </Link>
+                                    <Link
+                                      to={`/teacher/questions/${q._id}/statement`}
+                                      className="text-gray-600 hover:text-gray-900"
+                                    >
+                                      View
+                                    </Link>
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      
+                      {/* Pagination */}
+                      {filteredQuestions.length > itemsPerPage && (
+                        <div className="mt-4 flex items-center justify-between">
+                          <div className="text-sm text-gray-500">
+                            Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredQuestions.length)} of {filteredQuestions.length} questions
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                              disabled={currentPage === 1}
+                              className="px-3 py-1 rounded-lg text-sm font-medium border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              style={{
+                                backgroundColor: currentPage === 1 ? 'var(--card-white)' : 'var(--card-white)',
+                                borderColor: 'var(--card-border)',
+                                color: currentPage === 1 ? 'var(--text-secondary)' : 'var(--text-primary)'
+                              }}
+                            >
+                              Previous
+                            </button>
+                            {Array.from({ length: Math.ceil(filteredQuestions.length / itemsPerPage) }, (_, i) => i + 1)
+                              .filter(page => {
+                                // Show first page, last page, current page, and pages around current
+                                return page === 1 || 
+                                       page === Math.ceil(filteredQuestions.length / itemsPerPage) ||
+                                       (page >= currentPage - 2 && page <= currentPage + 2);
+                              })
+                              .map((page, index, array) => {
+                                // Add ellipsis if there's a gap
+                                const showEllipsisBefore = index > 0 && page - array[index - 1] > 1;
+                                return (
+                                  <React.Fragment key={page}>
+                                    {showEllipsisBefore && <span className="px-2 text-gray-500">...</span>}
+                                    <button
+                                      onClick={() => setCurrentPage(page)}
+                                      className="px-3 py-1 rounded-lg text-sm font-medium border transition-colors"
+                                      style={{
+                                        backgroundColor: currentPage === page ? 'var(--accent-indigo)' : 'var(--card-white)',
+                                        borderColor: currentPage === page ? 'var(--accent-indigo)' : 'var(--card-border)',
+                                        color: currentPage === page ? 'white' : 'var(--text-primary)'
+                                      }}
+                                    >
+                                      {page}
+                                    </button>
+                                  </React.Fragment>
+                                );
+                              })}
+                            <button
+                              onClick={() => setCurrentPage(prev => Math.min(Math.ceil(filteredQuestions.length / itemsPerPage), prev + 1))}
+                              disabled={currentPage === Math.ceil(filteredQuestions.length / itemsPerPage)}
+                              className="px-3 py-1 rounded-lg text-sm font-medium border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              style={{
+                                backgroundColor: currentPage === Math.ceil(filteredQuestions.length / itemsPerPage) ? 'var(--card-white)' : 'var(--card-white)',
+                                borderColor: 'var(--card-border)',
+                                color: currentPage === Math.ceil(filteredQuestions.length / itemsPerPage) ? 'var(--text-secondary)' : 'var(--text-primary)'
+                              }}
+                            >
+                              Next
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </Tab.Panel>

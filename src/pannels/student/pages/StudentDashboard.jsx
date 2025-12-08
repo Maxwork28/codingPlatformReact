@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { fetchClasses } from '../../../common/components/redux/classSlice';
+import { listClassExams } from '../../../common/services/api';
 import { DiJavascript } from "react-icons/di";
 import { FaJava, FaPython, FaCheckCircle, FaChartLine, FaClock, FaProjectDiagram, FaBookOpen } from "react-icons/fa";
 import { GiNotebook } from "react-icons/gi";
@@ -26,7 +27,25 @@ const StudentDashboard = () => {
   const { classes, status, error } = useSelector((state) => state.classes);
   const { user } = useSelector((state) => state.auth);
   const [assignments, setAssignments] = useState([]);
+  const [upcomingExams, setUpcomingExams] = useState([]);
+  const fetchedClassesRef = useRef('');
 
+  // Create a stable string representation of class IDs
+  // Only recalculate when classes array reference changes or length changes
+  const classIdsString = useMemo(() => {
+    if (classes.length === 0) return '';
+    return classes.map(c => c._id).sort().join(',');
+  }, [classes.length, classes.map(c => c._id).join(',')]);
+
+  // Fetch classes on mount
+  useEffect(() => {
+    if (user?.id && status === 'idle') {
+      console.log('[StudentDashboard] Dispatching fetchClasses', { userId: user.id });
+      dispatch(fetchClasses(''));
+    }
+  }, [dispatch, user?.id, status]);
+
+  // Fetch assignments and exams when classes change
   useEffect(() => {
     // Check if user is authenticated
     if (!user) {
@@ -34,33 +53,60 @@ const StudentDashboard = () => {
       return;
     }
 
-    // Log initial user and status information
-    console.log('[StudentDashboard] useEffect triggered', {
-      user: user ? { id: user.id, name: user.name } : null,
-      status,
+    // Skip if no classes or already fetched for these classes
+    if (classes.length === 0) {
+      console.log('[StudentDashboard] No classes available, skipping fetchAssignments and fetchExams');
+      return;
+    }
+
+    const currentClassIds = classIdsString;
+    if (fetchedClassesRef.current === currentClassIds) {
+      console.log('[StudentDashboard] Classes already fetched, skipping');
+      return;
+    }
+
+    console.log('[StudentDashboard] Triggering fetchAssignments and fetchExams', {
+      classIds: currentClassIds,
       classesLength: classes.length,
     });
 
-    // Check for user ID issues
-    if (!user.id) {
-      console.warn('[StudentDashboard] User ID is undefined', { user });
-    } else {
-      console.log('[StudentDashboard] User data available', {
-        userId: user.id,
-        userName: user.name,
-      });
-    }
+    // Mark as fetched
+    fetchedClassesRef.current = currentClassIds;
 
-    // Fetch classes if status is idle and user ID exists
-    if (user?.id && status === 'idle') {
-      console.log('[StudentDashboard] Dispatching fetchClasses', { userId: user.id });
-      dispatch(fetchClasses(''));
-    } else {
-      console.log('[StudentDashboard] Skipping fetchClasses', {
-        hasUserId: !!user?.id,
-        status,
-      });
-    }
+    // Fetch exams for each class
+    const fetchExams = async () => {
+      try {
+        const allExams = [];
+        for (const cls of classes) {
+          try {
+            const response = await listClassExams(cls._id);
+            const exams = response.data.exams || [];
+            allExams.push(
+              ...exams
+                .filter(exam => 
+                  exam.status === 'active' || exam.status === 'scheduled'
+                )
+                .map(exam => ({
+                  ...exam,
+                  classId: cls._id,
+                  className: cls.name
+                }))
+            );
+          } catch (err) {
+            console.error(`Failed to fetch exams for class ${cls._id}:`, err);
+          }
+        }
+        // Sort by start time and get upcoming 5
+        const sorted = allExams.sort((a, b) => {
+          const aTime = a.proctoring?.startTime ? new Date(a.proctoring.startTime) : new Date(0);
+          const bTime = b.proctoring?.startTime ? new Date(b.proctoring.startTime) : new Date(0);
+          return aTime - bTime;
+        });
+        setUpcomingExams(sorted.slice(0, 5));
+      } catch (error) {
+        console.error('Failed to fetch exams:', error);
+      }
+    };
 
     // Fetch assignments for each class
     const fetchAssignments = async () => {
@@ -75,7 +121,7 @@ const StudentDashboard = () => {
             className: cls.name,
           });
           const response = await axios.get(
-            `https://api.algosutra.co.in/admin/classes/${cls._id}/assignments`,
+            `https://api.algosutra.co.in /admin/classes/${cls._id}/assignments`,
             {
               headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
             }
@@ -116,14 +162,9 @@ const StudentDashboard = () => {
       }
     };
 
-    // Only fetch assignments if classes are available
-    if (classes.length > 0) {
-      console.log('[StudentDashboard] Triggering fetchAssignments');
-      fetchAssignments();
-    } else {
-      console.log('[StudentDashboard] No classes available, skipping fetchAssignments');
-    }
-  }, [dispatch, user, status, classes]);
+    fetchAssignments();
+    fetchExams();
+  }, [classIdsString, user]);
 
   // Filter classes for the current user
   const myClasses = user?.id
@@ -330,6 +371,48 @@ const StudentDashboard = () => {
             </div>
           )}
         </div>
+
+        {/* Upcoming Exams Card */}
+        {upcomingExams.length > 0 && (
+          <div className="backdrop-blur-sm border rounded-2xl shadow-lg transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 hover:scale-[1.02]" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
+            <div className="px-6 py-4 border-b border-gray-200" style={{ backgroundColor: 'var(--background-light)' }}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <FaClock className="w-5 h-5" style={{ color: 'var(--highlight-blue)' }} />
+                  <h2 className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>Upcoming Exams</h2>
+                </div>
+              </div>
+            </div>
+            <div className="divide-y divide-gray-200">
+              {upcomingExams.map((exam) => (
+                <Link
+                  key={exam._id}
+                  to={`/student/classes/${exam.classId}/exams`}
+                  className="block p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>{exam.title}</h3>
+                      <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>{exam.className}</p>
+                      {exam.proctoring?.startTime && (
+                        <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                          Starts: {new Date(exam.proctoring.startTime).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                    <span className={`px-2 py-1 rounded text-xs ${
+                      exam.status === 'active' ? 'bg-green-100 text-green-800' :
+                      exam.status === 'scheduled' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {exam.status}
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Upcoming Assignments Card */}
         <div className="backdrop-blur-sm border rounded-2xl shadow-lg transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 hover:scale-[1.02]" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>

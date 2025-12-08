@@ -1092,10 +1092,15 @@ export const getQuestionPerspectiveReport = async (classId, questionId) => {
  * @param {boolean} [isRun=false] - Whether it's a run or submit
  * @returns {Promise} Axios response (includes explanation)
  */
-export const submitAnswer = async (questionId, answer, classId, language, isRun = false) => {
-  console.log('submitAnswer called', { questionId, classId, language, isRun });
+export const submitAnswer = async (questionId, answer, classId, language, isRun = false, examContext = null) => {
+  console.log('submitAnswer called', { questionId, classId, language, isRun, examContext });
   try {
-    const response = await api.post(`/questions/${questionId}/submit`, { answer, classId, language, isRun });
+    const payload = { answer, classId, language, isRun };
+    if (examContext) {
+      payload.examAttemptId = examContext.examAttemptId;
+      payload.examId = examContext.examId;
+    }
+    const response = await api.post(`/questions/${questionId}/submit`, payload);
     console.log('submitAnswer success', { response: response.data });
     return response;
   } catch (err) {
@@ -1116,10 +1121,15 @@ export const submitAnswer = async (questionId, answer, classId, language, isRun 
  * @param {string} language - Programming language
  * @returns {Promise} Axios response (includes explanation)
  */
-export const runCode = async (questionId, answer, classId, language) => {
-  console.log('runCode called', { questionId, classId, language });
+export const runCode = async (questionId, answer, classId, language, examContext = null) => {
+  console.log('runCode called', { questionId, classId, language, examContext });
   try {
-    const response = await api.post(`/questions/${questionId}/run`, { answer, classId, language });
+    const payload = { answer, classId, language };
+    if (examContext) {
+      payload.examAttemptId = examContext.examAttemptId;
+      payload.examId = examContext.examId;
+    }
+    const response = await api.post(`/questions/${questionId}/run`, payload);
     console.log('runCode success', { response: response.data });
     return response;
   } catch (err) {
@@ -1145,16 +1155,21 @@ export const getLeaderboard = async (classId) => {
     throw err.response?.data?.error || 'Failed to fetch leaderboard';
   }
 };
-export const runCodeWithCustomInput = async (questionId, answer, classId, language, customInput,expectedOutput) => {
-  console.log('api: runCodeWithCustomInput called', { questionId, classId, language, customInput,expectedOutput });
+export const runCodeWithCustomInput = async (questionId, answer, classId, language, customInput, expectedOutput, examContext = null) => {
+  console.log('api: runCodeWithCustomInput called', { questionId, classId, language, customInput, expectedOutput, examContext });
   try {
-    const response = await api.post(`/questions/${questionId}/run-custom`, {
+    const payload = {
       answer,
       classId,
       language,
       customInput,
       expectedOutput
-    });
+    };
+    if (examContext) {
+      payload.examAttemptId = examContext.examAttemptId;
+      payload.examId = examContext.examId;
+    }
+    const response = await api.post(`/questions/${questionId}/run-custom`, payload);
     console.log('api: runCodeWithCustomInput success', { response: response.data });
     return response;
   } catch (err) {
@@ -1255,6 +1270,331 @@ export const teacherTestWithCustomInput = async (questionId, answer, classId, la
   } catch (err) {
     console.error('teacherTestWithCustomInput error', { error: err.response?.data?.error || 'Failed to test with custom input' });
     throw err.response?.data?.error || 'Failed to test with custom input';
+  }
+};
+
+// ==================== EXAM/TEST API FUNCTIONS ====================
+
+/**
+ * Creates a test template
+ * @param {Object} templateData - Template data (title, description, classId, questions, proctoring, scoring, sections)
+ * @returns {Promise} Axios response
+ */
+export const createExamTemplate = async (templateData) => {
+  console.log('createExamTemplate called', { templateData });
+  try {
+    const response = await api.post('/exams/templates', templateData);
+    console.log('createExamTemplate success', { response: response.data });
+    return response;
+  } catch (err) {
+    console.error('createExamTemplate error', { error: err.response?.data?.error || 'Failed to create template' });
+    throw err.response?.data?.error || 'Failed to create template';
+  }
+};
+
+/**
+ * Lists all exam templates
+ * @returns {Promise} Axios response
+ */
+export const listExamTemplates = async () => {
+  console.log('listExamTemplates called');
+  try {
+    const response = await api.get('/exams/templates');
+    console.log('listExamTemplates success', { response: response.data });
+    return response;
+  } catch (err) {
+    console.error('listExamTemplates error', { error: err.response?.data?.error || 'Failed to fetch templates' });
+    throw err.response?.data?.error || 'Failed to fetch templates';
+  }
+};
+
+/**
+ * Creates an exam (from template or from scratch)
+ * @param {Object} examData - Exam data (title, description, classId, questions, proctoring, scoring, templateId, sections, newQuestions)
+ * @returns {Promise} Axios response
+ */
+export const createExam = async (examData) => {
+  console.log('createExam called', { examData });
+  try {
+    const response = await api.post('/exams', examData);
+    console.log('createExam success', { response: response.data });
+    return response;
+  } catch (err) {
+    console.error('createExam error', { error: err.response?.data?.error || 'Failed to create exam' });
+    throw err.response?.data?.error || 'Failed to create exam';
+  }
+};
+
+/**
+ * Lists all exams for a class
+ * @param {string} classId - Class ID
+ * @returns {Promise} Axios response
+ */
+export const listClassExams = async (classId) => {
+  console.log('listClassExams called', { classId });
+  try {
+    const response = await api.get(`/exams/class/${classId}`);
+    console.log('listClassExams success', { response: response.data });
+    return response;
+  } catch (err) {
+    console.error('listClassExams error', { error: err.response?.data?.error || 'Failed to fetch exams' });
+    throw err.response?.data?.error || 'Failed to fetch exams';
+  }
+};
+
+/**
+ * Gets exams for a class (alias for listClassExams for consistency)
+ * @param {string} classId - Class ID
+ * @returns {Promise} Axios response
+ */
+export const getClassExams = async (classId) => {
+  return listClassExams(classId);
+};
+
+/**
+ * Gets exam details
+ * @param {string} examId - Exam ID
+ * @returns {Promise} Axios response
+ */
+export const getExamDetails = async (examId) => {
+  console.log('getExamDetails called', { examId });
+  try {
+    const response = await api.get(`/exams/${examId}`);
+    console.log('getExamDetails success', { response: response.data });
+    return response;
+  } catch (err) {
+    console.error('getExamDetails error', { error: err.response?.data?.error || 'Failed to fetch exam details' });
+    throw err.response?.data?.error || 'Failed to fetch exam details';
+  }
+};
+
+/**
+ * Starts an exam for a student
+ * @param {string} examId - Exam ID
+ * @returns {Promise} Axios response
+ */
+export const startExam = async (examId) => {
+  console.log('startExam called', { examId });
+  try {
+    const response = await api.post(`/exams/${examId}/start`);
+    console.log('startExam success', { response: response.data });
+    return response;
+  } catch (err) {
+    console.error('startExam error', { error: err.response?.data?.error || 'Failed to start exam' });
+    throw err.response?.data?.error || 'Failed to start exam';
+  }
+};
+
+/**
+ * Gets exam attempt details
+ * @param {string} examId - Exam ID
+ * @returns {Promise} Axios response
+ */
+export const getExamAttempt = async (examId) => {
+  console.log('getExamAttempt called', { examId });
+  try {
+    const response = await api.get(`/exams/${examId}/attempt`);
+    console.log('getExamAttempt success', { response: response.data });
+    return response;
+  } catch (err) {
+    console.error('getExamAttempt error', { error: err.response?.data?.error || 'Failed to fetch attempt' });
+    throw err.response?.data?.error || 'Failed to fetch attempt';
+  }
+};
+
+/**
+ * Submits an answer for a question during exam
+ * @param {string} examId - Exam ID
+ * @param {Object} answerData - Answer data (attemptId, questionId, answer, language)
+ * @returns {Promise} Axios response
+ */
+export const submitExamAnswer = async (examId, answerData) => {
+  console.log('submitExamAnswer called', { examId, answerData });
+  try {
+    const response = await api.post(`/exams/${examId}/submit-answer`, answerData);
+    console.log('submitExamAnswer success', { response: response.data });
+    return response;
+  } catch (err) {
+    console.error('submitExamAnswer error', { error: err.response?.data?.error || 'Failed to submit answer' });
+    throw err.response?.data?.error || 'Failed to submit answer';
+  }
+};
+
+/**
+ * Logs a proctoring event (tab switch, fullscreen exit, copy/paste, network loss, heartbeat)
+ * @param {string} examId - Exam ID
+ * @param {string} attemptId - Attempt ID
+ * @param {string} type - Event type
+ * @param {Object} details - Event details
+ * @returns {Promise} Axios response
+ */
+export const logProctoringEvent = async (examId, attemptId, type, details = {}) => {
+  console.log('logProctoringEvent called', { examId, attemptId, type, details });
+  try {
+    const eventData = { attemptId, type, details };
+    const response = await api.post(`/exams/${examId}/events`, eventData);
+    console.log('logProctoringEvent success', { response: response.data });
+    return response;
+  } catch (err) {
+    console.error('logProctoringEvent error', { error: err.response?.data?.error || 'Failed to log event' });
+    throw err.response?.data?.error || 'Failed to log event';
+  }
+};
+
+/**
+ * Updates section timer
+ * @param {string} examId - Exam ID
+ * @param {Object} timerData - Timer data (attemptId, sectionId, remainingSeconds, completed, currentQuestionId)
+ * @returns {Promise} Axios response
+ */
+export const updateSectionTimer = async (examId, timerData) => {
+  console.log('updateSectionTimer called', { examId, timerData });
+  try {
+    const response = await api.patch(`/exams/${examId}/section-timer`, timerData);
+    console.log('updateSectionTimer success', { response: response.data });
+    return response;
+  } catch (err) {
+    console.error('updateSectionTimer error', { error: err.response?.data?.error || 'Failed to update section timer' });
+    throw err.response?.data?.error || 'Failed to update section timer';
+  }
+};
+
+/**
+ * Updates question timer
+ * @param {string} examId - Exam ID
+ * @param {Object} timerData - Timer data (attemptId, questionId, remainingSeconds, completed)
+ * @returns {Promise} Axios response
+ */
+export const updateQuestionTimer = async (examId, timerData) => {
+  console.log('updateQuestionTimer called', { examId, timerData });
+  try {
+    const response = await api.patch(`/exams/${examId}/question-timer`, timerData);
+    console.log('updateQuestionTimer success', { response: response.data });
+    return response;
+  } catch (err) {
+    console.error('updateQuestionTimer error', { error: err.response?.data?.error || 'Failed to update question timer' });
+    throw err.response?.data?.error || 'Failed to update question timer';
+  }
+};
+
+/**
+ * Submits the entire exam
+ * @param {string} examId - Exam ID
+ * @param {string} attemptId - Attempt ID
+ * @returns {Promise} Axios response
+ */
+export const submitExam = async (examId, attemptId) => {
+  console.log('submitExam called', { examId, attemptId });
+  try {
+    const response = await api.post(`/exams/${examId}/submit`, { attemptId });
+    console.log('submitExam success', { response: response.data });
+    return response;
+  } catch (err) {
+    console.error('submitExam error', { error: err.response?.data?.error || 'Failed to submit exam' });
+    throw err.response?.data?.error || 'Failed to submit exam';
+  }
+};
+
+/**
+ * Auto-submits the exam (when time ends)
+ * @param {string} examId - Exam ID
+ * @param {string} attemptId - Attempt ID
+ * @returns {Promise} Axios response
+ */
+export const autoSubmitExam = async (examId, attemptId) => {
+  console.log('autoSubmitExam called', { examId, attemptId });
+  try {
+    const response = await api.post(`/exams/${examId}/auto-submit`, { attemptId });
+    console.log('autoSubmitExam success', { response: response.data });
+    return response;
+  } catch (err) {
+    console.error('autoSubmitExam error', { error: err.response?.data?.error || 'Failed to auto submit exam' });
+    throw err.response?.data?.error || 'Failed to auto submit exam';
+  }
+};
+
+/**
+ * Gets exam report (for admin/teacher)
+ * @param {string} examId - Exam ID
+ * @returns {Promise} Axios response
+ */
+export const getExamReport = async (examId) => {
+  console.log('getExamReport called', { examId });
+  try {
+    const response = await api.get(`/exams/${examId}/report`);
+    console.log('getExamReport success', { response: response.data });
+    return response;
+  } catch (err) {
+    console.error('getExamReport error', { error: err.response?.data?.error || 'Failed to fetch report' });
+    throw err.response?.data?.error || 'Failed to fetch report';
+  }
+};
+
+/**
+ * Gets student exam results
+ * @param {string} examId - Exam ID
+ * @returns {Promise} Axios response
+ */
+export const getStudentExamResults = async (examId) => {
+  try {
+    const response = await api.get(`/exams/${examId}/results`);
+    return response;
+  } catch (err) {
+    // Re-throw with a clean error message for UI display
+    const errorMessage = err.response?.data?.error || err.message || 'Failed to fetch exam results';
+    throw new Error(errorMessage);
+  }
+};
+
+/**
+ * Releases exam scores (for admin/teacher)
+ * @param {string} examId - Exam ID
+ * @returns {Promise} Axios response
+ */
+export const releaseExamScores = async (examId) => {
+  console.log('releaseExamScores called', { examId });
+  try {
+    const response = await api.post(`/exams/${examId}/release`);
+    console.log('releaseExamScores success', { response: response.data });
+    return response;
+  } catch (err) {
+    console.error('releaseExamScores error', { error: err.response?.data?.error || 'Failed to release scores' });
+    throw err.response?.data?.error || 'Failed to release scores';
+  }
+};
+
+/**
+ * Edits/Updates an exam
+ * @param {string} examId - Exam ID
+ * @param {Object} examData - Updated exam data
+ * @returns {Promise} Axios response
+ */
+export const editExam = async (examId, examData) => {
+  console.log('editExam called', { examId, examData });
+  try {
+    const response = await api.put(`/exams/${examId}`, examData);
+    console.log('editExam success', { response: response.data });
+    return response;
+  } catch (err) {
+    console.error('editExam error', { error: err.response?.data?.error || 'Failed to edit exam' });
+    throw err.response?.data?.error || 'Failed to edit exam';
+  }
+};
+
+/**
+ * Deletes an exam
+ * @param {string} examId - Exam ID
+ * @returns {Promise} Axios response
+ */
+export const deleteExam = async (examId) => {
+  console.log('deleteExam called', { examId });
+  try {
+    const response = await api.delete(`/exams/${examId}`);
+    console.log('deleteExam success', { response: response.data });
+    return response;
+  } catch (err) {
+    console.error('deleteExam error', { error: err.response?.data?.error || 'Failed to delete exam' });
+    throw err.response?.data?.error || 'Failed to delete exam';
   }
 };
 

@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback, Fragment } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { Tab, Menu, Transition, Dialog, Disclosure } from '@headlessui/react';
+import { Tab, Menu, Transition, Dialog, Disclosure, Combobox } from '@headlessui/react';
+import { CheckIcon, ChevronUpDownIcon } from '@heroicons/react/20/solid';
 import { format } from 'date-fns';
 import { Bar, Pie } from 'react-chartjs-2';
 import {
@@ -31,6 +32,7 @@ import {
   focusStudent,
   viewSubmissionCode,
   getQuestionPerspectiveReport,
+  adminSearchQuestionsById,
 } from '../../../common/services/api';
 import TeacherQuestionCard from '../components/TeacherQuestionCard';
 
@@ -65,10 +67,14 @@ const TeacherClassView = () => {
   const [assignmentLoading, setAssignmentLoading] = useState(false);
   const [assignmentError, setAssignmentError] = useState('');
   const [assignmentMessage, setAssignmentMessage] = useState('');
+  const [assignmentQuestionSearchQuery, setAssignmentQuestionSearchQuery] = useState('');
+  const [allQuestionsForAssignment, setAllQuestionsForAssignment] = useState([]);
 
   // Question search
   const [questionSearchKeyword, setQuestionSearchKeyword] = useState('');
   const [selectedQuestionId, setSelectedQuestionId] = useState('');
+  const [attachQuestionSearchQuery, setAttachQuestionSearchQuery] = useState('');
+  const [allAvailableQuestions, setAllAvailableQuestions] = useState([]);
 
   // Other forms
   const [questionIdInput, setQuestionIdInput] = useState('');
@@ -111,6 +117,11 @@ const TeacherClassView = () => {
   const [studentCurrentPage, setStudentCurrentPage] = useState(1);
   const [studentItemsPerPage] = useState(10);
 
+  // Search and pagination for questions
+  const [questionSearch, setQuestionSearch] = useState('');
+  const [questionCurrentPage, setQuestionCurrentPage] = useState(1);
+  const [questionItemsPerPage] = useState(12);
+
   // Helper function
   const stripHtml = (html) => {
     if (!html || typeof html !== 'string') return '';
@@ -118,6 +129,45 @@ const TeacherClassView = () => {
     div.innerHTML = html;
     return div.textContent || div.innerText || '';
   };
+
+  // Helper function to check if a string is a valid MongoDB ObjectId
+  const isValidObjectId = (str) => {
+    const objectIdPattern = /^[0-9a-fA-F]{24}$/;
+    return objectIdPattern.test(str);
+  };
+
+  // Filter questions for assignment creation based on search query
+  const filteredAssignmentQuestions = assignmentQuestionSearchQuery === ''
+    ? allQuestionsForAssignment
+    : allQuestionsForAssignment.filter((q) => {
+        const searchLower = assignmentQuestionSearchQuery.toLowerCase();
+        const titleMatch = stripHtml(q.title || '').toLowerCase().includes(searchLower);
+        const idMatch = q._id.toLowerCase().includes(searchLower);
+        const typeMatch = (q.type || '').toLowerCase().includes(searchLower);
+        return titleMatch || idMatch || typeMatch;
+      });
+
+  // Filter questions for attach question dropdown
+  // Always use availableQuestions (all teacher's questions) as the base, not filteredQuestions
+  // This ensures all teacher's questions are available for attaching, regardless of search state
+  const filteredAttachQuestions = attachQuestionSearchQuery === ''
+    ? availableQuestions
+    : availableQuestions.filter((q) => {
+        const titleMatch = stripHtml(q.title || '').toLowerCase().includes(attachQuestionSearchQuery.toLowerCase());
+        const idMatch = q._id && q._id.toLowerCase().includes(attachQuestionSearchQuery.toLowerCase());
+        return titleMatch || idMatch;
+      });
+  
+  // Debug logging for attach dropdown
+  if (attachQuestionSearchQuery) {
+    console.log('[TeacherClassView] 🔍 Attach dropdown search:', {
+      searchQuery: attachQuestionSearchQuery,
+      availableQuestionsCount: availableQuestions.length,
+      filteredCount: filteredAttachQuestions.length,
+      availableQuestionIds: availableQuestions.map(q => q._id),
+      filteredQuestionIds: filteredAttachQuestions.map(q => q._id)
+    });
+  }
 
   // Filter assignments based on search
   const filteredAssignments =
@@ -155,6 +205,20 @@ const TeacherClassView = () => {
   const studentIndexOfFirstItem = studentIndexOfLastItem - studentItemsPerPage;
   const currentStudents = filteredStudents.slice(studentIndexOfFirstItem, studentIndexOfLastItem);
   const studentTotalPages = Math.ceil(filteredStudents.length / studentItemsPerPage);
+
+  // Filter questions based on search
+  const filteredQuestionsList = questionSearch === ''
+    ? questions
+    : questions.filter((q) =>
+        stripHtml(q.title || '').toLowerCase().includes(questionSearch.toLowerCase()) ||
+        (q._id && q._id.toLowerCase().includes(questionSearch.toLowerCase())) ||
+        (q.type && q.type.toLowerCase().includes(questionSearch.toLowerCase()))
+      );
+
+  const questionIndexOfLastItem = questionCurrentPage * questionItemsPerPage;
+  const questionIndexOfFirstItem = questionIndexOfLastItem - questionItemsPerPage;
+  const currentQuestions = filteredQuestionsList.slice(questionIndexOfFirstItem, questionIndexOfLastItem);
+  const questionTotalPages = Math.ceil(filteredQuestionsList.length / questionItemsPerPage);
 
   // Fetch all data
   const fetchData = useCallback(async (skipLoading = false) => {
@@ -218,15 +282,37 @@ const TeacherClassView = () => {
 
         // Fetch questions
         const questionsResponse = await getQuestionsByClass(classId);
-        setQuestions(questionsResponse.data.questions);
-
-        // Fetch available questions
-        const allQuestionsResponse = await getAllQuestions();
-        const userQuestions = allQuestionsResponse.data.questions.filter(
-          (q) => q.createdBy._id === user.id
+        // Filter to only show questions created by the teacher
+        const teacherQuestions = questionsResponse.data.questions.filter(
+          (q) => q.createdBy && q.createdBy._id === user.id
         );
+        setQuestions(teacherQuestions);
+        
+        // Set questions associated with class for assignment creation (like admin)
+        setAllQuestionsForAssignment(questionsResponse.data.questions);
+
+        // Fetch available questions (backend now filters by role - teachers only get their own questions)
+        console.log('[TeacherClassView] 🔍 Fetching questions for attach dropdown...');
+        const allQuestionsResponse = await getAllQuestions();
+        console.log('[TeacherClassView] 📦 Questions received:', allQuestionsResponse.data.questions.length);
+        
+        // Log all questions (backend already filtered for teachers)
+        console.log('[TeacherClassView] 📋 Questions details:');
+        allQuestionsResponse.data.questions.forEach((q, idx) => {
+          const creatorId = q.createdBy?._id || q.createdBy || 'N/A';
+          console.log(`  [${idx + 1}] ✅ ID: ${q._id}, Title: ${stripHtml(q.title || '').substring(0, 40)}..., CreatedBy: ${creatorId}, Type: ${q.type}`);
+        });
+        
+        // Backend already filters to only teacher's questions, so no need to filter again
+        const userQuestions = allQuestionsResponse.data.questions;
+        
+        console.log('[TeacherClassView] ✅ Teacher questions:', userQuestions.length);
+        console.log('[TeacherClassView] 📝 Teacher question IDs:', userQuestions.map(q => q._id));
+        console.log('[TeacherClassView] 📝 Teacher question titles:', userQuestions.map(q => stripHtml(q.title || '').substring(0, 30)));
+        
         setAvailableQuestions(userQuestions);
-        setFilteredQuestions(userQuestions);
+        setFilteredQuestions(userQuestions); // Initialize filteredQuestions with user's questions
+        setAllAvailableQuestions(allQuestionsResponse.data.questions);
       } else {
         setError('Class not found or you are not authorized');
       }
@@ -244,24 +330,16 @@ const TeacherClassView = () => {
     fetchData();
   }, [fetchData]);
 
-  // Question search effect
+  // Debug: Log when availableQuestions changes
   useEffect(() => {
-    const searchQuestionsAsync = async () => {
-      if (!questionSearchKeyword.trim()) {
-        setFilteredQuestions(availableQuestions);
-        return;
-      }
-      try {
-        const response = await searchQuestions(questionSearchKeyword);
-        const userQuestions = response.data.questions.filter((q) => q.createdBy._id === user.id);
-        setFilteredQuestions(userQuestions);
-      } catch (err) {
-        console.error('[TeacherClassView] Search error:', err.message);
-        setFilteredQuestions(availableQuestions);
-      }
-    };
-    searchQuestionsAsync();
-  }, [questionSearchKeyword, availableQuestions, user]);
+    console.log('[TeacherClassView] 📊 availableQuestions updated:', {
+      count: availableQuestions.length,
+      questionIds: availableQuestions.map(q => q._id),
+      questionTitles: availableQuestions.map(q => stripHtml(q.title || '').substring(0, 30))
+    });
+  }, [availableQuestions]);
+
+  // Question search effect - removed, using handleQuestionSearch instead
 
   // Handlers
   const handleFetchQuestionReport = async (e) => {
@@ -297,6 +375,7 @@ const TeacherClassView = () => {
       const successMsg = 'Assignment created successfully!';
       setAssignmentMessage(successMsg);
       setAssignmentForm({ questionId: '', maxPoints: '', dueDate: '' });
+      setAssignmentQuestionSearchQuery('');
       showToast(successMsg, 'success');
 
       // Refresh assignments
@@ -305,7 +384,11 @@ const TeacherClassView = () => {
 
       setTimeout(() => setAssignmentMessage(''), 3000);
     } catch (err) {
-      setAssignmentError(err.error || 'Failed to create assignment');
+      console.error('handleCreateAssignment error', err);
+      const errorMsg = typeof err === 'string' ? err : (err.message || err.response?.data?.error || 'Failed to create assignment');
+      setAssignmentError(errorMsg);
+      showToast(errorMsg, 'error');
+      setTimeout(() => setAssignmentError(''), 5000);
     } finally {
       setAssignmentLoading(false);
     }
@@ -328,30 +411,61 @@ const TeacherClassView = () => {
     }
   };
 
-  const handleAssignQuestion = async () => {
+  const handleQuestionSearch = async () => {
+    console.log('handleQuestionSearch called', { keyword: questionSearchKeyword });
+    try {
+      if (!questionSearchKeyword.trim()) {
+        setFilteredQuestions(availableQuestions);
+        return;
+      }
+
+      // Check if the search keyword is a valid ObjectId
+      if (isValidObjectId(questionSearchKeyword.trim())) {
+        console.log('handleQuestionSearch: Searching by ID', { questionId: questionSearchKeyword.trim() });
+        const response = await adminSearchQuestionsById(questionSearchKeyword.trim());
+        console.log('handleQuestionSearch success (ID search)', { question: response.data.question });
+        const questions = response.data.question ? [response.data.question] : [];
+        // Filter to only user's questions
+        const userQuestions = questions.filter((q) => q.createdBy._id === user.id);
+        setFilteredQuestions(userQuestions);
+      } else {
+        console.log('handleQuestionSearch: Searching by title', { title: questionSearchKeyword });
+        const response = await searchQuestions({ title: questionSearchKeyword });
+        console.log('handleQuestionSearch success (title search)', { questions: response.data.questions });
+        const userQuestions = response.data.questions.filter((q) => q.createdBy._id === user.id);
+        setFilteredQuestions(userQuestions);
+      }
+    } catch (err) {
+      console.error('handleQuestionSearch error', err);
+      setError(err.message || 'Failed to search questions');
+    }
+  };
+
+  const handleAttachQuestion = async () => {
+    console.log('handleAttachQuestion called', { classId, selectedQuestionId });
     if (!selectedQuestionId) {
-      const errorMsg = 'Please select a question';
+      const errorMsg = 'Please select a question to attach';
       setError(errorMsg);
       showToast(errorMsg, 'warning');
       return;
     }
-
     try {
       await assignQuestionToClass(selectedQuestionId, classId);
-      setError('');
-      const successMsg = 'Question assigned successfully!';
-      showToast(successMsg, 'success');
-
-      // Refresh data without loading spinner or resetting tab
       await fetchData(true);
       setSelectedQuestionId('');
       setQuestionSearchKeyword('');
+      setFilteredQuestions(availableQuestions);
+      const successMsg = 'Question attached to class successfully';
+      setError('');
+      showToast(successMsg, 'success');
+      console.log('handleAttachQuestion success');
     } catch (err) {
-      const errorMsg = typeof err === 'string' ? err : (err.error || 'Failed to assign question');
+      console.error('handleAttachQuestion error', err);
+      const errorMsg = typeof err === 'string' ? err : (err.message || 'Failed to attach question to class');
       setError(errorMsg);
       // Show specific error message based on error type
-      if (errorMsg.toLowerCase().includes('already assigned')) {
-        showToast('This question is already assigned to this class. Please select a different question.', 'warning');
+      if (errorMsg.toLowerCase().includes('already assigned') || errorMsg.toLowerCase().includes('already attached')) {
+        showToast('This question is already attached to this class. Please select a different question.', 'warning');
       } else {
         showToast(errorMsg, 'error');
       }
@@ -1214,21 +1328,70 @@ const TeacherClassView = () => {
                 </div>
               )}
 
-              <form onSubmit={handleCreateAssignment} className="space-y-4">
+              <form onSubmit={handleCreateAssignment} className="space-y-4 overflow-visible">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Question ID
+                      Question
                     </label>
-                    <input
-                      type="text"
+                    <Combobox 
                       value={assignmentForm.questionId}
-                      onChange={(e) =>
-                        setAssignmentForm({ ...assignmentForm, questionId: e.target.value })
-                      }
-                      className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                      required
-                    />
+                      onChange={(value) => {
+                        setAssignmentForm({ ...assignmentForm, questionId: value });
+                        setAssignmentQuestionSearchQuery('');
+                      }}
+                    >
+                      <div className="relative">
+                        <Combobox.Input
+                          className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm pl-3 pr-10 py-2"
+                          onChange={(event) => setAssignmentQuestionSearchQuery(event.target.value)}
+                          displayValue={(id) => {
+                            const question = allQuestionsForAssignment.find(q => q._id === id);
+                            return question ? stripHtml(question.title) : '';
+                          }}
+                          placeholder="Search questions by name..."
+                        />
+                        <Combobox.Button className="absolute inset-y-0 right-0 flex items-center pr-2">
+                          <ChevronUpDownIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                        </Combobox.Button>
+                        <Combobox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm">
+                          {filteredAssignmentQuestions && filteredAssignmentQuestions.length > 0 ? (
+                            filteredAssignmentQuestions.map((question) => (
+                              <Combobox.Option
+                                key={question._id}
+                                value={question._id}
+                                className={({ active }) =>
+                                  `relative cursor-pointer select-none py-2 pl-10 pr-4 ${
+                                    active ? 'bg-indigo-600 text-white' : 'text-gray-900'
+                                  }`
+                                }
+                              >
+                                {({ selected, active }) => (
+                                  <>
+                                    <span className={`block truncate ${selected ? 'font-medium' : 'font-normal'}`}>
+                                      {stripHtml(question.title)}
+                                    </span>
+                                    {selected && (
+                                      <span
+                                        className={`absolute inset-y-0 left-0 flex items-center pl-3 ${
+                                          active ? 'text-white' : 'text-indigo-600'
+                                        }`}
+                                      >
+                                        <CheckIcon className="h-5 w-5" aria-hidden="true" />
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                              </Combobox.Option>
+                            ))
+                          ) : (
+                            <div className="relative cursor-default select-none py-2 px-4 text-gray-700">
+                              {assignmentQuestionSearchQuery ? 'No questions found' : 'No questions available'}
+                            </div>
+                          )}
+                        </Combobox.Options>
+                      </div>
+                    </Combobox>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1403,45 +1566,99 @@ const TeacherClassView = () => {
             {/* Attach Question to Class */}
             <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 mb-8 transition-all duration-300 hover:shadow-2xl" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
               <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>Attach Question to Class</h3>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Search Questions
-                  </label>
+              <div className="space-y-6">
+                {/* Search Questions */}
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Search Questions</label>
+                    <div className="flex gap-2">
                   <input
                     type="text"
                     value={questionSearchKeyword}
                     onChange={(e) => setQuestionSearchKeyword(e.target.value)}
-                    placeholder="Search by title, tags, or content..."
-                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        placeholder="Search questions by title or ID..."
+                        className="flex-1 rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                   />
+                      <button
+                        onClick={handleQuestionSearch}
+                        className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300"
+                      >
+                        Search
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
+                {/* Available Questions */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Select Question
-                  </label>
-                  <select
-                    value={selectedQuestionId}
-                    onChange={(e) => setSelectedQuestionId(e.target.value)}
-                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                  >
-                    <option value="">-- Select a Question --</option>
-                    {filteredQuestions.map((q) => (
-                      <option key={q._id} value={q._id}>
-                        {stripHtml(q.title)}
-                      </option>
-                    ))}
-                  </select>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Question to Attach</label>
+                  <Combobox value={selectedQuestionId} onChange={(value) => setSelectedQuestionId(value)}>
+                    <div className="relative">
+                      <Combobox.Input
+                        className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm pl-3 pr-10 py-2"
+                        onChange={(event) => setAttachQuestionSearchQuery(event.target.value)}
+                        displayValue={(id) => {
+                          const question = availableQuestions.find(q => q._id === id);
+                          return question ? `${stripHtml(question.title)} - ${question.type} (${question.points || 0} points)` : '';
+                        }}
+                        placeholder="Search questions by title or ID..."
+                      />
+                      <Combobox.Button className="absolute inset-y-0 right-0 flex items-center pr-2">
+                        <ChevronUpDownIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                      </Combobox.Button>
+                      <Combobox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm">
+                        {filteredAttachQuestions && filteredAttachQuestions.length > 0 ? (
+                          filteredAttachQuestions.map((question) => {
+                            if (!question._id || !question.title) {
+                              return null;
+                            }
+                            return (
+                              <Combobox.Option
+                                key={question._id}
+                                value={question._id}
+                                className={({ active }) =>
+                                  `relative cursor-pointer select-none py-2 pl-10 pr-4 ${
+                                    active ? 'bg-indigo-600 text-white' : 'text-gray-900'
+                                  }`
+                                }
+                              >
+                                {({ selected, active }) => (
+                                  <>
+                                    <span className={`block truncate ${selected ? 'font-medium' : 'font-normal'}`}>
+                                      {stripHtml(question.title)} - {question.type || 'Unknown'} ({question.points || 0} points)
+                                    </span>
+                                    {selected && (
+                                      <span
+                                        className={`absolute inset-y-0 left-0 flex items-center pl-3 ${
+                                          active ? 'text-white' : 'text-indigo-600'
+                                        }`}
+                                      >
+                                        <CheckIcon className="h-5 w-5" aria-hidden="true" />
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                              </Combobox.Option>
+                            );
+                          }).filter(Boolean)
+                        ) : (
+                          <div className="relative cursor-default select-none py-2 px-4 text-gray-700">
+                            {attachQuestionSearchQuery ? 'No questions found' : 'No questions available'}
+                          </div>
+                        )}
+                      </Combobox.Options>
+                    </div>
+                  </Combobox>
                 </div>
 
+                {/* Attach Button */}
                 <div className="flex justify-end">
                   <button
-                    onClick={handleAssignQuestion}
-                    className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300"
+                    onClick={handleAttachQuestion}
+                    disabled={!selectedQuestionId}
+                    className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Attach Question
+                    Attach Question to Class
                   </button>
                 </div>
               </div>

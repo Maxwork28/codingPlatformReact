@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { fetchClasses } from '../../../common/components/redux/classSlice';
 import { Link } from 'react-router-dom';
@@ -6,16 +6,28 @@ import { DiJavascript } from "react-icons/di";
 import { FaJava, FaPython, FaDatabase, FaBookOpen } from "react-icons/fa";
 import { GiNotebook } from "react-icons/gi";
 import { MdDataObject, MdDataArray } from "react-icons/md";
+import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+
 const TeacherClassManagement = () => {
   const dispatch = useDispatch();
   const { classes, status, error } = useSelector((state) => state.classes);
   const { user } = useSelector((state) => state.auth);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(12);
+
   useEffect(() => {
     if (status === 'idle' && user) {
       console.log('%c[TeacherDashboard] Dispatching fetchClasses', 'color: orange;');
       dispatch(fetchClasses(''));
     }
   }, [status, dispatch, user]);
+
+  // Reset to page 1 when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
   if (!user) {
     return (
       <div className="p-6">
@@ -23,9 +35,29 @@ const TeacherClassManagement = () => {
       </div>
     );
   }
+
   const myClasses = classes.filter(
     (cls) => cls.teachers.some((t) => t._id === user.id) || cls.createdBy._id === user.id
   );
+
+  // Filter classes based on search query
+  const filteredClasses = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return myClasses;
+    }
+    const query = searchQuery.toLowerCase();
+    return myClasses.filter((cls) => {
+      const nameMatch = cls.name?.toLowerCase().includes(query);
+      const descMatch = cls.description?.toLowerCase().includes(query);
+      return nameMatch || descMatch;
+    });
+  }, [myClasses, searchQuery]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredClasses.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedClasses = filteredClasses.slice(startIndex, endIndex);
   // Function to get appropriate icon and color based on class name
   const getClassIconAndColor = (className) => {
     const lowerName = className.toLowerCase();
@@ -107,8 +139,86 @@ const TeacherClassManagement = () => {
         </div>
       )}
       {status === 'succeeded' && myClasses.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-          {myClasses.map((cls) => (
+        <>
+          {/* Search and Controls */}
+          <div className="mb-6 space-y-4">
+            {/* Search Input */}
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <MagnifyingGlassIcon className="h-5 w-5" style={{ color: 'var(--text-secondary)' }} />
+              </div>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search classes by name or description..."
+                className="w-full pl-10 pr-4 py-3 rounded-xl border focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                style={{ 
+                  backgroundColor: 'var(--card-white)', 
+                  borderColor: 'var(--card-border)',
+                  color: 'var(--text-primary)'
+                }}
+              />
+            </div>
+
+            {/* Results Count and Items Per Page */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                Showing {filteredClasses.length === 0 ? 0 : startIndex + 1} to {Math.min(endIndex, filteredClasses.length)} of {filteredClasses.length} classes
+                {searchQuery && ` (filtered from ${myClasses.length} total)`}
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  Items per page:
+                </label>
+                <select
+                  value={itemsPerPage}
+                  onChange={(e) => {
+                    setItemsPerPage(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="px-3 py-1.5 rounded-lg border focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                  style={{ 
+                    backgroundColor: 'var(--card-white)', 
+                    borderColor: 'var(--card-border)',
+                    color: 'var(--text-primary)'
+                  }}
+                >
+                  <option value={6}>6</option>
+                  <option value={12}>12</option>
+                  <option value={18}>18</option>
+                  <option value={24}>24</option>
+                  <option value={36}>36</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* No Results Message */}
+          {filteredClasses.length === 0 && searchQuery && (
+            <div className="text-center py-12 backdrop-blur-sm rounded-2xl shadow-lg border" style={{ backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }}>
+              <MagnifyingGlassIcon className="mx-auto h-14 w-14 mb-4" style={{ color: 'var(--text-secondary)' }} />
+              <h3 className="mt-3 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>No classes found</h3>
+              <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                No classes match "{searchQuery}". Try a different search term.
+              </p>
+              <button
+                onClick={() => setSearchQuery('')}
+                className="mt-4 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                style={{ 
+                  backgroundColor: 'var(--accent-indigo)', 
+                  color: 'white' 
+                }}
+              >
+                Clear Search
+              </button>
+            </div>
+          )}
+
+          {/* Classes Grid */}
+          {filteredClasses.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 mb-6">
+              {paginatedClasses.map((cls) => (
             <Link
               key={cls._id}
               to={`/teacher/classes/${cls._id}`}
@@ -141,8 +251,79 @@ const TeacherClassManagement = () => {
                 </div>
               </div>
             </Link>
-          ))}
-        </div>
+              ))}
+            </div>
+          )}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-6 pt-6 border-t" style={{ borderColor: 'var(--card-border)' }}>
+              <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                Page {currentPage} of {totalPages}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="px-4 py-2 rounded-lg text-sm font-medium transition-all hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none"
+                  style={{ 
+                    backgroundColor: currentPage === 1 ? '#f3f4f6' : '#4f46e5', 
+                    color: currentPage === 1 ? '#6b7280' : '#ffffff',
+                    border: currentPage === 1 ? '1px solid #e5e7eb' : '1px solid #4f46e5'
+                  }}
+                >
+                  Previous
+                </button>
+                
+                {/* Page Numbers */}
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+                    
+                    const isActive = currentPage === pageNum;
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className="w-10 h-10 rounded-lg text-sm font-semibold transition-all hover:shadow-md"
+                        style={{ 
+                          backgroundColor: isActive ? '#4f46e5' : '#ffffff', 
+                          color: isActive ? '#ffffff' : '#1f2937',
+                          border: `1px solid ${isActive ? '#4f46e5' : '#d1d5db'}`,
+                          boxShadow: isActive ? '0 1px 3px 0 rgba(79, 70, 229, 0.3)' : 'none'
+                        }}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-4 py-2 rounded-lg text-sm font-medium transition-all hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none"
+                  style={{ 
+                    backgroundColor: currentPage === totalPages ? '#f3f4f6' : '#4f46e5', 
+                    color: currentPage === totalPages ? '#6b7280' : '#ffffff',
+                    border: currentPage === totalPages ? '1px solid #e5e7eb' : '1px solid #4f46e5'
+                  }}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
