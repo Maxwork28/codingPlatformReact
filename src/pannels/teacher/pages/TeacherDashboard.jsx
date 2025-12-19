@@ -22,7 +22,7 @@ const TeacherDashboard = () => {
   }, [status, dispatch, user]);
 
   const myClasses = classes.filter(
-    (cls) => cls.teachers.some((t) => t._id === user.id) || cls.createdBy._id === user.id
+    (cls) => cls.teachers.some((t) => String(t._id) === String(user.id)) || String(cls.createdBy._id) === String(user.id)
   );
 
   // Fetch active exams for all teacher's classes

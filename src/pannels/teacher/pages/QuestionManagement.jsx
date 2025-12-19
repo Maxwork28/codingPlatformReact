@@ -91,7 +91,7 @@ const QuestionManagement = () => {
         // Filter to only show questions created by this teacher (search returns all questions)
         const allQuestions = response.data.questions;
         const teacherQuestions = allQuestions.filter(q => 
-          q.createdBy && (q.createdBy._id === user.id || q.createdBy === user.id)
+          q.createdBy && (String(q.createdBy._id) === String(user.id) || String(q.createdBy) === String(user.id))
         );
         console.log('[QuestionManagement] Filtered teacher questions:', teacherQuestions.length, 'out of', allQuestions.length);
         setFilteredQuestions(teacherQuestions);
@@ -504,7 +504,7 @@ const QuestionManagement = () => {
                       </label>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {classes
-                          .filter((cls) => cls.teachers.some((t) => t._id === user.id) || cls.createdBy._id === user.id)
+                          .filter((cls) => cls.teachers.some((t) => String(t._id) === String(user.id)) || String(cls.createdBy._id) === String(user.id))
                           .map((cls) => {
                             // Check if question is already assigned to this class
                             const isAlreadyAssigned = selectedQuestion?.classes?.some(

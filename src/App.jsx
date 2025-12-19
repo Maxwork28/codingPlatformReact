@@ -53,6 +53,7 @@ import TeacherExamManagement from './pannels/teacher/pages/TeacherExamManagement
 // Student Pages
 import StudentDashboard from './pannels/student/pages/StudentDashboard';
 import StudentClassView from './pannels/student/pages/StudentClassView';
+import StudentTakeClass from './pannels/student/pages/StudentTakeClass';
 import QuestionSubmission from './pannels/student/pages/QuestionSubmission';
 import Leaderboard from './pannels/student/pages/Leaderboard';
 import StudentExamList from './pannels/student/pages/StudentExamList';
@@ -263,6 +264,11 @@ const MainContent = () => {
         <Route path="/student" element={
           <ProtectedRoute role="student">
             <StudentDashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/student/take-class" element={
+          <ProtectedRoute role="student">
+            <StudentTakeClass />
           </ProtectedRoute>
         } />
         <Route path="/student/classes" element={

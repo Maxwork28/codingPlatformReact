@@ -94,7 +94,7 @@ const ClassDetails = () => {
       console.log('[ClassDetails] getClassDetails response:', classResponse.data);
       const cls = classResponse.data.class;
 
-      if (cls && (cls.teachers.some((t) => t._id === user.id) || cls.createdBy._id === user.id)) {
+      if (cls && (cls.teachers.some((t) => String(t._id) === String(user.id)) || String(cls.createdBy._id) === String(user.id))) {
         setClassDetails(cls);
 
         console.log('[ClassDetails] Calling getParticipantStats');

@@ -297,7 +297,7 @@ const QuestionEdit = () => {
             onSubmit={handleSubmit}
             initialData={initialData}
             classes={classes.filter(
-              (cls) => cls.teachers.some((t) => t._id === user.id) || cls.createdBy._id === user.id
+              (cls) => cls.teachers.some((t) => String(t._id) === String(user.id)) || String(cls.createdBy._id) === String(user.id)
             )}
             defaultClassId={initialData?.classId}
           />

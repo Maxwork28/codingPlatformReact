@@ -30,7 +30,7 @@ const ClassEdit = () => {
         const cls = classResponse.data.class;
         
         // Check if user is authorized to edit this class
-        if (!cls.teachers.some(t => t._id === user.id) && cls.createdBy._id !== user.id) {
+        if (!cls.teachers.some(t => String(t._id) === String(user.id)) && String(cls.createdBy._id) !== String(user.id)) {
           setError('You are not authorized to edit this class.');
           setIsLoading(false);
           return;
@@ -45,7 +45,7 @@ const ClassEdit = () => {
 
         // Fetch all questions for the teacher
         const questionsResponse = await getAllQuestions();
-        const userQuestions = questionsResponse.data.questions.filter(q => q.createdBy._id === user.id);
+        const userQuestions = questionsResponse.data.questions.filter(q => String(q.createdBy._id) === String(user.id));
         console.log('[ClassEdit] User questions loaded:', userQuestions.length);
         setQuestions(userQuestions);
         

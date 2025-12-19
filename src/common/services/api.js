@@ -1380,8 +1380,13 @@ export const startExam = async (examId) => {
     console.log('startExam success', { response: response.data });
     return response;
   } catch (err) {
-    console.error('startExam error', { error: err.response?.data?.error || 'Failed to start exam' });
-    throw err.response?.data?.error || 'Failed to start exam';
+    console.error('startExam error', err);
+    // Preserve the full error object so we can access status code and response data
+    const errorMessage = err.response?.data?.error || err.message || 'Failed to start exam';
+    const error = new Error(errorMessage);
+    error.response = err.response;
+    error.status = err.response?.status;
+    throw error;
   }
 };
 

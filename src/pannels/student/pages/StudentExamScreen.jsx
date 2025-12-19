@@ -254,11 +254,42 @@ const StudentExamScreen = () => {
     } catch (err) {
       console.error('[ExamScreen] initializeExam error', err);
       const message = err.response?.data?.error || err.message || 'Unable to start exam';
+      const status = err.response?.status;
+      
       console.error('[ExamScreen] Error details:', {
         message,
         response: err.response?.data,
-        status: err.response?.status
+        status: status
       });
+      
+      // If exam has already ended, redirect to results page
+      if (status === 403 && (message.toLowerCase().includes('already ended') || message.toLowerCase().includes('has already ended'))) {
+        console.log('[ExamScreen] Exam has ended, redirecting to results page');
+        setInfoPrompt({
+          title: 'Exam Has Ended',
+          message: 'This exam has already ended. Redirecting to results...',
+          variant: 'warning'
+        });
+        // Redirect to results page after a short delay
+        setTimeout(() => {
+          navigate(`/student/exams/${examId}/results`, { replace: true });
+        }, 2000);
+        return;
+      }
+      
+      // If exam hasn't started yet, show appropriate message
+      if (status === 403 && (message.toLowerCase().includes('not started') || message.toLowerCase().includes('has not started'))) {
+        setError(message);
+        setInfoPrompt({
+          title: 'Exam Not Started',
+          message: message,
+          variant: 'warning'
+        });
+        initializationRef.current = false; // Allow retry on error
+        return;
+      }
+      
+      // For other errors, show error message
       setError(message);
       setInfoPrompt({
         title: 'Unable to Start Exam',
@@ -998,17 +1029,39 @@ const StudentExamScreen = () => {
   }
 
   if (error) {
+    const isExamEnded = error.toLowerCase().includes('already ended') || error.toLowerCase().includes('has already ended');
+    const isExamNotStarted = error.toLowerCase().includes('not started') || error.toLowerCase().includes('has not started');
+    
     return (
       <div className="space-y-4">
-        <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">
-          {error}
+        <div className={`rounded-xl border p-6 ${
+          isExamEnded ? 'border-yellow-200 bg-yellow-50 text-yellow-700' :
+          isExamNotStarted ? 'border-blue-200 bg-blue-50 text-blue-700' :
+          'border-red-200 bg-red-50 text-red-700'
+        }`}>
+          <h3 className="font-semibold mb-2">
+            {isExamEnded ? 'Exam Has Ended' : 
+             isExamNotStarted ? 'Exam Not Started' : 
+             'Unable to Start Exam'}
+          </h3>
+          <p>{error}</p>
         </div>
-        <button
-          onClick={() => navigate(-1)}
-          className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-        >
-          Go Back
-        </button>
+        <div className="flex gap-3">
+          {isExamEnded && (
+            <button
+              onClick={() => navigate(`/student/exams/${examId}/results`, { replace: true })}
+              className="rounded-md border border-indigo-300 bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+            >
+              View Results
+            </button>
+          )}
+          <button
+            onClick={() => navigate(-1)}
+            className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Go Back
+          </button>
+        </div>
       </div>
     );
   }

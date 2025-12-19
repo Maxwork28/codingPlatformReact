@@ -1,6 +1,6 @@
 import React, { useState, Fragment } from 'react';
 import { Link } from 'react-router-dom';
-import { Menu, Transition } from '@headlessui/react';
+import { Menu, Transition, Portal } from '@headlessui/react';
 import { publishQuestion, unpublishQuestion, disableQuestion, enableQuestion } from '../../../common/services/api';
 import parse from 'html-react-parser';
 
@@ -61,34 +61,52 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
   };
 
   return (
-    <div className="relative backdrop-blur-sm rounded-xl shadow-md border transition-all duration-300 hover:shadow-lg hover:-translate-y-1 z-0 hover:z-[100]" 
+    <div className="relative backdrop-blur-sm rounded-xl shadow-md border transition-all duration-300 hover:shadow-lg hover:-translate-y-1 z-10 hover:z-20" 
          style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
       {/* Three-dot menu in top-right corner */}
-      <div className="absolute top-3 right-3 z-[110]">
-        <Menu as="div" className="relative inline-block text-left">
-          <Menu.Button className="inline-flex items-center p-2 rounded-lg hover:bg-gray-100 transition-colors" 
-                       style={{ backgroundColor: 'var(--background-light)' }}>
-            <svg className="h-5 w-5" style={{ color: 'var(--text-secondary)' }} viewBox="0 0 20 20" fill="currentColor">
-              <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-            </svg>
-          </Menu.Button>
-          <Transition
-            as={Fragment}
-            enter="transition ease-out duration-100"
-            enterFrom="transform opacity-0 scale-95"
-            enterTo="transform opacity-100 scale-100"
-            leave="transition ease-in duration-75"
-            leaveFrom="transform opacity-100 scale-100"
-            leaveTo="transform opacity-0 scale-95"
-          >
-            <Menu.Items className="absolute right-0 z-[999] mt-2 w-56 origin-top-right rounded-lg shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none divide-y backdrop-blur-sm" 
-                        style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)', border: '1px solid' }}>
+      <div className="absolute top-3 right-3 z-50">
+        <Menu as="div" className="relative inline-block text-left" style={{ position: 'relative', zIndex: 10000 }}>
+          {({ open }) => (
+            <>
+              <Menu.Button 
+                className="inline-flex items-center p-2 rounded-lg hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" 
+                style={{ backgroundColor: 'var(--background-light)', pointerEvents: 'auto' }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                }}
+              >
+                <svg className="h-5 w-5" style={{ color: 'var(--text-secondary)' }} viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                </svg>
+              </Menu.Button>
+              <Transition
+                show={open}
+                as={Fragment}
+                enter="transition ease-out duration-100"
+                enterFrom="transform opacity-0 scale-95"
+                enterTo="transform opacity-100 scale-100"
+                leave="transition ease-in duration-75"
+                leaveFrom="transform opacity-100 scale-100"
+                leaveTo="transform opacity-0 scale-95"
+              >
+                <Portal>
+                  <Menu.Items 
+                    anchor="bottom end"
+                    className="w-56 origin-top-right rounded-lg shadow-2xl ring-1 ring-black ring-opacity-5 focus:outline-none divide-y backdrop-blur-sm mt-2" 
+                    style={{ 
+                      backgroundColor: 'var(--card-white)', 
+                      borderColor: 'var(--card-border)', 
+                      border: '1px solid',
+                      zIndex: 99999
+                    }}
+                  >
               <div className="py-1">
                 <Menu.Item>
-                  {({ active }) => (
+                  {({ active, close }) => (
                     <Link
                       to={`/teacher/questions/${question._id}/view`}
                       state={linkState}
+                      onClick={close}
                       className={`${active ? 'bg-indigo-50' : ''} group flex items-center px-4 py-2 text-sm`}
                       style={{ color: 'var(--text-primary)' }}
                     >
@@ -100,10 +118,11 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
                   )}
                 </Menu.Item>
                 <Menu.Item>
-                  {({ active }) => (
+                  {({ active, close }) => (
                     <Link
                       to={`/teacher/questions/${question._id}/statement`}
                       state={linkState}
+                      onClick={close}
                       className={`${active ? 'bg-indigo-50' : ''} group flex items-center px-4 py-2 text-sm`}
                       style={{ color: 'var(--text-primary)' }}
                     >
@@ -115,10 +134,11 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
                   )}
                 </Menu.Item>
                 <Menu.Item>
-                  {({ active }) => (
+                  {({ active, close }) => (
                     <Link
                       to={`/teacher/questions/${question._id}/solution`}
                       state={linkState}
+                      onClick={close}
                       className={`${active ? 'bg-indigo-50' : ''} group flex items-center px-4 py-2 text-sm`}
                       style={{ color: 'var(--text-primary)' }}
                     >
@@ -131,10 +151,11 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
                 </Menu.Item>
                 {question.type === 'coding' && (
                   <Menu.Item>
-                    {({ active }) => (
+                    {({ active, close }) => (
                       <Link
                         to={`/teacher/questions/${question._id}/test-cases`}
-                      state={linkState}
+                        state={linkState}
+                        onClick={close}
                         className={`${active ? 'bg-indigo-50' : ''} group flex items-center px-4 py-2 text-sm`}
                         style={{ color: 'var(--text-primary)' }}
                       >
@@ -149,10 +170,11 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
               </div>
               <div className="py-1">
                 <Menu.Item>
-                  {({ active }) => (
+                  {({ active, close }) => (
                     <Link
                       to={`/teacher/questions/${question._id}/edit`}
                       state={linkState}
+                      onClick={close}
                       className={`${active ? 'bg-indigo-50' : ''} group flex items-center px-4 py-2 text-sm`}
                       style={{ color: 'var(--text-primary)' }}
                     >
@@ -164,10 +186,11 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
                   )}
                 </Menu.Item>
                 <Menu.Item>
-                  {({ active }) => (
+                  {({ active, close }) => (
                     <Link
                       to={`/teacher/questions/${question._id}/preview`}
                       state={linkState}
+                      onClick={close}
                       className={`${active ? 'bg-indigo-50' : ''} group flex items-center px-4 py-2 text-sm`}
                       style={{ color: 'var(--text-primary)' }}
                     >
@@ -181,9 +204,13 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
               </div>
               <div className="py-1">
                 <Menu.Item>
-                  {({ active }) => (
+                  {({ active, close }) => (
                     <button
-                      onClick={handlePublishToggle}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePublishToggle();
+                        close();
+                      }}
                       disabled={isLoading}
                       className={`${active ? (isPublished ? 'bg-gray-50' : 'bg-green-50') : ''} ${isLoading ? 'opacity-50 cursor-wait' : ''} group flex items-center w-full px-4 py-2 text-sm cursor-pointer`}
                       style={{ color: isPublished ? '#16a34a' : '#16a34a' }}
@@ -196,9 +223,13 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
                   )}
                 </Menu.Item>
                 <Menu.Item>
-                  {({ active }) => (
+                  {({ active, close }) => (
                     <button
-                      onClick={handleDisableToggle}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDisableToggle();
+                        close();
+                      }}
                       disabled={isLoading}
                       className={`${active ? (isDisabled ? 'bg-gray-50' : 'bg-red-50') : ''} ${isLoading ? 'opacity-50 cursor-wait' : ''} group flex items-center w-full px-4 py-2 text-sm cursor-pointer`}
                       style={{ color: '#dc2626' }}
@@ -211,8 +242,11 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
                   )}
                 </Menu.Item>
               </div>
-            </Menu.Items>
-          </Transition>
+                  </Menu.Items>
+                </Portal>
+              </Transition>
+            </>
+          )}
         </Menu>
       </div>
 

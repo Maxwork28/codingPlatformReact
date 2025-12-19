@@ -33,6 +33,7 @@ import {
   viewSubmissionCode,
   getQuestionPerspectiveReport,
   adminSearchQuestionsById,
+  getClassStudents,
 } from '../../../common/services/api';
 import TeacherQuestionCard from '../components/TeacherQuestionCard';
 
@@ -95,6 +96,14 @@ const TeacherClassView = () => {
   
   // Tab state - persist selected tab
   const [selectedTabIndex, setSelectedTabIndex] = useState(0);
+  
+  // Tab change handler - prevents infinite loops
+  const handleTabChange = useCallback((index) => {
+    setSelectedTabIndex((prevIndex) => {
+      // Only update if the index actually changed
+      return index !== prevIndex ? index : prevIndex;
+    });
+  }, []);
   
   // Toast notification state
   const [toast, setToast] = useState({ show: false, message: '', type: '' });
@@ -236,7 +245,7 @@ const TeacherClassView = () => {
       console.log('[TeacherClassView] getClassDetails response:', classResponse.data);
       const cls = classResponse.data.class;
 
-      if (cls && (cls.teachers.some((t) => t._id === user.id) || cls.createdBy._id === user.id)) {
+      if (cls && (cls.teachers.some((t) => String(t._id) === String(user.id)) || String(cls.createdBy._id) === String(user.id))) {
         setClassDetails(cls);
 
         // Fetch stats
@@ -262,31 +271,63 @@ const TeacherClassView = () => {
         const assignmentsResponse = await getAssignments(classId);
         setAssignments(assignmentsResponse.data.assignments);
 
-        // Fetch leaderboard
+        // Fetch all enrolled students from the class
+        let allEnrolledStudents = [];
+        try {
+          const studentsResponse = await getClassStudents(classId);
+          allEnrolledStudents = studentsResponse.data.students || [];
+          console.log('[TeacherClassView] 👥 All enrolled students fetched:', allEnrolledStudents.length);
+        } catch (err) {
+          console.error('[TeacherClassView] Failed to fetch enrolled students:', err.message);
+          // Continue with leaderboard data only if students fetch fails
+        }
+
+        // Fetch leaderboard (students with submissions)
         const leaderboardResponse = await searchLeaderboard(classId, {});
         const leaderboardData = Array.isArray(leaderboardResponse.data.leaderboard)
           ? leaderboardResponse.data.leaderboard
           : [];
         
         console.log('[TeacherClassView] 📊 Leaderboard data received:', leaderboardData.length, 'entries');
-        leaderboardData.forEach((entry, idx) => {
-          console.log(`  [${idx}] ${entry.studentId?.name}:`, {
-            needsFocus: entry.needsFocus,
-            activityStatus: entry.activityStatus,
-            isBlocked: entry.isBlocked,
-            totalSubmits: entry.totalSubmits
-          });
+        
+        // Create a map of student IDs from leaderboard for quick lookup
+        const leaderboardStudentIds = new Set(
+          leaderboardData.map(entry => String(entry.studentId?._id || entry.studentId))
+        );
+        
+        // Merge: Start with leaderboard data (has stats), then add enrolled students not in leaderboard
+        const mergedStudents = [...leaderboardData];
+        
+        // Add enrolled students who don't have any submissions yet
+        allEnrolledStudents.forEach((student) => {
+          const studentId = String(student._id);
+          if (!leaderboardStudentIds.has(studentId)) {
+            // Create a leaderboard entry for students without submissions
+            mergedStudents.push({
+              studentId: {
+                _id: student._id,
+                name: student.name,
+                email: student.email,
+              },
+              totalSubmits: 0,
+              totalRuns: 0,
+              correctAttempts: 0,
+              totalAttempts: 0,
+              needsFocus: false,
+              activityStatus: 'inactive',
+              isBlocked: student.isBlocked || false,
+            });
+          }
         });
         
-        setLeaderboard(leaderboardData);
+        console.log('[TeacherClassView] ✅ Merged students:', mergedStudents.length, '(enrolled:', allEnrolledStudents.length, ', with submissions:', leaderboardData.length, ')');
+        setLeaderboard(mergedStudents);
 
         // Fetch questions
         const questionsResponse = await getQuestionsByClass(classId);
-        // Filter to only show questions created by the teacher
-        const teacherQuestions = questionsResponse.data.questions.filter(
-          (q) => q.createdBy && q.createdBy._id === user.id
-        );
-        setQuestions(teacherQuestions);
+        // Show all questions assigned to the class (including admin-created ones)
+        // Backend already ensures teacher can only see questions from classes they're assigned to
+        setQuestions(questionsResponse.data.questions || []);
         
         // Set questions associated with class for assignment creation (like admin)
         setAllQuestionsForAssignment(questionsResponse.data.questions);
@@ -426,13 +467,13 @@ const TeacherClassView = () => {
         console.log('handleQuestionSearch success (ID search)', { question: response.data.question });
         const questions = response.data.question ? [response.data.question] : [];
         // Filter to only user's questions
-        const userQuestions = questions.filter((q) => q.createdBy._id === user.id);
+        const userQuestions = questions.filter((q) => String(q.createdBy._id) === String(user.id));
         setFilteredQuestions(userQuestions);
       } else {
         console.log('handleQuestionSearch: Searching by title', { title: questionSearchKeyword });
         const response = await searchQuestions({ title: questionSearchKeyword });
         console.log('handleQuestionSearch success (title search)', { questions: response.data.questions });
-        const userQuestions = response.data.questions.filter((q) => q.createdBy._id === user.id);
+        const userQuestions = response.data.questions.filter((q) => String(q.createdBy._id) === String(user.id));
         setFilteredQuestions(userQuestions);
       }
     } catch (err) {
@@ -841,7 +882,7 @@ const TeacherClassView = () => {
       )}
 
       {/* Tabs */}
-      <Tab.Group selectedIndex={selectedTabIndex} onChange={setSelectedTabIndex}>
+      <Tab.Group selectedIndex={selectedTabIndex} onChange={handleTabChange}>
         <Tab.List className="flex gap-2 rounded-xl p-1.5 mb-8 border" style={{ backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }}>
           {['Analytics', 'Students', 'Assignments', 'Questions', 'Management'].map((tabName) => (
             <Tab key={tabName} className="flex-1">

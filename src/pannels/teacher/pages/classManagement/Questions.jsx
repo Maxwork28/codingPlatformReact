@@ -45,7 +45,7 @@ const Questions = () => {
         
         // Fetch all user's questions
         const allQuestionsResponse = await getAllQuestions();
-        const userQuestions = allQuestionsResponse.data.questions.filter((q) => q.createdBy._id === user.id);
+        const userQuestions = allQuestionsResponse.data.questions.filter((q) => String(q.createdBy._id) === String(user.id));
         
         // Filter out questions already assigned to this class
         const unassignedQuestions = userQuestions.filter(
@@ -97,12 +97,12 @@ const Questions = () => {
         console.log('[Questions] Searching by ID', { questionId: questionSearchKeyword.trim() });
         const response = await adminSearchQuestionsById(questionSearchKeyword.trim());
         const questions = response.data.question ? [response.data.question] : [];
-        const userQuestions = questions.filter(q => q.createdBy._id === user.id);
+        const userQuestions = questions.filter(q => String(q.createdBy._id) === String(user.id));
         setFilteredQuestions(userQuestions);
       } else {
         console.log('[Questions] Searching by title', { title: questionSearchKeyword });
         const response = await searchQuestions({ title: questionSearchKeyword });
-        const userQuestions = response.data.questions.filter(q => q.createdBy._id === user.id);
+        const userQuestions = response.data.questions.filter(q => String(q.createdBy._id) === String(user.id));
         setFilteredQuestions(userQuestions);
       }
     } catch (err) {
@@ -134,7 +134,7 @@ const Questions = () => {
       setAssignedQuestions(questionsResponse.data.questions);
       
       const allQuestionsResponse = await getAllQuestions();
-      const userQuestions = allQuestionsResponse.data.questions.filter((q) => q.createdBy._id === user.id);
+      const userQuestions = allQuestionsResponse.data.questions.filter((q) => String(q.createdBy._id) === String(user.id));
       const unassignedQuestions = userQuestions.filter(
         (q) => !q.classes.some((c) => String(c.classId) === String(selectedClassId))
       );
