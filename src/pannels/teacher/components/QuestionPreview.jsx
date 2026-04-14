@@ -202,7 +202,7 @@ const QuestionPreview = () => {
     }
 
     // Check if it's a coding question
-    if (question.type !== 'coding' && question.type !== 'fillInTheBlanksCoding') {
+    if (question.type !== 'coding' && question.type !== 'fillInTheBlanksCoding' && question.type !== 'codingWithDriver') {
       alert('Solution testing is only available for coding questions');
       return;
     }
@@ -283,7 +283,7 @@ const QuestionPreview = () => {
         </div>
         
         {/* Tabs Navigation - Only show Test Solution tab for coding questions */}
-        {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding') && (
+        {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding' || question.type === 'codingWithDriver') && (
           <div className="mb-6 border-b border-gray-200">
             <nav className="flex space-x-8" aria-label="Tabs">
               <button
@@ -316,7 +316,7 @@ const QuestionPreview = () => {
         )}
         
         {/* Test Solution Tab - Only for coding questions */}
-        {activeTab === 'test' && (question.type === 'coding' || question.type === 'fillInTheBlanksCoding') && (
+        {activeTab === 'test' && (question.type === 'coding' || question.type === 'fillInTheBlanksCoding' || question.type === 'codingWithDriver') && (
           <div>
             <h2 className="text-2xl font-bold text-gray-800 mb-4">Test Solution</h2>
             <div className="space-y-4">

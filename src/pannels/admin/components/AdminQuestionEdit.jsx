@@ -53,9 +53,15 @@ const AdminQuestionEdit = () => {
         });
 
         // Prepare initialData for QuestionForm (strings or HTML, as AdminQuestionForm will deserialize)
+        const starterFromApi =
+          Array.isArray(question.starterCode) && question.starterCode.length > 0
+            ? question.starterCode
+            : Array.isArray(question.templateCode) && question.templateCode.length > 0
+              ? question.templateCode
+              : [];
         const preparedData = {
           _id: question._id, // Include _id for preview functionality
-          type: question.type || 'mcq',
+          type: question.type || 'singleCorrectMcq',
           title: question.title || '',
           description: question.description || '',
           points: question.points || 10,
@@ -66,13 +72,18 @@ const AdminQuestionEdit = () => {
           functionSignature: question.functionSignature || '',
           languages: Array.isArray(question.languages) ? question.languages : (question.language ? [question.language] : ['javascript']),
           options: question.options?.length >= 2 ? question.options : ['', '', '', ''],
-          correctOption: question.correctOption || 0,
+          correctOption: question.correctOption ?? 0,
+          correctOptions: Array.isArray(question.correctOptions) ? question.correctOptions : [],
           codeSnippet: question.codeSnippet || '',
           correctAnswer: question.correctAnswer || '',
+          starterCode: starterFromApi,
           templateCode: Array.isArray(question.templateCode) ? question.templateCode : [],
+          driverCode: Array.isArray(question.driverCode) ? question.driverCode : [],
           testCases: question.testCases?.length > 0 ? question.testCases : [{ input: '', expectedOutput: '', isPublic: true }],
           timeLimit: question.timeLimit || 2,
           memoryLimit: question.memoryLimit || 256,
+          maxAttempts: question.maxAttempts ?? '',
+          explanation: question.explanation || '',
           classes: question.classes || [],
           solutionCode: question.solutionCode || '',
           solutionLanguage: question.solutionLanguage || question.languages?.[0] || 'javascript',
@@ -270,6 +281,7 @@ const AdminQuestionEdit = () => {
             </div>
           )}
           <QuestionForm
+            key={questionId}
             onSubmit={handleSubmit}
             initialData={initialData}
             classes={[]} // No classes for admin

@@ -3,9 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { validateToken } from './common/components/redux/authSlice';
 import Navbar from './common/components/Navbar';
-import Sidebar from './common/components/Sidebar';
 import ProtectedRoute from './common/components/ProtectedRoute';
-import { SidebarProvider, useSidebar } from './common/context/SidebarContext';
 import { ThemeProvider } from './common/context/ThemeContext';
 
 // Pages
@@ -48,6 +46,8 @@ import QuestionStatement from '../src/pannels/teacher/components/QuestionStateme
 import QuestionPreview from '../src/pannels/teacher/components/QuestionPreview';
 import QuestionSolution from '../src/pannels/teacher/components/QuestionSolution.jsx';
 import QuestionTestCases from '../src/pannels/teacher/components/QuestionTestCases.jsx';
+import QuestionView from './pannels/teacher/pages/QuestionView';
+import TeacherQuestionDetail from './pannels/teacher/pages/TeacherQuestionDetail';
 import TeacherExamManagement from './pannels/teacher/pages/TeacherExamManagement';
 
 // Student Pages
@@ -62,14 +62,11 @@ import StudentExamResults from './pannels/student/pages/StudentExamResults';
 
 // Main content wrapper component
 const MainContent = () => {
-  const { isCollapsed } = useSidebar();
-  
   return (
-    <main 
-      className="flex-1 overflow-y-auto transition-all duration-300 ease-in-out"
+    <main
+      className="min-w-0 flex-1 overflow-y-auto transition-all duration-300 ease-in-out"
       style={{
-        marginLeft: isCollapsed ? '80px' : '288px',
-        height: 'calc(100vh - 64px)' // Full height minus navbar
+        height: 'calc(100vh - 64px)',
       }}
     >
       <Routes>
@@ -234,6 +231,16 @@ const MainContent = () => {
                 </ProtectedRoute>
               }
             />
+        <Route path="/teacher/questions/:questionId/view" element={
+          <ProtectedRoute role="teacher">
+            <QuestionView />
+          </ProtectedRoute>
+        } />
+        <Route path="/teacher/classes/:classId/questions/:questionId" element={
+          <ProtectedRoute role="teacher">
+            <TeacherQuestionDetail />
+          </ProtectedRoute>
+        } />
         <Route
               path="/teacher/questions/:questionId/preview"
               element={
@@ -422,15 +429,12 @@ function App() {
   // If authenticated, show appropriate dashboard based on role
   return (
     <ThemeProvider>
-      <SidebarProvider>
-        <div className="min-h-screen transition-all duration-300 flex flex-col" style={{ backgroundColor: 'var(--background-content)' }}>
-          <Navbar />
-          <div className="flex flex-1 min-w-0 relative">
-            <Sidebar />
-            <MainContent />
-          </div>
+      <div className="min-h-screen transition-all duration-300 flex flex-col" style={{ backgroundColor: 'var(--background-content)' }}>
+        <Navbar />
+        <div className="relative flex min-w-0 flex-1">
+          <MainContent />
         </div>
-      </SidebarProvider>
+      </div>
     </ThemeProvider>
   );
 }

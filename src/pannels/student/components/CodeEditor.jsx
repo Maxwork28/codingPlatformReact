@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import AceEditor from 'react-ace';
 import 'ace-builds/src-noconflict/ext-language_tools';
@@ -10,6 +10,9 @@ import 'ace-builds/src-noconflict/mode-ruby';
 import 'ace-builds/src-noconflict/mode-php';
 import 'ace-builds/src-noconflict/mode-golang';
 import 'ace-builds/src-noconflict/theme-monokai';
+
+/** Normalize newlines so parent/child string compare matches (fixes echo + unwanted Ace resets). */
+const norm = (s) => (s == null ? '' : String(s)).replace(/\r\n/g, '\n');
 
 const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px', disabled, isFillInTheBlanks = false }) => {
   const languageModeMap = {
@@ -41,36 +44,109 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
   const defaultCode = typeof defaultValue === 'string' ? defaultValue : getDefaultCode(language);
   const safeValue = typeof value === 'string' ? value : defaultCode;
   const editorRef = useRef(null);
-  const [editorValue, setEditorValue] = useState(safeValue);
+  /** Last payload sent to parent; used to tell external prop updates from local typing. */
+  const lastEmittedToParentRef = useRef(null);
+  /** Last good editor text (display) for revert / copy when uncontrolled. */
+  const lastDisplayRef = useRef(norm(safeValue).replace(/___FILL_IN_THE_BLANK___/g, '// Write your code here'));
+  const [editorValue, setEditorValue] = useState(() =>
+    safeValue.replace(/___FILL_IN_THE_BLANK___/g, '// Write your code here')
+  );
   const [editableRanges, setEditableRanges] = useState([]);
   const markersRef = useRef([]);
-  const [blanks, setBlanks] = useState([]); // For fill-in-the-blanks mode
-  const [templateParts, setTemplateParts] = useState([]); // For fill-in-the-blanks mode
+  const [blanks, setBlanks] = useState([]);
+  const [templateParts, setTemplateParts] = useState([]);
+
+  const toDisplay = useCallback(
+    (stored) => (typeof stored === 'string' ? stored : '').replace(/___FILL_IN_THE_BLANK___/g, '// Write your code here'),
+    []
+  );
+
+  const applyMarkersToSession = useCallback((editor, storedValue) => {
+    const placeholderRegex = /___FILL_IN_THE_BLANK___/g;
+    const lines = storedValue.split('\n');
+    const ranges = [];
+
+    lines.forEach((line, lineIndex) => {
+      const matches = [...line.matchAll(placeholderRegex)];
+      matches.forEach((match) => {
+        ranges.push({
+          start: { row: lineIndex, column: match.index },
+          end: { row: lineIndex, column: match.index + match[0].length },
+        });
+      });
+    });
+
+    markersRef.current.forEach((m) => editor.session.removeMarker(m));
+    markersRef.current = [];
+
+    if (ranges.length === 0) return;
+
+    const Range = window.ace.acequire('ace/range').Range;
+    let lastEnd = { row: 0, column: 0 };
+
+    ranges.forEach((range, index) => {
+      if (index === 0 && (range.start.row > 0 || range.start.column > 0)) {
+        const nonEditableRange = new Range(0, 0, range.start.row, range.start.column);
+        markersRef.current.push(editor.session.addMarker(nonEditableRange, 'ace_non_editable', 'line', false));
+      }
+      if (index > 0) {
+        const prevRange = ranges[index - 1];
+        const nonEditableRange = new Range(
+          prevRange.end.row,
+          prevRange.end.column,
+          range.start.row,
+          range.start.column
+        );
+        markersRef.current.push(editor.session.addMarker(nonEditableRange, 'ace_non_editable', 'line', false));
+      }
+      const editableRange = new Range(range.start.row, range.start.column, range.end.row, range.end.column);
+      markersRef.current.push(editor.session.addMarker(editableRange, 'ace_editable', 'text', false));
+      lastEnd = range.end;
+    });
+
+    const lastLine = lines.length - 1;
+    const lastCol = lines[lastLine].length;
+    if (lastEnd.row < lastLine || lastEnd.column < lastCol) {
+      const nonEditableRange = new Range(lastEnd.row, lastEnd.column, lastLine, lastCol);
+      markersRef.current.push(editor.session.addMarker(nonEditableRange, 'ace_non_editable', 'line', false));
+    }
+  }, []);
+
+  const parseEditableRanges = useCallback((storedValue) => {
+    const placeholderRegex = /___FILL_IN_THE_BLANK___/g;
+    const lines = storedValue.split('\n');
+    const ranges = [];
+    lines.forEach((line, lineIndex) => {
+      const matches = [...line.matchAll(placeholderRegex)];
+      matches.forEach((match) => {
+        ranges.push({
+          start: { row: lineIndex, column: match.index },
+          end: { row: lineIndex, column: match.index + match[0].length },
+        });
+      });
+    });
+    return ranges;
+  }, []);
 
   useEffect(() => {
     if (!isFillInTheBlanks) {
-      setEditorValue(safeValue);
       setBlanks([]);
       setTemplateParts([]);
       return;
     }
-    // Parse template into static and blank parts
     const placeholderRegex = /___FILL_IN_THE_BLANK___/g;
     const parts = [];
     let lastIndex = 0;
     let match;
-    let idx = 0;
     const blanksArr = [];
     while ((match = placeholderRegex.exec(defaultCode)) !== null) {
       parts.push(defaultCode.slice(lastIndex, match.index));
       blanksArr.push('');
       lastIndex = match.index + match[0].length;
-      idx++;
     }
     parts.push(defaultCode.slice(lastIndex));
     setTemplateParts(parts);
     setBlanks(blanksArr);
-    // Set editor value for display (show blanks as 'Write your code here')
     let display = '';
     for (let i = 0; i < parts.length - 1; i++) {
       display += parts[i] + '// Write your code here';
@@ -79,7 +155,6 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
     setEditorValue(display);
   }, [defaultCode, isFillInTheBlanks]);
 
-  // Helper: reconstruct template with user blanks
   const reconstructTemplate = (userBlanks) => {
     let result = '';
     for (let i = 0; i < templateParts.length - 1; i++) {
@@ -89,18 +164,11 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
     return result;
   };
 
-  // Handle change for fill-in-the-blanks
   const handleFillInTheBlanksChange = (newValue) => {
-    // Split newValue by '// Write your code here' to extract user input
-    const splitRegex = /\/\/ Write your code here/g;
-    const userParts = newValue.split(splitRegex);
-    // userParts.length = blanks.length + 1
     const newBlanks = [];
     for (let i = 0; i < blanks.length; i++) {
-      // Extract what user typed between the static parts
       const before = templateParts[i];
       const after = templateParts[i + 1];
-      // Find the start/end index in newValue
       const startIdx = newValue.indexOf(before) + before.length;
       let endIdx;
       if (after) {
@@ -113,147 +181,88 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
       newBlanks.push(blankVal);
     }
     setBlanks(newBlanks);
-    // Reconstruct template for parent
-    const templateWithUserInput = reconstructTemplate(newBlanks);
+    const templateWithUserInput = norm(reconstructTemplate(newBlanks));
     setEditorValue(newValue);
+    lastEmittedToParentRef.current = templateWithUserInput;
     onChange(templateWithUserInput);
   };
 
+  /** External `value` changed (starter load, reset from parent, language switch). Sync Ace without controlled re-renders on each key. */
   useEffect(() => {
-    // Parse the code to identify editable sections
-    const placeholderRegex = /___FILL_IN_THE_BLANK___/g;
-    const lines = safeValue.split('\n');
-    const ranges = [];
-    let currentLine = 0;
-    let currentCol = 0;
+    if (isFillInTheBlanks) {
+      if (norm(safeValue) === norm(lastEmittedToParentRef.current)) {
+        return undefined;
+      }
+      const sv = norm(safeValue);
+      lastEmittedToParentRef.current = sv;
 
-    lines.forEach((line, lineIndex) => {
-      const matches = [...line.matchAll(placeholderRegex)];
-      if (matches.length > 0) {
-        matches.forEach(match => {
-          const startCol = match.index;
-          const endCol = startCol + match[0].length;
+      const placeholderRegex = /___FILL_IN_THE_BLANK___/g;
+      const lines = sv.split('\n');
+      const ranges = [];
+      lines.forEach((line, lineIndex) => {
+        const matches = [...line.matchAll(placeholderRegex)];
+        matches.forEach((match) => {
           ranges.push({
-            start: { row: lineIndex, column: startCol },
-            end: { row: lineIndex, column: endCol },
+            start: { row: lineIndex, column: match.index },
+            end: { row: lineIndex, column: match.index + match[0].length },
           });
         });
+      });
+      setEditableRanges(ranges);
+      const displayValue = sv.replace(placeholderRegex, '// Write your code here');
+      setEditorValue(displayValue);
+
+      const editor = editorRef.current?.editor;
+      if (editor) {
+        applyMarkersToSession(editor, sv);
       }
-      currentLine++;
-      currentCol = 0;
-    });
+      return () => {
+        const ed = editorRef.current?.editor;
+        if (ed) {
+          markersRef.current.forEach((m) => ed.session.removeMarker(m));
+          markersRef.current = [];
+        }
+      };
+    }
 
+    if (norm(safeValue) === norm(lastEmittedToParentRef.current)) {
+      return;
+    }
+
+    lastEmittedToParentRef.current = norm(safeValue);
+    const stored = norm(safeValue);
+    const ranges = parseEditableRanges(stored);
     setEditableRanges(ranges);
+    const displayValue = toDisplay(stored);
+    lastDisplayRef.current = displayValue;
 
-    // Replace placeholders with a visual indicator
-    const displayValue = safeValue.replace(placeholderRegex, '// Write your code here');
-    setEditorValue(displayValue);
-
-    // Update editor markers
     const editor = editorRef.current?.editor;
     if (editor) {
-      // Remove existing markers
-      markersRef.current.forEach(marker => editor.session.removeMarker(marker));
-      markersRef.current = [];
-
-      // Add markers for non-editable sections
-      const Range = window.ace.acequire('ace/range').Range;
-      let lastEnd = { row: 0, column: 0 };
-
-      ranges.forEach((range, index) => {
-        // Mark non-editable section before this editable range
-        if (index === 0 && (range.start.row > 0 || range.start.column > 0)) {
-          const nonEditableRange = new Range(0, 0, range.start.row, range.start.column);
-          const markerId = editor.session.addMarker(
-            nonEditableRange,
-            'ace_non_editable',
-            'line',
-            false
-          );
-          markersRef.current.push(markerId);
-        }
-
-        // Mark non-editable section between editable ranges
-        if (index > 0) {
-          const prevRange = ranges[index - 1];
-          const nonEditableRange = new Range(
-            prevRange.end.row,
-            prevRange.end.column,
-            range.start.row,
-            range.start.column
-          );
-          const markerId = editor.session.addMarker(
-            nonEditableRange,
-            'ace_non_editable',
-            'line',
-            false
-          );
-          markersRef.current.push(markerId);
-        }
-
-        // Mark editable section
-        const editableRange = new Range(
-          range.start.row,
-          range.start.column,
-          range.end.row,
-          range.end.column
-        );
-        const markerId = editor.session.addMarker(
-          editableRange,
-          'ace_editable',
-          'text',
-          false
-        );
-        markersRef.current.push(markerId);
-
-        lastEnd = range.end;
-      });
-
-      // Mark non-editable section after the last editable range
-      if (ranges.length > 0) {
-        const lastLine = lines.length - 1;
-        const lastCol = lines[lastLine].length;
-        if (lastEnd.row < lastLine || lastEnd.column < lastCol) {
-          const nonEditableRange = new Range(lastEnd.row, lastEnd.column, lastLine, lastCol);
-          const markerId = editor.session.addMarker(
-            nonEditableRange,
-            'ace_non_editable',
-            'line',
-            false
-          );
-          markersRef.current.push(markerId);
-        }
-      } else {
-        // If no editable ranges, mark entire document as non-editable
-        const nonEditableRange = new Range(0, 0, lines.length - 1, lines[lines.length - 1].length);
-        const markerId = editor.session.addMarker(
-          nonEditableRange,
-          'ace_non_editable',
-          'line',
-          false
-        );
-        markersRef.current.push(markerId);
+      const cursor = editor.getCursorPosition();
+      editor.session.setValue(displayValue);
+      try {
+        editor.moveCursorToPosition(cursor);
+      } catch {
+        /* ignore */
       }
+      applyMarkersToSession(editor, stored);
     }
 
     return () => {
-      // Cleanup markers on unmount
-      const editor = editorRef.current?.editor;
-      if (editor) {
-        markersRef.current.forEach(marker => editor.session.removeMarker(marker));
+      const ed = editorRef.current?.editor;
+      if (ed) {
+        markersRef.current.forEach((m) => ed.session.removeMarker(m));
         markersRef.current = [];
       }
     };
-  }, [safeValue]);
+  }, [safeValue, isFillInTheBlanks, applyMarkersToSession, parseEditableRanges, toDisplay]);
 
-  const handleChange = (newValue) => {
-    if (isFillInTheBlanks) {
-      handleFillInTheBlanksChange(newValue);
-      return;
-    }
-    const editor = editorRef.current.editor;
+  const handleChangePlain = (newValue) => {
+    const editor = editorRef.current?.editor;
+    if (!editor) return;
+
     const cursorPosition = editor.getCursorPosition();
-    const isInEditableRange = editableRanges.some(range => {
+    const isInEditableRange = editableRanges.some((range) => {
       const { start, end } = range;
       return (
         (cursorPosition.row > start.row || (cursorPosition.row === start.row && cursorPosition.column >= start.column)) &&
@@ -262,28 +271,83 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
     });
 
     if (isInEditableRange || editableRanges.length === 0) {
-      setEditorValue(newValue);
-      onChange(newValue.replace(/\/\/ Write your code here/g, '___FILL_IN_THE_BLANK___'));
+      const payload = norm(newValue.replace(/\/\/ Write your code here/g, '___FILL_IN_THE_BLANK___'));
+      lastEmittedToParentRef.current = payload;
+      lastDisplayRef.current = norm(newValue);
+      onChange(payload);
     } else {
-      // Revert to previous value if trying to edit non-editable section
-      editor.session.setValue(editorValue);
+      editor.session.setValue(lastDisplayRef.current);
     }
   };
 
+  const handleChange = (newValue) => {
+    if (isFillInTheBlanks) {
+      handleFillInTheBlanksChange(newValue);
+      return;
+    }
+    handleChangePlain(newValue);
+  };
+
   const handleReset = () => {
-    const resetValue = defaultCode.replace(/___FILL_IN_THE_BLANK___/g, '// Write your code here');
-    setEditorValue(resetValue);
-    onChange(defaultCode);
+    const resetStored = norm(defaultCode);
+    const resetDisplay = resetStored.replace(/___FILL_IN_THE_BLANK___/g, '// Write your code here');
+    lastEmittedToParentRef.current = resetStored;
+    lastDisplayRef.current = resetDisplay;
+
+    if (isFillInTheBlanks) {
+      setEditorValue(resetDisplay);
+    } else {
+      const ed = editorRef.current?.editor;
+      if (ed) {
+        ed.session.setValue(resetDisplay);
+      }
+    }
+    onChange(resetStored);
   };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(editorValue).catch(err => {
+    const text = isFillInTheBlanks ? editorValue : editorRef.current?.editor?.getValue() ?? lastDisplayRef.current;
+    navigator.clipboard.writeText(text).catch((err) => {
       console.error('Failed to copy text: ', err);
     });
   };
 
+  const handleEditorLoad = (editor) => {
+    if (isFillInTheBlanks) {
+      applyMarkersToSession(editor, norm(safeValue));
+      return;
+    }
+    const sv = norm(safeValue);
+    if (sv !== norm(lastEmittedToParentRef.current)) {
+      const displayValue = toDisplay(sv);
+      editor.session.setValue(displayValue);
+      lastEmittedToParentRef.current = sv;
+    }
+    applyMarkersToSession(editor, sv);
+    lastDisplayRef.current = editor.getValue();
+  };
+
+  const aceSetOptions = useMemo(
+    () => ({
+      enableBasicAutocompletion: true,
+      enableLiveAutocompletion: false,
+      enableSnippets: false,
+      showLineNumbers: true,
+      tabSize: 2,
+    }),
+    []
+  );
+
+  const displayForDefault = toDisplay(norm(safeValue));
+
+  const fillParent = height === '100%';
+
   return (
-    <div className="relative rounded-xl overflow-hidden border border-gray-200 shadow-md bg-gray-900">
+    <div
+      className={`relative rounded-xl overflow-hidden border border-gray-200 shadow-md bg-gray-900 ${
+        fillParent ? 'h-full min-h-0 flex flex-col' : ''
+      }`}
+    >
       <div className="px-4 py-2 bg-gradient-to-r from-gray-800 to-gray-900 border-b border-gray-700 flex justify-between items-center">
         <span className="text-sm font-semibold text-gray-200 uppercase tracking-wider">
           {language.charAt(0).toUpperCase() + language.slice(1) || 'Code'}
@@ -307,60 +371,79 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
           </button>
         </div>
       </div>
-      <AceEditor
-        ref={editorRef}
-        mode={mode}
-        theme="monokai"
-        name="code-editor"
-        width="100%"
-        height={height}
-        value={editorValue}
-        onChange={handleChange}
-        fontSize={14}
-        showPrintMargin={false}
-        showGutter={true}
-        highlightActiveLine={!disabled}
-        readOnly={disabled}
-        setOptions={{
-          enableBasicAutocompletion: true,
-          enableLiveAutocompletion: true,
-          enableSnippets: true,
-          showLineNumbers: true,
-          tabSize: 2,
-        }}
-        editorProps={{ $blockScrolling: true }}
-        className="rounded-b-xl"
-        onPaste={isFillInTheBlanks ? (e) => e.preventDefault() : undefined}
-      />
+      {isFillInTheBlanks ? (
+        <AceEditor
+          ref={editorRef}
+          mode={mode}
+          theme="monokai"
+          name="code-editor"
+          width="100%"
+          height={fillParent ? '100%' : height}
+          style={fillParent ? { flex: '1 1 auto', minHeight: 0 } : undefined}
+          value={editorValue}
+          onChange={handleChange}
+          onLoad={handleEditorLoad}
+          fontSize={14}
+          showPrintMargin={false}
+          showGutter={true}
+          highlightActiveLine={!disabled}
+          readOnly={disabled}
+          setOptions={aceSetOptions}
+          editorProps={{ $blockScrolling: true }}
+          className="rounded-b-xl"
+          onPaste={(e) => e.preventDefault()}
+        />
+      ) : (
+        <AceEditor
+          ref={editorRef}
+          mode={mode}
+          theme="monokai"
+          name="code-editor-plain"
+          width="100%"
+          height={fillParent ? '100%' : height}
+          style={fillParent ? { flex: '1 1 auto', minHeight: 0 } : undefined}
+          defaultValue={displayForDefault}
+          onChange={handleChange}
+          onLoad={handleEditorLoad}
+          fontSize={14}
+          showPrintMargin={false}
+          showGutter={true}
+          highlightActiveLine={!disabled}
+          readOnly={disabled}
+          setOptions={aceSetOptions}
+          editorProps={{ $blockScrolling: true }}
+          className="rounded-b-xl"
+        />
+      )}
       <style jsx global>{`
         .ace-monokai .ace_gutter {
-          background-color: #2F3129;
-          color: #A0A1A7;
-          border-right: 1px solid #3C3F41;
+          background-color: #2f3129;
+          color: #a0a1a7;
+          border-right: 1px solid #3c3f41;
         }
         .ace-monokai {
           background-color: #272822;
-          color: #F8F8F2;
+          color: #f8f8f2;
         }
         .ace_gutter-active-line {
-          background-color: #3E3D32 !important;
+          background-color: #3e3d32 !important;
         }
         .ace_active-line {
-          background-color: #3E3D32 !important;
+          background-color: #3e3d32 !important;
         }
         .ace-monokai .ace_cursor {
-          color: #F8F8F0;
+          color: #f8f8f0;
         }
         .ace-monokai .ace_selection {
-          background: #49483E;
+          background: #49483e;
         }
         .ace_non_editable {
-          background-color: #2F3129 !important;
+          background-color: #2f3129 !important;
           opacity: 0.8;
         }
         .ace_editable {
-          background-color: #3E3D32 !important;
-          border-left: 4px solid #66D9EF;
+          background-color: #3e3d32 !important;
+          border-left: 4px solid #66d9ef;
         }
       `}</style>
     </div>

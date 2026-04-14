@@ -70,9 +70,15 @@ const QuestionEdit = () => {
         // Removed strict class ID validation to allow questions without classes (drafts)
 
         // Prepare initialData for QuestionForm
+        const starterFromApi =
+          Array.isArray(question.starterCode) && question.starterCode.length > 0
+            ? question.starterCode
+            : Array.isArray(question.templateCode) && question.templateCode.length > 0
+              ? question.templateCode
+              : [];
         const preparedData = {
           _id: question._id, // Include _id for preview and testing functionality
-          type: question.type || 'mcq',
+          type: question.type || 'singleCorrectMcq',
           title: question.title || '',
           description: question.description || '',
           points: question.points || 10,
@@ -83,13 +89,18 @@ const QuestionEdit = () => {
           functionSignature: question.functionSignature || '',
           languages: Array.isArray(question.languages) ? question.languages : (question.language ? [question.language] : ['javascript']),
           options: question.options?.length >= 2 ? question.options : ['', '', '', ''],
-          correctOption: question.correctOption || 0,
+          correctOption: question.correctOption ?? 0,
+          correctOptions: Array.isArray(question.correctOptions) ? question.correctOptions : [],
           codeSnippet: question.codeSnippet || '',
           correctAnswer: question.correctAnswer || '',
+          starterCode: starterFromApi,
           templateCode: Array.isArray(question.templateCode) ? question.templateCode : (question.templateCode ? [question.templateCode] : []),
+          driverCode: Array.isArray(question.driverCode) ? question.driverCode : [],
           testCases: question.testCases?.length > 0 ? question.testCases : [{ input: '', expectedOutput: '', isPublic: true }],
           timeLimit: question.timeLimit || 2,
           memoryLimit: question.memoryLimit || 256,
+          maxAttempts: question.maxAttempts ?? '',
+          explanation: question.explanation || '',
           classIds, // Use array of class IDs
           classId: classIds[0] || '', // For backward compatibility
           solutionCode: question.solutionCode || '',
@@ -290,15 +301,20 @@ const QuestionEdit = () => {
         </div>
       )}
 
-      {/* Enhanced Form Container */}
-      {classStatus === 'succeeded' && initialData && (
+      {/* Form: show as soon as question loads so all fields are editable even if class list is still loading */}
+      {initialData && (
         <div className="backdrop-blur-sm rounded-2xl shadow-lg p-8 border hover:shadow-xl transition-all duration-300" style={{ backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }}>
           <QuestionForm
+            key={questionId}
             onSubmit={handleSubmit}
             initialData={initialData}
-            classes={classes.filter(
-              (cls) => cls.teachers.some((t) => String(t._id) === String(user.id)) || String(cls.createdBy._id) === String(user.id)
-            )}
+            classes={
+              classStatus === 'succeeded'
+                ? classes.filter(
+                    (cls) => cls.teachers.some((t) => String(t._id) === String(user.id)) || String(cls.createdBy._id) === String(user.id)
+                  )
+                : []
+            }
             defaultClassId={initialData?.classId}
           />
         </div>

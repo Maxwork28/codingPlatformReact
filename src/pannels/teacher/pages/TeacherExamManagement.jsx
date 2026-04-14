@@ -68,6 +68,10 @@ const TeacherExamManagement = () => {
     }
   };
 
+  /** Draft, scheduled, and active exams can be edited; completed/archived are read-only */
+  const canTeacherEditExam = (exam) =>
+    exam?.status !== 'completed' && exam?.status !== 'archived';
+
   const getStatusBadge = (exam) => {
     if (exam.status === 'scheduled') {
       return <span className="px-2 py-1 bg-yellow-500 text-white rounded text-xs">Scheduled</span>;
@@ -248,9 +252,13 @@ const TeacherExamManagement = () => {
                 <div className="flex gap-2 mt-4">
                   <button
                     onClick={() => navigate(`/teacher/classes/${exam.classId}/exams/${exam._id}/edit`)}
-                    disabled={exam.status !== 'draft'}
+                    disabled={!canTeacherEditExam(exam)}
                     className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={exam.status !== 'draft' ? 'Only draft exams can be edited' : 'Edit exam'}
+                    title={
+                      canTeacherEditExam(exam)
+                        ? 'Edit exam'
+                        : 'Completed or archived exams cannot be edited'
+                    }
                   >
                     Edit
                   </button>

@@ -132,7 +132,8 @@ const TeacherDraftsPage = () => {
       'multipleCorrectMcq': 'Multiple Choice MCQ',
       'fillInTheBlanks': 'Fill in the Blanks',
       'fillInTheBlanksCoding': 'Fill in the Blanks Coding',
-      'coding': 'Coding'
+      'coding': 'Coding',
+      'codingWithDriver': 'Coding (LeetCode-style)'
     };
     return typeMap[type] || type;
   };

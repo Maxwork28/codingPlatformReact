@@ -80,6 +80,22 @@
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
+/*
+ * Ace Editor (react-ace) measures cursor positions for monospace glyphs. Applying Inter
+ * (proportional) via * makes spaces/letters different widths — wide gaps after space and
+ * cursor offset from the insertion point. Force monospace for Ace and raw code blocks.
+ */
+.ace_editor,
+.ace_editor *,
+.ace-github,
+.ace-github * {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace !important;
+  letter-spacing: normal !important;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+}
+
 /* Ensure headings follow theme colors */
 h1, h2, h3, h4, h5, h6 {
   color: var(--text-heading);

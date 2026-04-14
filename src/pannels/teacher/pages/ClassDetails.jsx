@@ -39,6 +39,7 @@ const ClassDetails = () => {
   const [assignments, setAssignments] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
   const [submissionCode, setSubmissionCode] = useState('');
+  const [submissionViewData, setSubmissionViewData] = useState(null);
   const [questionReport, setQuestionReport] = useState(null);
   const [questionIdInput, setQuestionIdInput] = useState('');
   const [newAssignment, setNewAssignment] = useState({
@@ -297,16 +298,31 @@ const ClassDetails = () => {
       return;
     }
     setError('');
+    setSubmissionCode('');
+    setSubmissionViewData(null);
     try {
       const response = await viewSubmissionCode(submissionId);
-      console.log('[ClassDetails] viewSubmissionCode response:', response.data);
-      setSubmissionCode(response.data.code || 'No code found');
+      const d = response.data;
+      console.log('[ClassDetails] viewSubmissionCode response:', d);
+      setSubmissionCode(d.code ?? 'No code found');
+      setSubmissionViewData({
+        code: d.code,
+        language: d.language || 'javascript',
+        questionId: d.questionId,
+        classId: d.classId ?? classId,
+        isCorrect: Boolean(d.isCorrect),
+        status: d.status,
+        passedTestCases: d.passedTestCases,
+        totalTestCases: d.totalTestCases,
+        studentName: d.studentName,
+        questionTitle: d.questionTitle,
+      });
     } catch (err) {
       console.error('[ClassDetails] Error viewing submission code:', {
         error: err.message,
         response: err.response?.data,
       });
-      setError(err.error || 'Failed to fetch submission code');
+      setError(err.response?.data?.error || err.error || 'Failed to fetch submission code');
     }
   };
 
@@ -1401,9 +1417,44 @@ const ClassDetails = () => {
             </button>
           </form>
           {submissionCode && (
-            <pre className="mt-6 bg-gray-50 p-4 rounded-lg overflow-auto text-sm text-gray-800 font-mono">
-              <code>{submissionCode}</code>
-            </pre>
+            <div className="mt-6 space-y-4">
+              {submissionViewData && (
+                <div className={`p-4 rounded-lg border ${submissionViewData.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <span className={`text-lg font-semibold ${submissionViewData.isCorrect ? 'text-green-800' : 'text-red-800'}`}>
+                        {submissionViewData.isCorrect ? '✓ Successful' : '✗ Unsuccessful'}
+                      </span>
+                      {submissionViewData.status && ['tle', 'mle'].includes(String(submissionViewData.status).toLowerCase()) && (
+                        <span className="px-2 py-1 rounded text-sm font-medium bg-amber-200 text-amber-900 uppercase">{submissionViewData.status}</span>
+                      )}
+                      <span className="text-sm text-gray-600">
+                        {submissionViewData.passedTestCases}/{submissionViewData.totalTestCases} test cases passed
+                      </span>
+                    </div>
+                    {submissionViewData.questionId && (submissionViewData.classId || classId) && (
+                      <Link
+                        to={`/teacher/classes/${String(submissionViewData.classId || classId)}/questions/${String(submissionViewData.questionId)}`}
+                        state={{ initialCode: submissionViewData.code, initialLanguage: submissionViewData.language }}
+                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium whitespace-nowrap"
+                      >
+                        Edit & Run
+                      </Link>
+                    )}
+                  </div>
+                  {submissionViewData.studentName && (
+                    <p className="mt-2 text-sm text-gray-600">Student: {submissionViewData.studentName}</p>
+                  )}
+                  {submissionViewData.questionTitle && (
+                    <p className="text-sm text-gray-600">Question: {submissionViewData.questionTitle}</p>
+                  )}
+                </div>
+              )}
+              <h3 className="text-lg font-semibold text-gray-800">Code</h3>
+              <pre className="bg-gray-50 p-4 rounded-lg overflow-auto text-sm text-gray-800 font-mono">
+                <code>{submissionCode}</code>
+              </pre>
+            </div>
           )}
         </div>
       </section>

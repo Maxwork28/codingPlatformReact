@@ -447,13 +447,19 @@ const AdminQuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId
   const [codeSnippet, setCodeSnippet] = useState(deserializeFromHTML(initialData?.codeSnippet || ''));
   const [correctAnswer, setCorrectAnswer] = useState(deserializeFromHTML(initialData?.correctAnswer || ''));
   const [starterCode, setStarterCode] = useState(
-    initialData?.starterCode?.map(sc => ({ language: sc.language, code: sc.code })) || []
+    initialData?.starterCode?.map(sc => ({ language: sc.language, code: sc.code })) ||
+      initialData?.templateCode?.map(tc => ({ language: tc.language, code: tc.code })) ||
+      []
+  );
+  const [driverCode, setDriverCode] = useState(
+    initialData?.driverCode?.map(dc => ({ language: dc.language, code: dc.code || '' })) || []
   );
   const [testCases, setTestCases] = useState(
     (Array.isArray(initialData?.testCases) ? initialData.testCases : [{ input: '', expectedOutput: '', isPublic: true }]).map(tc => ({
       input: tc.input || '',
       expectedOutput: tc.expectedOutput || '',
       isPublic: tc.isPublic !== undefined ? tc.isPublic : true,
+      isLargeTestCase: tc.isLargeTestCase || false,
     }))
   );
   const [timeLimit, setTimeLimit] = useState(initialData?.timeLimit || 2);
@@ -468,35 +474,60 @@ const AdminQuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId
   
   // Solution state
   const [solutionCode, setSolutionCode] = useState(initialData?.solutionCode || '');
-  const [solutionLanguage, setSolutionLanguage] = useState(initialData?.languages?.[0] || 'javascript');
+  const [solutionLanguage, setSolutionLanguage] = useState(
+    initialData?.solutionLanguage || initialData?.languages?.[0] || 'javascript'
+  );
   const [testResults, setTestResults] = useState(null);
   const [isTestingSolution, setIsTestingSolution] = useState(false);
   const navigate = useNavigate();
 
-  // Log initial state for debugging
+  // Keep form state in sync when editing (initialData load or question id change)
   useEffect(() => {
-    console.log('[AdminQuestionForm] Initial state:', {
-      type,
-      title,
-      description,
-      options,
-      correctOption,
-      correctOptions,
-      examples,
-      constraints,
-      codeSnippet,
-      correctAnswer,
-      starterCode,
-      testCases,
-      timeLimit,
-      memoryLimit,
-      maxAttempts,
-      explanation,
-      tags,
-      languages,
-      classIds,
-    });
-  }, []);
+    if (!initialData) return;
+    setType(initialData.type || 'singleCorrectMcq');
+    setTitle(deserializeFromHTML(initialData.title || ''));
+    setDescription(deserializeFromHTML(initialData.description || ''));
+    setPoints(initialData.points || 10);
+    setDifficulty(initialData.difficulty || 'easy');
+    setTags(
+      typeof initialData.tags === 'string'
+        ? initialData.tags
+        : Array.isArray(initialData.tags)
+          ? initialData.tags.join(', ')
+          : ''
+    );
+    setConstraints(deserializeFromHTML(initialData.constraints || ''));
+    setExamples((Array.isArray(initialData.examples) ? initialData.examples : ['']).map(ex => deserializeFromHTML(ex || '')));
+    setOptions((Array.isArray(initialData.options) ? initialData.options : ['', '', '', '']).map(opt => deserializeFromHTML(opt || '')));
+    setCorrectOption(initialData.correctOption ?? 0);
+    setCorrectOptions(Array.isArray(initialData.correctOptions) ? initialData.correctOptions : []);
+    setCodeSnippet(deserializeFromHTML(initialData.codeSnippet || ''));
+    setCorrectAnswer(deserializeFromHTML(initialData.correctAnswer || ''));
+    setStarterCode(
+      initialData.starterCode?.map(sc => ({ language: sc.language, code: sc.code })) ||
+        initialData.templateCode?.map(tc => ({ language: tc.language, code: tc.code })) ||
+        []
+    );
+    setDriverCode(initialData.driverCode?.map(dc => ({ language: dc.language, code: dc.code || '' })) || []);
+    const tCases = (Array.isArray(initialData.testCases) ? initialData.testCases : [{ input: '', expectedOutput: '', isPublic: true }]).map(tc => ({
+      input: tc.input ?? '',
+      expectedOutput: tc.expectedOutput ?? '',
+      isPublic: tc.isPublic !== undefined ? tc.isPublic : true,
+      isLargeTestCase: tc.isLargeTestCase || false,
+    }));
+    setTestCases(tCases);
+    setInputErrors(tCases.map(() => ''));
+    setTimeLimit(initialData.timeLimit || 2);
+    setMemoryLimit(initialData.memoryLimit || 256);
+    setMaxAttempts(initialData.maxAttempts ?? '');
+    setExplanation(deserializeFromHTML(initialData.explanation || ''));
+    setLanguages(Array.isArray(initialData.languages) && initialData.languages.length > 0 ? initialData.languages : ['javascript']);
+    setClassIds(
+      initialData.classes?.map(c => c.classId?.toString()) || (defaultClassId ? [defaultClassId] : [])
+    );
+    setSolutionCode(initialData.solutionCode || '');
+    setSolutionLanguage(initialData.solutionLanguage || initialData.languages?.[0] || 'javascript');
+  }, [initialData, defaultClassId]);
 
   const supportedLanguages = ['javascript', 'c', 'cpp', 'java', 'python', 'php', 'ruby', 'go'];
 
@@ -563,16 +594,37 @@ func main() {
     }
   };
 
-  // Sync starterCode with selected languages
+  // Sync starterCode with selected languages (functional update so we don't overwrite API-loaded code)
   useEffect(() => {
-    if (type === 'coding' || type === 'fillInTheBlanksCoding') {
-      const updatedStarterCode = languages.map(lang => {
-        const existing = starterCode.find(sc => sc.language === lang);
-        return existing || { language: lang, code: getDefaultStarterCode(lang) };
+    if (type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver') {
+      setStarterCode((prevStarterCode) => {
+        return languages.map((lang) => {
+          const existing = prevStarterCode.find((sc) => sc.language === lang);
+          return existing || { language: lang, code: getDefaultStarterCode(lang) };
+        });
       });
-      setStarterCode(updatedStarterCode);
     } else {
       setStarterCode([]);
+    }
+  }, [languages, type]);
+
+  // Sync driverCode with selected languages (LeetCode-style only)
+  useEffect(() => {
+    if (type === 'codingWithDriver') {
+      const getDefaultDriverCode = (lang) => {
+        if (lang === 'python') {
+          return 'import json\n\n# {{USER_CODE}}\n\nif __name__ == "__main__":\n    data = json.loads(input())\n    result = your_function(data)\n    print(result)';
+        }
+        return '// {{USER_CODE}}\n\nconst fs = require(\'fs\');\nconst data = JSON.parse(fs.readFileSync(0, \'utf8\').trim());\nconst result = yourFunction(data);\nconsole.log(typeof result === \'object\' ? JSON.stringify(result) : result);\n';
+      };
+      setDriverCode((prev) =>
+        languages.map((lang) => {
+          const existing = prev.find((dc) => dc.language === lang);
+          return existing || { language: lang, code: getDefaultDriverCode(lang) };
+        })
+      );
+    } else {
+      setDriverCode([]);
     }
   }, [languages, type]);
 
@@ -595,7 +647,7 @@ func main() {
 
   // Update input errors when test cases or languages change
   useEffect(() => {
-    if (type === 'coding' || type === 'fillInTheBlanksCoding') {
+    if (type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver') {
       const errors = testCases.map(tc => languages.some(lang => lang === 'c' || lang === 'cpp')
         ? validateTestCaseInput(tc.input, 'c')
         : '');
@@ -606,7 +658,7 @@ func main() {
   }, [testCases, languages, type]);
 
   const handleAddTestCase = () => {
-    setTestCases([...testCases, { input: '', expectedOutput: '', isPublic: true }]);
+    setTestCases([...testCases, { input: '', expectedOutput: '', isPublic: true, isLargeTestCase: false }]);
     setInputErrors([...inputErrors, '']);
   };
 
@@ -685,6 +737,12 @@ func main() {
     setStarterCode(updatedStarterCode);
   };
 
+  const handleDriverCodeChange = (index, value) => {
+    const updatedDriverCode = [...driverCode];
+    updatedDriverCode[index].code = value;
+    setDriverCode(updatedDriverCode);
+  };
+
   // Test solution against test cases (client-side validation)
   const handleTestSolution = async () => {
     console.log('========================================');
@@ -733,7 +791,7 @@ func main() {
     }
 
     // Check if it's a coding question
-    if (type !== 'coding' && type !== 'fillInTheBlanksCoding') {
+    if (type !== 'coding' && type !== 'fillInTheBlanksCoding' && type !== 'codingWithDriver') {
       console.error('[AdminQuestionForm] ERROR: Not a coding question. Type:', type);
       alert('Solution testing is only available for coding questions');
       return;
@@ -879,7 +937,7 @@ func main() {
       }
     }
 
-    if (type === 'coding' || type === 'fillInTheBlanksCoding') {
+    if (type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver') {
       if (languages.length === 0) {
         alert('Please select at least one language for coding questions.');
         return;
@@ -907,6 +965,17 @@ func main() {
       if (starterCode.some(sc => !sc.language || !sc.code.trim())) {
         alert('All starter codes must have a valid language and non-empty code.');
         return;
+      }
+      if (type === 'codingWithDriver') {
+        if (driverCode.length === 0 || driverCode.some(dc => !dc.code?.trim())) {
+          alert('Please provide driver code for all selected languages.');
+          return;
+        }
+        const missingPlaceholder = driverCode.filter(dc => !dc.code.includes('{{USER_CODE}}') && !dc.code.includes('// USER_CODE_HERE') && !dc.code.includes('# USER_CODE_HERE'));
+        if (missingPlaceholder.length > 0) {
+          alert('Driver code must contain {{USER_CODE}} or // USER_CODE_HERE or # USER_CODE_HERE.');
+          return;
+        }
       }
       if (timeLimit <= 0) {
         alert('Time limit must be a positive number.');
@@ -942,7 +1011,7 @@ func main() {
       questionData.correctAnswer = serializeToHTML(correctAnswer);
     }
 
-    if (type === 'coding' || type === 'fillInTheBlanksCoding') {
+    if (type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver') {
       questionData.languages = languages;
       questionData.starterCode = starterCode.map(sc => ({
         language: sc.language,
@@ -952,12 +1021,21 @@ func main() {
         input: tc.input,
         expectedOutput: tc.expectedOutput,
         isPublic: tc.isPublic,
+        isLargeTestCase: tc.isLargeTestCase,
       }));
       questionData.timeLimit = Number(timeLimit);
       questionData.memoryLimit = Number(memoryLimit);
       if (solutionCode.trim()) {
         questionData.solutionCode = solutionCode;
         questionData.solutionLanguage = solutionLanguage;
+      }
+      if (type === 'codingWithDriver') {
+        // Backend expects templateCode + driverCode for LeetCode-style questions.
+        questionData.templateCode = starterCode.map(sc => ({
+          language: sc.language,
+          code: sc.code,
+        }));
+        questionData.driverCode = driverCode.map(dc => ({ language: dc.language, code: dc.code }));
       }
     }
 
@@ -986,6 +1064,7 @@ func main() {
               <option value="fillInTheBlanks">Fill in the Blanks</option>
               <option value="fillInTheBlanksCoding">Fill in the Blanks (Coding)</option>
               <option value="coding">Coding Problem</option>
+              <option value="codingWithDriver">Coding (LeetCode-style)</option>
             </select>
           </div>
           <div>
@@ -1239,7 +1318,7 @@ func main() {
         </CollapsibleSection>
       )}
 
-      {(type === 'coding' || type === 'fillInTheBlanksCoding') && (
+      {(type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver') && (
         <>
           <CollapsibleSection title="Languages and Starter Code">
             <div className="space-y-6">
@@ -1280,6 +1359,27 @@ func main() {
               </div>
             </div>
           </CollapsibleSection>
+
+          {type === 'codingWithDriver' && (
+            <CollapsibleSection title="Driver Code (LeetCode-style)" defaultOpen={false}>
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Include <code className="bg-gray-100 px-1 rounded">{'{{USER_CODE}}'}</code>, <code className="bg-gray-100 px-1 rounded">// USER_CODE_HERE</code>, or <code className="bg-gray-100 px-1 rounded"># USER_CODE_HERE</code> where student code is injected.
+                </p>
+                {driverCode.map((dc, idx) => (
+                  <CollapsibleSection key={dc.language} title={`Driver for ${dc.language}`} defaultOpen={false}>
+                    <textarea
+                      value={dc.code}
+                      onChange={(e) => handleDriverCodeChange(idx, e.target.value)}
+                      className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 font-mono text-sm"
+                      rows={12}
+                      placeholder={`Driver code for ${dc.language}`}
+                    />
+                  </CollapsibleSection>
+                ))}
+              </div>
+            </CollapsibleSection>
+          )}
 
           <CollapsibleSection title="Constraints and Examples">
             <div className="space-y-6">
@@ -1375,7 +1475,17 @@ func main() {
                       className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                       id={`public-${idx}`}
                     />
-                    <label htmlFor={`public-${idx}`} className="ml-2 text-sm text-gray-700">Public Test Case</label>
+                    <label htmlFor={`public-${idx}`} className="ml-2 text-sm text-gray-700">Public</label>
+                  </div>
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={tc.isLargeTestCase}
+                      onChange={(e) => handleTestCaseChange(idx, 'isLargeTestCase', e.target.checked)}
+                      className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
+                      id={`large-${idx}`}
+                    />
+                    <label htmlFor={`large-${idx}`} className="ml-2 text-sm text-gray-700">Large (TLE/MLE)</label>
                   </div>
                   <button
                     type="button"

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { getQuestionsByClass, runCode, runCodeWithCustomInput, submitAnswer } from '../../../common/services/api';
@@ -7,6 +7,20 @@ import { DiJavascript } from "react-icons/di";
 import { FaJava, FaPython, FaDatabase, FaBookOpen } from "react-icons/fa";
 import { GiNotebook } from "react-icons/gi";
 import { MdDataObject, MdDataArray } from "react-icons/md";
+
+/** Plain text only — avoids showing raw tags like &lt;p&gt;1&lt;/p&gt; in the UI */
+const stripHtml = (html) => {
+  if (html == null || html === "") return "";
+  const str = typeof html === "string" ? html : String(html);
+  try {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = str;
+    const text = tmp.textContent || tmp.innerText || "";
+    return text.replace(/\s+/g, " ").trim();
+  } catch {
+    return str.replace(/<[^>]*>/g, "").trim();
+  }
+};
 
 const StudentTakeClass = () => {
   const { user } = useSelector((state) => state.auth);
@@ -36,6 +50,9 @@ const StudentTakeClass = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [isRunningCustom, setIsRunningCustom] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  /** Only load starter when question or language changes — not when `selectedQuestion` object reference is replaced. */
+  const lastCodeInitKeyRef = useRef(null);
 
   // Helper function to get available languages from question
   const getAvailableLanguages = (question) => {
@@ -97,22 +114,25 @@ const StudentTakeClass = () => {
     }
   }, [selectedClass]);
 
-  // Update code when question or language changes
+  // Update code when question or language changes (not on every parent re-fetch of the same question)
   useEffect(() => {
     if (selectedQuestion && isCodingQuestion(selectedQuestion)) {
-      // Get available languages (from languages array or starterCode)
       const availableLanguages = getAvailableLanguages(selectedQuestion);
-      
-      // Ensure selectedLanguage is valid for the current question
+
       if (availableLanguages.length > 0 && !availableLanguages.includes(selectedLanguage)) {
         setSelectedLanguage(availableLanguages[0]);
-        return; // Will trigger this effect again with the new language
+        return;
       }
-      
-      const starterCode = selectedQuestion.starterCode?.find((sc) => sc.language === selectedLanguage);
-      setCode(starterCode?.code || selectedQuestion.codeSnippet || '// Write your code here...');
+
+      const qid = selectedQuestion._id?.toString() ?? '';
+      const codingKey = `${qid}:${selectedLanguage}`;
+      if (lastCodeInitKeyRef.current !== codingKey) {
+        lastCodeInitKeyRef.current = codingKey;
+        const starterCode = selectedQuestion.starterCode?.find((sc) => sc.language === selectedLanguage);
+        setCode(starterCode?.code || selectedQuestion.codeSnippet || '// Write your code here...');
+      }
     } else {
-      // Clear code for non-coding questions
+      lastCodeInitKeyRef.current = null;
       setCode('');
     }
   }, [selectedQuestion, selectedLanguage]);
@@ -674,8 +694,9 @@ const StudentTakeClass = () => {
                 <h1 
                   className="text-xl sm:text-2xl font-bold mb-3 sm:mb-4" 
                   style={{ color: 'var(--text-heading)' }}
-                  dangerouslySetInnerHTML={{ __html: selectedQuestion.title }}
-                />
+                >
+                  {stripHtml(selectedQuestion.title) || "Untitled"}
+                </h1>
 
                 <div className="flex flex-wrap gap-2 mb-6">
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
@@ -698,10 +719,11 @@ const StudentTakeClass = () => {
                     Problem Statement
                   </h3>
                   <div 
-                    className="text-xs sm:text-sm leading-relaxed" 
+                    className="text-xs sm:text-sm leading-relaxed whitespace-pre-wrap" 
                     style={{ color: 'var(--text-primary)' }}
-                    dangerouslySetInnerHTML={{ __html: selectedQuestion.description }}
-                  />
+                  >
+                    {stripHtml(selectedQuestion.description) || "—"}
+                  </div>
                 </div>
 
                 {selectedQuestion.inputFormat && (
@@ -710,10 +732,11 @@ const StudentTakeClass = () => {
                       Input Format
                     </h3>
                     <div 
-                      className="text-xs sm:text-sm leading-relaxed" 
+                      className="text-xs sm:text-sm leading-relaxed whitespace-pre-wrap" 
                       style={{ color: 'var(--text-primary)' }}
-                      dangerouslySetInnerHTML={{ __html: selectedQuestion.inputFormat }}
-                    />
+                    >
+                      {stripHtml(selectedQuestion.inputFormat)}
+                    </div>
                   </div>
                 )}
 
@@ -723,10 +746,11 @@ const StudentTakeClass = () => {
                       Output Format
                     </h3>
                     <div 
-                      className="text-xs sm:text-sm leading-relaxed" 
+                      className="text-xs sm:text-sm leading-relaxed whitespace-pre-wrap" 
                       style={{ color: 'var(--text-primary)' }}
-                      dangerouslySetInnerHTML={{ __html: selectedQuestion.outputFormat }}
-                    />
+                    >
+                      {stripHtml(selectedQuestion.outputFormat)}
+                    </div>
                   </div>
                 )}
 
@@ -736,10 +760,11 @@ const StudentTakeClass = () => {
                       Constraints
                     </h3>
                     <div 
-                      className="text-xs sm:text-sm leading-relaxed" 
+                      className="text-xs sm:text-sm leading-relaxed whitespace-pre-wrap" 
                       style={{ color: 'var(--text-primary)' }}
-                      dangerouslySetInnerHTML={{ __html: selectedQuestion.constraints }}
-                    />
+                    >
+                      {stripHtml(selectedQuestion.constraints)}
+                    </div>
                   </div>
                 )}
 
@@ -758,8 +783,9 @@ const StudentTakeClass = () => {
                           <pre 
                             className="text-xs sm:text-sm whitespace-pre-wrap" 
                             style={{ color: 'var(--text-primary)' }}
-                            dangerouslySetInnerHTML={{ __html: example }}
-                          />
+                          >
+                            {stripHtml(example)}
+                          </pre>
                         </div>
                       ))}
                     </div>
@@ -792,7 +818,7 @@ const StudentTakeClass = () => {
                                 disabled
                               />
                               <span className="text-sm flex-1" style={{ color: 'var(--text-primary)' }}>
-                                {option}
+                                {stripHtml(option)}
                               </span>
                             </label>
                           </div>

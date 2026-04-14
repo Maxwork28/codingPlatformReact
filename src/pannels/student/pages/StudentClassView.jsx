@@ -1,20 +1,43 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
 import { io } from "socket.io-client";
 import axios from "axios";
 import { Tab } from "@headlessui/react";
 import StudentQuestionCard from "../components/StudentQuestionCard";
 import { API_BASE_URL } from "../../../common/constants";
 import { listClassExams } from "../../../common/services/api";
+import { fetchClasses } from "../../../common/components/redux/classSlice";
 
 const socket = io(`${API_BASE_URL}/`, {
   withCredentials: true,
 });
 
+/** Compare Mongo/ObjectId/string ids safely */
+const idEq = (a, b) => {
+  if (a == null || b == null) return false;
+  return String(a) === String(b);
+};
+
+/** Question.classes[] entry may use classId as id string or populated { _id } */
+const matchesClassEntry = (c, classId) => {
+  if (!c || !classId) return false;
+  const cid = c.classId;
+  return idEq(cid, classId) || idEq(cid?._id, classId);
+};
+
+const isEnrolledInClass = (cls, userId) => {
+  if (!cls || !userId) return false;
+  const list = cls.students || [];
+  return list.some((s) => idEq(s?._id ?? s, userId));
+};
+
 const StudentClassView = () => {
   const { classId } = useParams();
-  const { classes } = useSelector((state) => state.classes);
+  const dispatch = useDispatch();
+  const { classes, status: classesStatus, error: classesFetchError } = useSelector(
+    (state) => state.classes
+  );
   const { user } = useSelector((state) => state.auth);
   const [classData, setClassData] = useState(null);
   const [assignments, setAssignments] = useState([]);
@@ -30,8 +53,15 @@ const StudentClassView = () => {
   console.log("[StudentClassView] Rendered", {
     classId,
     classesCount: classes.length,
+    classesStatus,
     user: user ? { id: user.id, name: user.name, role: user.role } : null,
   });
+
+  useEffect(() => {
+    if (user?.id && classesStatus === "idle") {
+      dispatch(fetchClasses(""));
+    }
+  }, [dispatch, user?.id, classesStatus]);
 
   useEffect(() => {
     // Log useEffect trigger
@@ -74,7 +104,9 @@ const StudentClassView = () => {
             ? { status: err.response.status, data: err.response.data }
             : null,
         });
-        setError(err.response?.data?.message || "Failed to fetch assignments");
+        setMessage(
+          err.response?.data?.message || "Could not load assignments (try refresh)."
+        );
       }
     };
 
@@ -130,18 +162,35 @@ const StudentClassView = () => {
       }
     };
 
-    // Find class and verify user enrollment
-    const cls = classes.find((c) => c._id === classId);
-    if (cls && cls.students.some((s) => s._id === user?.id)) {
+    // Wait for class list from Redux (avoids false "not enrolled" on refresh / deep link)
+    if (classesStatus === "idle" || classesStatus === "loading") {
+      setLoading(true);
+      setError(null);
+      return;
+    }
+
+    if (classesStatus === "failed") {
+      setClassData(null);
+      setError(classesFetchError || "Failed to load classes.");
+      setLoading(false);
+      return;
+    }
+
+    // classesStatus === 'succeeded'
+    const cls = classes.find((c) => idEq(c._id, classId));
+    const enrolled = cls && isEnrolledInClass(cls, user?.id);
+
+    if (cls && enrolled) {
       console.log("[StudentClassView] Class found and user authorized", {
         classId,
         className: cls.name,
-        studentCount: cls.students.length,
-        questionCount: cls.questions.length,
+        studentCount: cls.students?.length ?? 0,
+        questionCount: cls.questions?.length ?? 0,
         userId: user.id,
       });
-      const updatedQuestions = cls.questions.map((q) => {
-        const classInfo = q.classes.find((c) => c.classId === classId);
+      const qs = Array.isArray(cls.questions) ? cls.questions : [];
+      const updatedQuestions = qs.map((q) => {
+        const classInfo = (q.classes || []).find((c) => matchesClassEntry(c, classId));
         console.log("[StudentClassView] Processing question", {
           questionId: q._id,
           questionTitle: q.title,
@@ -154,6 +203,7 @@ const StudentClassView = () => {
           isDisabled: classInfo ? classInfo.isDisabled : false,
         };
       });
+      setError(null);
       setClassData({
         ...cls,
         questions: updatedQuestions,
@@ -168,14 +218,27 @@ const StudentClassView = () => {
           classId,
           classes: classes.map((c) => c._id),
           userId: user?.id,
-          isEnrolled: cls
-            ? cls.students.some((s) => s._id === user?.id)
-            : false,
+          isEnrolled: enrolled,
         }
       );
-      setError("Class not found or you are not enrolled.");
+      setClassData(null);
+      setError(
+        !cls
+          ? "Class not found or you do not have access."
+          : "You are not enrolled in this class."
+      );
     }
     setLoading(false);
+
+    if (!(cls && enrolled)) {
+      return () => {
+        socket.off("questionPublished");
+        socket.off("questionDisabled");
+        socket.off("questionDeleted");
+        socket.off("questionUpdated");
+        if (classId) socket.emit("leaveClass", classId);
+      };
+    }
 
     // Join socket room for class
     console.log("[StudentClassView] Emitting joinClass", { classId });
@@ -196,12 +259,12 @@ const StudentClassView = () => {
           return prev;
         }
         const updatedQuestions = prev.questions.map((q) =>
-          q._id === questionId
+          idEq(q._id, questionId)
             ? {
                 ...q,
                 isPublished,
-                classes: q.classes.map((c) =>
-                  c.classId === classId ? { ...c, isPublished } : c
+                classes: (q.classes || []).map((c) =>
+                  matchesClassEntry(c, classId) ? { ...c, isPublished } : c
                 ),
               }
             : q
@@ -235,12 +298,12 @@ const StudentClassView = () => {
           return prev;
         }
         const updatedQuestions = prev.questions.map((q) =>
-          q._id === questionId
+          idEq(q._id, questionId)
             ? {
                 ...q,
                 isDisabled,
-                classes: q.classes.map((c) =>
-                  c.classId === classId ? { ...c, isDisabled } : c
+                classes: (q.classes || []).map((c) =>
+                  matchesClassEntry(c, classId) ? { ...c, isDisabled } : c
                 ),
               }
             : q
@@ -271,7 +334,7 @@ const StudentClassView = () => {
           return prev;
         }
         const updatedQuestions = prev.questions.filter(
-          (q) => q._id !== questionId
+          (q) => !idEq(q._id, questionId)
         );
         console.log(
           "[StudentClassView] Updated classData for questionDeleted",
@@ -299,7 +362,7 @@ const StudentClassView = () => {
           return prev;
         }
         const updatedQuestions = prev.questions.map((q) =>
-          q._id === questionId ? { ...q, ...updatedFields } : q
+          idEq(q._id, questionId) ? { ...q, ...updatedFields } : q
         );
         console.log(
           "[StudentClassView] Updated classData for questionUpdated",
@@ -329,8 +392,7 @@ const StudentClassView = () => {
       socket.off("questionUpdated");
       socket.emit("leaveClass", classId);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [classId, user?.id, classes.length, classes.map(c => c._id).join(',')]);
+  }, [classId, user?.id, classes, classesStatus, classesFetchError]);
 
   // Log render state
   console.log("[StudentClassView] Rendering", {
@@ -417,7 +479,7 @@ const StudentClassView = () => {
         </div>
         <div className="mt-4 flex flex-wrap gap-3">
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700 shadow-sm">
-            {classData.students.length} Students
+            {classData.students?.length ?? 0} Students
           </span>
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 shadow-sm">
             {assignments.length} Assignments
@@ -426,13 +488,8 @@ const StudentClassView = () => {
             {exams.length} Exams
           </span>
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 shadow-sm">
-            {
-              classData.questions.filter((q) => {
-                const classInfo = q.classes.find((c) => c.classId === classId);
-                return classInfo?.isPublished;
-              }).length
-            }{" "}
-            Attached Questions
+            {classData.questions?.length ?? 0} question
+            {(classData.questions?.length ?? 0) === 1 ? "" : "s"} attached
           </span>
         </div>
       </div>
@@ -544,6 +601,7 @@ const StudentClassView = () => {
                       const studentName = (
                         entry.studentId?.name ||
                         entry.student?.name ||
+                        entry.userId?.name ||
                         ""
                       ).toLowerCase();
                       return studentName.includes(
@@ -667,6 +725,7 @@ const StudentClassView = () => {
                               >
                                 {entry.studentId?.name ||
                                   entry.student?.name ||
+                                  entry.userId?.name ||
                                   "Unknown"}
                               </div>
                             </td>
@@ -758,13 +817,11 @@ const StudentClassView = () => {
               <div className="space-y-6">
                 {assignments
                   .map((assignment) => {
-                    const question = classData.questions.find(
-                      (q) =>
-                        q._id ===
-                        (assignment.questionId?._id || assignment.questionId)
+                    const question = classData.questions.find((q) =>
+                      idEq(q._id, assignment.questionId?._id || assignment.questionId)
                     );
-                    const classInfo = question?.classes.find(
-                      (c) => c.classId === classId
+                    const classInfo = question?.classes?.find((c) =>
+                      matchesClassEntry(c, classId)
                     );
                     console.log("[StudentClassView] Rendering assignment", {
                       assignmentId: assignment._id,
@@ -788,10 +845,6 @@ const StudentClassView = () => {
                       );
                       return null;
                     }
-                    // Only show published questions
-                    if (!classInfo?.isPublished) {
-                      return null;
-                    }
                     return {
                       assignment,
                       question,
@@ -799,7 +852,10 @@ const StudentClassView = () => {
                     };
                   })
                   .filter(Boolean)
-                  .map(({ assignment, question, classInfo }) => (
+                  .map(({ assignment, question, classInfo }) => {
+                    const canSubmit =
+                      classInfo?.isPublished && !classInfo?.isDisabled;
+                    return (
                     <div
                       key={assignment._id}
                       className="backdrop-blur-sm rounded-2xl shadow-lg overflow-hidden border transition-all duration-300 hover:shadow-2xl hover:-translate-y-1"
@@ -809,7 +865,7 @@ const StudentClassView = () => {
                       }}
                     >
                       <div className="p-6">
-                        <div className="flex justify-between items-start">
+                        <div className="flex justify-between items-start gap-4">
                           <StudentQuestionCard
                             question={{
                               ...question,
@@ -818,19 +874,20 @@ const StudentClassView = () => {
                             }}
                             assignment={assignment}
                           />
-                          <div className="ml-4 flex-shrink-0">
+                          <div className="ml-4 flex-shrink-0 flex flex-col items-end gap-2">
+                            {!classInfo?.isPublished && (
+                              <p className="text-xs text-right max-w-[200px]" style={{ color: "var(--text-secondary)" }}>
+                                Your teacher has not published this question yet. You can open it after they publish it.
+                              </p>
+                            )}
+                            {canSubmit ? (
                             <Link
                               to={`/student/questions/${
                                 assignment.questionId?._id ||
                                 assignment.questionId
                               }/submit`}
                               state={{ classId }}
-                              className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-300 ${
-                                !classInfo?.isDisabled
-                                  ? "bg-indigo-600 hover:bg-indigo-700"
-                                  : "bg-gray-400 cursor-not-allowed"
-                              }`}
-                              disabled={classInfo?.isDisabled}
+                              className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-300 bg-indigo-600 hover:bg-indigo-700"
                               onClick={() =>
                                 console.log(
                                   "[StudentClassView] Navigating to question submission",
@@ -843,15 +900,23 @@ const StudentClassView = () => {
                                 )
                               }
                             >
-                              {!classInfo?.isDisabled
-                                ? "Submit Answer"
-                                : "Disabled"}
+                              Submit Answer
                             </Link>
+                            ) : classInfo?.isDisabled ? (
+                              <span className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-gray-600 bg-gray-200 cursor-not-allowed">
+                                Disabled
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-amber-900 bg-amber-100 border border-amber-200 cursor-not-allowed">
+                                Not published yet
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
               </div>
             )}
           </Tab.Panel>
@@ -1022,10 +1087,7 @@ const StudentClassView = () => {
               </h3>
             </div>
 
-            {classData.questions.filter((q) => {
-              const classInfo = q.classes.find((c) => c.classId === classId);
-              return classInfo?.isPublished;
-            }).length === 0 ? (
+            {(classData.questions?.length ?? 0) === 0 ? (
               <div
                 className="backdrop-blur-sm rounded-2xl shadow-lg p-8 text-center border"
                 style={{
@@ -1063,8 +1125,8 @@ const StudentClassView = () => {
               <div className="space-y-6">
                 {classData.questions
                   .map((question) => {
-                    const classInfo = question.classes.find(
-                      (c) => c.classId === classId
+                    const classInfo = (question.classes || []).find((c) =>
+                      matchesClassEntry(c, classId)
                     );
                     console.log(
                       "[StudentClassView] Rendering attached question",
@@ -1076,8 +1138,7 @@ const StudentClassView = () => {
                         isDisabled: classInfo?.isDisabled,
                       }
                     );
-                    // Only show published questions
-                    if (!classInfo?.isPublished) {
+                    if (!classInfo) {
                       return null;
                     }
                     return {
@@ -1086,7 +1147,10 @@ const StudentClassView = () => {
                     };
                   })
                   .filter(Boolean)
-                  .map(({ question, classInfo }) => (
+                  .map(({ question, classInfo }) => {
+                    const canSubmit =
+                      classInfo?.isPublished && !classInfo?.isDisabled;
+                    return (
                     <div
                       key={question._id}
                       className="backdrop-blur-sm rounded-2xl shadow-lg overflow-hidden border transition-all duration-300 hover:shadow-2xl hover:-translate-y-1"
@@ -1096,7 +1160,7 @@ const StudentClassView = () => {
                       }}
                     >
                       <div className="p-6">
-                        <div className="flex justify-between items-start">
+                        <div className="flex justify-between items-start gap-4">
                           <StudentQuestionCard
                             question={{
                               ...question,
@@ -1104,16 +1168,17 @@ const StudentClassView = () => {
                               isDisabled: classInfo?.isDisabled,
                             }}
                           />
-                          <div className="ml-4 flex-shrink-0">
+                          <div className="ml-4 flex-shrink-0 flex flex-col items-end gap-2">
+                            {!classInfo?.isPublished && (
+                              <p className="text-xs text-right max-w-[200px]" style={{ color: "var(--text-secondary)" }}>
+                                Your teacher has not published this question yet.
+                              </p>
+                            )}
+                            {canSubmit ? (
                             <Link
                               to={`/student/questions/${question._id}/submit`}
                               state={{ classId }}
-                              className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-300 ${
-                                !classInfo?.isDisabled
-                                  ? "bg-indigo-600 hover:bg-indigo-700"
-                                  : "bg-gray-400 cursor-not-allowed"
-                              }`}
-                              disabled={classInfo?.isDisabled}
+                              className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-300 bg-indigo-600 hover:bg-indigo-700"
                               onClick={() =>
                                 console.log(
                                   "[StudentClassView] Navigating to question submission",
@@ -1124,15 +1189,23 @@ const StudentClassView = () => {
                                 )
                               }
                             >
-                              {!classInfo?.isDisabled
-                                ? "Submit Answer"
-                                : "Disabled"}
+                              Submit Answer
                             </Link>
+                            ) : classInfo?.isDisabled ? (
+                              <span className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-gray-600 bg-gray-200 cursor-not-allowed">
+                                Disabled
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-amber-900 bg-amber-100 border border-amber-200 cursor-not-allowed">
+                                Not published yet
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
               </div>
             )}
           </Tab.Panel>

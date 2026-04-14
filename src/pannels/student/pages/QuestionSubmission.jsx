@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useLocation } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { io } from 'socket.io-client';
@@ -12,7 +12,7 @@ import {
 import CodeEditor from '../components/CodeEditor';
 
 // Socket.IO initialization
-const socket = io('https://api.algosutra.co.in/', {
+const socket = io('https://api.algosutra.com/', {
   withCredentials: true,
 });
 
@@ -45,9 +45,14 @@ const QuestionSubmission = () => {
   const [apiResponse, setApiResponse] = useState(null);
   const [leftPanelWidth, setLeftPanelWidth] = useState(50); // Percentage
   const [isDragging, setIsDragging] = useState(false);
-  const [editorHeight, setEditorHeight] = useState(60); // Percentage of right panel
+  const [editorHeight, setEditorHeight] = useState(60); // Percentage share of the editor vs. controls row (sum 100)
   const [isDraggingVertical, setIsDraggingVertical] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  /** Region between editor and custom-test / buttons — used for correct vertical resize math */
+  const verticalSplitRef = useRef(null);
+
+  /** Only apply DB starter when question id or language changes — not when `question` object reference updates from Redux/socket (that was wiping the editor on every keystroke/render). */
+  const lastAnswerInitKeyRef = useRef(null);
 
   const classId = location.state?.classId || (question?.classes?.length > 0 ? question.classes[0].classId : null);
 
@@ -98,25 +103,25 @@ const QuestionSubmission = () => {
     setIsDragging(true);
   };
 
-  // Handle vertical panel resizing (editor height)
+  // Handle vertical panel resizing (editor vs. custom test / buttons) — use split region, not full right panel
   useEffect(() => {
-    const handleMouseMove = (e) => {
+    const handleMove = (e) => {
       if (!isDraggingVertical) return;
-      
-      const rightPanel = document.getElementById('right-panel');
-      if (!rightPanel) return;
-      
-      const rect = rightPanel.getBoundingClientRect();
-      const relativeY = e.clientY - rect.top;
+
+      const el = verticalSplitRef.current;
+      if (!el) return;
+
+      const rect = el.getBoundingClientRect();
+      const y = e.clientY;
+      const relativeY = y - rect.top;
       const newHeight = (relativeY / rect.height) * 100;
-      
-      // Constrain between 30% and 80%
-      if (newHeight >= 30 && newHeight <= 80) {
+
+      if (newHeight >= 25 && newHeight <= 85) {
         setEditorHeight(newHeight);
       }
     };
 
-    const handleMouseUp = () => {
+    const handleEnd = () => {
       setIsDraggingVertical(false);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
@@ -125,18 +130,28 @@ const QuestionSubmission = () => {
     if (isDraggingVertical) {
       document.body.style.cursor = 'row-resize';
       document.body.style.userSelect = 'none';
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
+      document.addEventListener('pointermove', handleMove);
+      document.addEventListener('pointerup', handleEnd);
+      document.addEventListener('pointercancel', handleEnd);
     }
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('pointermove', handleMove);
+      document.removeEventListener('pointerup', handleEnd);
+      document.removeEventListener('pointercancel', handleEnd);
     };
   }, [isDraggingVertical]);
 
-  const handleVerticalDividerMouseDown = (e) => {
+  const handleVerticalDividerPointerDown = (e) => {
     e.preventDefault();
+    e.stopPropagation();
+    if (e.pointerType === 'mouse') {
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+    }
     setIsDraggingVertical(true);
   };
 
@@ -262,16 +277,32 @@ const QuestionSubmission = () => {
         setIsQuestionActive(false);
         setStatusMessage('Class not found for this question');
       }
-      if (question.type === 'coding' || question.type === 'fillInTheBlanksCoding') {
-        const starterCode = question.starterCode?.find((sc) => sc.language === selectedLanguage);
-        console.log('[QuestionSubmission] Setting starter code for', selectedLanguage, ':', starterCode?.code);
-        setAnswer(starterCode?.code || question.codeSnippet || '');
+
+      const qid = question._id?.toString() ?? '';
+      const codingInitKey = `${qid}:${selectedLanguage}`;
+
+      if (question.type === 'coding' || question.type === 'fillInTheBlanksCoding' || question.type === 'codingWithDriver') {
+        if (lastAnswerInitKeyRef.current !== codingInitKey) {
+          lastAnswerInitKeyRef.current = codingInitKey;
+          const starterCode = question.starterCode?.find((sc) => sc.language === selectedLanguage);
+          console.log('[QuestionSubmission] Initializing answer from starter for', selectedLanguage, ':', starterCode?.code);
+          setAnswer(starterCode?.code || question.codeSnippet || '');
+        }
       } else if (question.type === 'fillInTheBlanks') {
-        setAnswer('');
+        if (lastAnswerInitKeyRef.current !== qid) {
+          lastAnswerInitKeyRef.current = qid;
+          setAnswer('');
+        }
       } else if (question.type === 'multipleCorrectMcq') {
-        setAnswer([]);
+        if (lastAnswerInitKeyRef.current !== qid) {
+          lastAnswerInitKeyRef.current = qid;
+          setAnswer([]);
+        }
       } else {
-        setAnswer('');
+        if (lastAnswerInitKeyRef.current !== qid) {
+          lastAnswerInitKeyRef.current = qid;
+          setAnswer('');
+        }
       }
     } else if (!classId) {
       console.log('[QuestionSubmission] No classId provided');
@@ -292,7 +323,7 @@ const QuestionSubmission = () => {
       setStatusMessage('Cannot submit: No class associated with this question');
       return;
     }
-    if ((question.type === 'coding' || question.type === 'fillInTheBlanksCoding') &&
+    if ((question.type === 'coding' || question.type === 'fillInTheBlanksCoding' || question.type === 'codingWithDriver') &&
         (!selectedLanguage || !question.languages.includes(selectedLanguage))) {
       console.log('[QuestionSubmission] Submission blocked: Invalid or undefined language', selectedLanguage);
       setStatusMessage('Cannot submit: No valid language selected');
@@ -331,7 +362,7 @@ const QuestionSubmission = () => {
             : question.type === 'singleCorrectMcq'
             ? parseInt(answer)
             : answer,
-        language: question.type === 'coding' || question.type === 'fillInTheBlanksCoding' ? selectedLanguage : undefined,
+        language: (question.type === 'coding' || question.type === 'fillInTheBlanksCoding' || question.type === 'codingWithDriver') ? selectedLanguage : undefined,
         isRun: false,
       };
       console.log('[QuestionSubmission] Submitting answer:', submissionData);
@@ -368,7 +399,7 @@ const QuestionSubmission = () => {
       setStatusMessage('Cannot run code: Question is inactive');
       return;
     }
-    if (question.type !== 'coding' && question.type !== 'fillInTheBlanksCoding') {
+    if (question.type !== 'coding' && question.type !== 'fillInTheBlanksCoding' && question.type !== 'codingWithDriver') {
       console.log('[QuestionSubmission] Code run blocked: Not a coding question');
       setStatusMessage('Run is only available for coding questions');
       return;
@@ -427,7 +458,7 @@ const QuestionSubmission = () => {
       setStatusMessage('Cannot run code: Question is inactive');
       return;
     }
-    if (question.type !== 'coding' && question.type !== 'fillInTheBlanksCoding') {
+    if (question.type !== 'coding' && question.type !== 'fillInTheBlanksCoding' && question.type !== 'codingWithDriver') {
       console.log('[QuestionSubmission] Custom input run blocked: Not a coding question');
       setStatusMessage('Run is only available for coding questions');
       return;
@@ -503,7 +534,7 @@ const QuestionSubmission = () => {
     const newLanguage = e.target.value;
     console.log('[QuestionSubmission] Language changed to:', newLanguage);
     setSelectedLanguage(newLanguage);
-    if (question?.type === 'coding' || question?.type === 'fillInTheBlanksCoding') {
+    if (question?.type === 'coding' || question?.type === 'fillInTheBlanksCoding' || question?.type === 'codingWithDriver') {
       const starterCode = question.starterCode?.find((sc) => sc.language === newLanguage);
       console.log('[QuestionSubmission] Starter code for', newLanguage, ':', starterCode?.code);
       setAnswer(starterCode?.code || question.codeSnippet || '');
@@ -614,6 +645,8 @@ const QuestionSubmission = () => {
                   <h4 className="text-sm font-semibold text-gray-800">
                     {source === 'customRun' ? 'Custom Input Result' : `Test Case ${index + 1}: `}
                     <span className={result.passed ? 'text-green-700' : 'text-red-700'}>{result.passed ? 'Passed' : 'Failed'}</span>
+                    {result.isTLE && <span className="ml-2 px-2 py-0.5 rounded text-xs font-medium bg-amber-200 text-amber-900">TLE</span>}
+                    {result.isMLE && <span className="ml-2 px-2 py-0.5 rounded text-xs font-medium bg-amber-200 text-amber-900">MLE</span>}
                   </h4>
                   {result.error && (
                     <div className="mt-2 bg-white p-3 rounded-lg border border-gray-100 shadow-sm">
@@ -769,7 +802,7 @@ const QuestionSubmission = () => {
               </>
             )}
 
-            {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding') && question.starterCode?.length > 0 && (
+            {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding' || question.type === 'codingWithDriver') && question.starterCode?.length > 0 && (
               <>
                 <h3 className="text-lg font-semibold text-gray-800 mt-6">Starter Code</h3>
                 <pre className="bg-gray-50 p-4 rounded-lg mt-2 overflow-x-auto text-sm border border-gray-100">
@@ -835,9 +868,9 @@ const QuestionSubmission = () => {
             backgroundColor: 'var(--background-content)' 
           }}
         >
-          <div className="flex-1 flex flex-col overflow-hidden p-4 relative">
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden p-4 relative">
             {/* Language Selector and Fullscreen Button */}
-            {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding') && (
+            {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding' || question.type === 'codingWithDriver') && (
               <div className="mb-3 flex-shrink-0 flex items-end gap-3">
                 <div className="flex-1">
                   <label htmlFor="language" className="text-xs font-medium text-gray-700">
@@ -882,25 +915,203 @@ const QuestionSubmission = () => {
             )}
 
             {/* Code Editor or Answer Input */}
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="flex items-center justify-between mb-2">
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex items-center justify-between mb-2 flex-shrink-0">
                 <h3 className="text-lg font-semibold text-gray-800">
-                  {question.type === 'coding' || question.type === 'fillInTheBlanksCoding' ? 'Your Solution' : 'Your Answer'}
+                  {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding' || question.type === 'codingWithDriver') ? 'Your Solution' : 'Your Answer'}
                 </h3>
               </div>
               
-              <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
-                {/* Code Editor Section - Dynamic height */}
-                <div 
-                  className="overflow-auto mb-2 transition-all duration-150"
-                  style={{ 
-                    height: isFullscreen ? '100%' : `${editorHeight}%`
-                  }}
-                >
-                {question.type === 'coding' ? (
+              <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding' || question.type === 'codingWithDriver') && !isFullscreen ? (
+                  <div ref={verticalSplitRef} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                    {/* Editor pane — flex ratio matches editorHeight : (100 - editorHeight) */}
+                    <div
+                      className="min-h-0 flex flex-col overflow-hidden"
+                      style={{
+                        flex: `${editorHeight} 1 0%`,
+                        minHeight: '140px',
+                      }}
+                    >
+                      <div className="flex-1 min-h-[140px] flex flex-col overflow-hidden">
+                        {(question.type === 'coding' || question.type === 'codingWithDriver') && (
+                          <CodeEditor
+                            key={`${questionId}-${selectedLanguage}`}
+                            value={answer}
+                            onChange={setAnswer}
+                            defaultValue={question.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || ''}
+                            language={selectedLanguage}
+                            disabled={!isQuestionActive}
+                            isFillInTheBlanks={false}
+                            height="100%"
+                          />
+                        )}
+                        {question.type === 'fillInTheBlanksCoding' && (
+                          <CodeEditor
+                            key={`${questionId}-${selectedLanguage}`}
+                            value={answer}
+                            onChange={setAnswer}
+                            defaultValue={question.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || question.codeSnippet || ''}
+                            language={selectedLanguage}
+                            disabled={!isQuestionActive}
+                            isFillInTheBlanks={true}
+                            height="100%"
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    <div
+                      role="separator"
+                      aria-orientation="horizontal"
+                      aria-label="Resize editor height"
+                      tabIndex={0}
+                      className="relative z-20 flex-shrink-0 rounded-sm group touch-none select-none"
+                      style={{
+                        height: '10px',
+                        marginTop: '-2px',
+                        marginBottom: '-2px',
+                        cursor: 'row-resize',
+                        backgroundColor: isDraggingVertical ? 'var(--accent-indigo)' : 'var(--card-border)',
+                        transition: isDraggingVertical ? 'none' : 'background-color 0.15s',
+                      }}
+                      onPointerDown={handleVerticalDividerPointerDown}
+                    >
+                      <div
+                        className="absolute inset-x-0 top-1/2 -translate-y-1/2 mx-auto rounded-full opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+                        style={{ height: '3px', width: '48px', backgroundColor: 'var(--accent-indigo)' }}
+                      />
+                    </div>
+
+                    <div
+                      className="min-h-0 flex flex-col overflow-y-auto border-t pt-2 space-y-2"
+                      style={{
+                        flex: `${100 - editorHeight} 1 0%`,
+                        minHeight: '100px',
+                        borderColor: 'var(--card-border)',
+                      }}
+                    >
+                      <h4 className="text-sm font-semibold text-gray-800 flex-shrink-0">Custom Test</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-shrink-0">
+                        <div>
+                          <label htmlFor="customInput" className="text-xs font-medium text-gray-700">
+                            Custom Input
+                          </label>
+                          <textarea
+                            id="customInput"
+                            value={customInput}
+                            onChange={(e) => setCustomInput(e.target.value)}
+                            rows={2}
+                            className="block w-full mt-1 rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-xs disabled:bg-gray-100 disabled:cursor-not-allowed"
+                            placeholder="e.g., [1, 5, 3, 9, 2]"
+                            disabled={!isQuestionActive}
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="expectedOutput" className="text-xs font-medium text-gray-700">
+                            Expected Output
+                          </label>
+                          <textarea
+                            id="expectedOutput"
+                            value={expectedOutput}
+                            onChange={(e) => setExpectedOutput(e.target.value)}
+                            rows={2}
+                            className="block w-full mt-1 rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-xs disabled:bg-gray-100 disabled:cursor-not-allowed"
+                            placeholder="e.g., 9"
+                            disabled={!isQuestionActive}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex-shrink-0 flex justify-end flex-wrap gap-2 border-t pt-3 mt-2" style={{ borderColor: 'var(--card-border)' }}>
+                        <button
+                          type="button"
+                          onClick={handleRunCode}
+                          disabled={isRunning || isRunningCustom || !isQuestionActive}
+                          className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
+                            isRunning || isRunningCustom || !isQuestionActive ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                          }`}
+                        >
+                          {isRunning ? (
+                            <>
+                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path
+                                  className="opacity-75"
+                                  fill="currentColor"
+                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                ></path>
+                              </svg>
+                              Running...
+                            </>
+                          ) : isQuestionActive ? (
+                            'Run Code'
+                          ) : (
+                            'Question Inactive'
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRunCodeWithCustomInput}
+                          disabled={isRunning || isRunningCustom || !isQuestionActive || !customInput.trim()}
+                          className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
+                            isRunning || isRunningCustom || !isQuestionActive || !customInput.trim() ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
+                          }`}
+                        >
+                          {isRunningCustom ? (
+                            <>
+                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path
+                                  className="opacity-75"
+                                  fill="currentColor"
+                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                ></path>
+                              </svg>
+                              Running Custom...
+                            </>
+                          ) : isQuestionActive ? (
+                            'Run with Custom Input'
+                          ) : (
+                            'Question Inactive'
+                          )}
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={isSubmitting || !isQuestionActive}
+                          className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
+                            isSubmitting || !isQuestionActive ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+                          }`}
+                        >
+                          {isSubmitting ? (
+                            <>
+                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path
+                                  className="opacity-75"
+                                  fill="currentColor"
+                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                ></path>
+                              </svg>
+                              Submitting...
+                            </>
+                          ) : isQuestionActive ? (
+                            'Submit Answer'
+                          ) : (
+                            'Question Inactive'
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                {(question.type === 'coding' || question.type === 'codingWithDriver') ? (
                 <>
-                  <div className="h-full">
+                  {!isFullscreen && (
+                  <div className="h-full min-h-[320px]">
                     <CodeEditor
+                      key={`${questionId}-${selectedLanguage}`}
                       value={answer}
                       onChange={setAnswer}
                       defaultValue={question.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || ''}
@@ -909,11 +1120,14 @@ const QuestionSubmission = () => {
                       isFillInTheBlanks={false}
                     />
                   </div>
+                  )}
                 </>
               ) : question.type === 'fillInTheBlanksCoding' ? (
                 <>
-                  <div className="h-full">
+                  {!isFullscreen && (
+                  <div className="h-full min-h-[320px]">
                     <CodeEditor
+                      key={`${questionId}-${selectedLanguage}`}
                       value={answer}
                       onChange={setAnswer}
                       defaultValue={question.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || question.codeSnippet || ''}
@@ -922,6 +1136,7 @@ const QuestionSubmission = () => {
                       isFillInTheBlanks={true}
                     />
                   </div>
+                  )}
                 </>
               ) : question.type === 'singleCorrectMcq' && question.options?.length > 0 ? (
                 <div className="space-y-4">
@@ -982,155 +1197,39 @@ const QuestionSubmission = () => {
                   />
                 </div>
               ) : null}
-                </div>
-
-                {/* Vertical Divider (Horizontal drag handle for resizing editor height) */}
-                {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding') && !isFullscreen && (
-                  <div
-                    className="flex-shrink-0 relative group"
-                    style={{ 
-                      height: '4px',
-                      cursor: 'row-resize',
-                      backgroundColor: isDraggingVertical ? 'var(--accent-indigo)' : 'var(--card-border)',
-                      transition: isDraggingVertical ? 'none' : 'background-color 0.2s'
-                    }}
-                    onMouseDown={handleVerticalDividerMouseDown}
-                  >
-                    {/* Visual indicator */}
-                    <div 
-                      className="absolute inset-x-0 top-1/2 transform -translate-y-1/2 h-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                      style={{ 
-                        backgroundColor: 'var(--accent-indigo)',
-                        height: '2px'
-                      }}
-                    />
-                    {/* Hover area (taller for easier grabbing) */}
-                    <div className="absolute inset-x-0 -top-1 -bottom-1" />
-                  </div>
-                )}
-
-                {/* Custom Input/Output for Coding Questions - Compact */}
-                {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding') && !isFullscreen && (
-                  <div className="flex-shrink-0 border-t pt-2 space-y-2" style={{ borderColor: 'var(--card-border)' }}>
-                    <h4 className="text-sm font-semibold text-gray-800">Custom Test</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div>
-                        <label htmlFor="customInput" className="text-xs font-medium text-gray-700">
-                          Custom Input
-                        </label>
-                        <textarea
-                          id="customInput"
-                          value={customInput}
-                          onChange={(e) => setCustomInput(e.target.value)}
-                          rows={2}
-                          className="block w-full mt-1 rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-xs disabled:bg-gray-100 disabled:cursor-not-allowed"
-                          placeholder="e.g., [1, 5, 3, 9, 2]"
-                          disabled={!isQuestionActive}
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="expectedOutput" className="text-xs font-medium text-gray-700">
-                          Expected Output
-                        </label>
-                        <textarea
-                          id="expectedOutput"
-                          value={expectedOutput}
-                          onChange={(e) => setExpectedOutput(e.target.value)}
-                          rows={2}
-                          className="block w-full mt-1 rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-xs disabled:bg-gray-100 disabled:cursor-not-allowed"
-                          placeholder="e.g., 9"
-                          disabled={!isQuestionActive}
-                        />
-                      </div>
+                {!isFullscreen &&
+                  question.type !== 'coding' &&
+                  question.type !== 'codingWithDriver' &&
+                  question.type !== 'fillInTheBlanksCoding' && (
+                    <div className="flex-shrink-0 flex justify-end border-t pt-3 mt-4" style={{ borderColor: 'var(--card-border)' }}>
+                      <button
+                        type="submit"
+                        disabled={isSubmitting || !isQuestionActive}
+                        className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
+                          isSubmitting || !isQuestionActive ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+                        }`}
+                      >
+                        {isSubmitting ? (
+                          <>
+                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path
+                                className="opacity-75"
+                                fill="currentColor"
+                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                              ></path>
+                            </svg>
+                            Submitting...
+                          </>
+                        ) : isQuestionActive ? (
+                          'Submit Answer'
+                        ) : (
+                          'Question Inactive'
+                        )}
+                      </button>
                     </div>
-                  </div>
-                )}
-
-                {/* Action Buttons - Compact */}
-                {!isFullscreen && (
-                  <div className="flex-shrink-0 flex justify-end space-x-2 border-t pt-3 mt-2" style={{ borderColor: 'var(--card-border)' }}>
-              {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding') && (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleRunCode}
-                    disabled={isRunning || isRunningCustom || !isQuestionActive}
-                    className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
-                      isRunning || isRunningCustom || !isQuestionActive ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
-                    }`}
-                  >
-                    {isRunning ? (
-                      <>
-                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path
-                            className="opacity-75"
-                            fill="currentColor"
-                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                          ></path>
-                        </svg>
-                        Running...
-                      </>
-                    ) : isQuestionActive ? (
-                      'Run Code'
-                    ) : (
-                      'Question Inactive'
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleRunCodeWithCustomInput}
-                    disabled={isRunning || isRunningCustom || !isQuestionActive || !customInput.trim()}
-                    className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
-                      isRunning || isRunningCustom || !isQuestionActive || !customInput.trim() ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
-                    }`}
-                  >
-                    {isRunningCustom ? (
-                      <>
-                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path
-                            className="opacity-75"
-                            fill="currentColor"
-                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                          ></path>
-                        </svg>
-                        Running Custom...
-                      </>
-                    ) : isQuestionActive ? (
-                      'Run with Custom Input'
-                    ) : (
-                      'Question Inactive'
-                    )}
-                  </button>
-                </>
-              )}
-                  <button
-                    type="submit"
-                    disabled={isSubmitting || !isQuestionActive}
-                    className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
-                      isSubmitting || !isQuestionActive ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
-                    }`}
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path
-                            className="opacity-75"
-                            fill="currentColor"
-                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                          ></path>
-                        </svg>
-                        Submitting...
-                      </>
-                    ) : isQuestionActive ? (
-                      'Submit Answer'
-                    ) : (
-                      'Question Inactive'
-                    )}
-                  </button>
-                  </div>
+                  )}
+                  </>
                 )}
               </form>
             </div>
@@ -1215,7 +1314,7 @@ const QuestionSubmission = () => {
                   Press <kbd className="px-1.5 py-0.5 bg-gray-100 rounded border border-gray-300 text-xs">ESC</kbd> or <kbd className="px-1.5 py-0.5 bg-gray-100 rounded border border-gray-300 text-xs">F11</kbd> to exit
                 </p>
               </div>
-              {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding') && (
+              {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding' || question.type === 'codingWithDriver') && (
                 <select
                   id="language-fullscreen"
                   value={selectedLanguage}
@@ -1275,8 +1374,9 @@ const QuestionSubmission = () => {
 
           {/* Fullscreen Editor */}
           <div className="flex-1 overflow-hidden p-4">
-            {question.type === 'coding' ? (
+            {(question.type === 'coding' || question.type === 'codingWithDriver') ? (
               <CodeEditor
+                key={`${questionId}-${selectedLanguage}-fullscreen`}
                 value={answer}
                 onChange={setAnswer}
                 defaultValue={question.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || ''}
@@ -1286,6 +1386,7 @@ const QuestionSubmission = () => {
               />
             ) : question.type === 'fillInTheBlanksCoding' ? (
               <CodeEditor
+                key={`${questionId}-${selectedLanguage}-fullscreen`}
                 value={answer}
                 onChange={setAnswer}
                 defaultValue={question.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || question.codeSnippet || ''}

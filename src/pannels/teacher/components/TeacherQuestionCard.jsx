@@ -4,7 +4,7 @@ import { Menu, Transition, Portal } from '@headlessui/react';
 import { publishQuestion, unpublishQuestion, disableQuestion, enableQuestion } from '../../../common/services/api';
 import parse from 'html-react-parser';
 
-const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
+const TeacherQuestionCard = ({ question, classId, onQuestionUpdate, summary }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const linkState = classId ? { classId } : undefined;
@@ -104,7 +104,7 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
                 <Menu.Item>
                   {({ active, close }) => (
                     <Link
-                      to={`/teacher/questions/${question._id}/view`}
+                      to={classId ? `/teacher/classes/${classId}/questions/${question._id}` : `/teacher/questions/${question._id}/view`}
                       state={linkState}
                       onClick={close}
                       className={`${active ? 'bg-indigo-50' : ''} group flex items-center px-4 py-2 text-sm`}
@@ -113,7 +113,7 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
                       <svg className="mr-3 h-5 w-5" style={{ color: 'var(--text-secondary)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                       </svg>
-                      View Question
+                      View & Attempt Question
                     </Link>
                   )}
                 </Menu.Item>
@@ -149,7 +149,7 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
                     </Link>
                   )}
                 </Menu.Item>
-                {question.type === 'coding' && (
+                {(question.type === 'coding' || question.type === 'codingWithDriver') && (
                   <Menu.Item>
                     {({ active, close }) => (
                       <Link
@@ -250,20 +250,41 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate }) => {
         </Menu>
       </div>
 
-      {/* Card Content */}
+      {/* Card Content - clickable to open question summary + attempt (menu has stopPropagation) */}
       <div className="p-4">
-        <h3 className="text-lg font-semibold pr-8 mb-2 line-clamp-2" 
-            style={{ color: 'var(--text-heading)' }}
-            dangerouslySetInnerHTML={{ __html: question.title || 'No Title' }} />
-        
-        <p className="text-xs mb-2 font-mono" 
-           style={{ color: 'var(--text-secondary)' }}>
-          ID: {question._id}
-        </p>
-        
-        <p className="text-sm mb-3 line-clamp-3" 
-           style={{ color: 'var(--text-secondary)' }}
-           dangerouslySetInnerHTML={{ __html: question.description || 'No Description' }} />
+        {classId ? (
+          <Link
+            to={`/teacher/classes/${classId}/questions/${question._id}`}
+            state={linkState}
+            className="block focus:outline-none focus:ring-0 cursor-pointer rounded-lg -m-1 p-1 hover:bg-gray-50/80 transition-colors"
+          >
+            <h3 className="text-lg font-semibold pr-8 mb-2 line-clamp-2" 
+                style={{ color: 'var(--text-heading)' }}
+                dangerouslySetInnerHTML={{ __html: question.title || 'No Title' }} />
+            <p className="text-xs mb-2 font-mono" style={{ color: 'var(--text-secondary)' }}>ID: {question._id}</p>
+            <p className="text-sm mb-3 line-clamp-3" style={{ color: 'var(--text-secondary)' }} dangerouslySetInnerHTML={{ __html: question.description || 'No Description' }} />
+            {summary && (
+              <div className="flex gap-3 mb-3 text-xs">
+                <span title="Attempted">📝 {summary.attempted || 0}</span>
+                <span className="text-green-600" title="Successful">✓ {summary.successful || 0}</span>
+                <span className="text-red-600" title="Unsuccessful">✗ {summary.unsuccessful || 0}</span>
+              </div>
+            )}
+          </Link>
+        ) : (
+          <>
+            <h3 className="text-lg font-semibold pr-8 mb-2 line-clamp-2" style={{ color: 'var(--text-heading)' }} dangerouslySetInnerHTML={{ __html: question.title || 'No Title' }} />
+            <p className="text-xs mb-2 font-mono" style={{ color: 'var(--text-secondary)' }}>ID: {question._id}</p>
+            <p className="text-sm mb-3 line-clamp-3" style={{ color: 'var(--text-secondary)' }} dangerouslySetInnerHTML={{ __html: question.description || 'No Description' }} />
+            {summary && (
+              <div className="flex gap-3 mb-3 text-xs">
+                <span title="Attempted">📝 {summary.attempted || 0}</span>
+                <span className="text-green-600" title="Successful">✓ {summary.successful || 0}</span>
+                <span className="text-red-600" title="Unsuccessful">✗ {summary.unsuccessful || 0}</span>
+              </div>
+            )}
+          </>
+        )}
         
         <div className="flex flex-wrap gap-2">
           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${

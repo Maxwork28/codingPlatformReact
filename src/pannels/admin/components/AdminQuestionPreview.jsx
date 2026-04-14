@@ -1,13 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { adminSearchQuestionsById, getDraftQuestion, teacherTestQuestion } from '../../../common/services/api';
 import QuestionStatement from '../../teacher/components/QuestionStatement';
 import CodeEditor from '../../student/components/CodeEditor';
 
+const DEFAULT_BACK = '/admin/questions';
+
 const AdminQuestionPreview = () => {
   const { questionId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const returnTo =
+    typeof location.state?.returnTo === 'string' && location.state.returnTo.startsWith('/admin')
+      ? location.state.returnTo
+      : DEFAULT_BACK;
+
+  const handleBack = () => {
+    navigate(returnTo);
+  };
   const [question, setQuestion] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -17,6 +27,17 @@ const AdminQuestionPreview = () => {
   const [isTestingSolution, setIsTestingSolution] = useState(false);
   const [testResults, setTestResults] = useState(null);
   const [activeTab, setActiveTab] = useState('preview');
+
+  useEffect(() => {
+    setActiveTab('preview');
+  }, [questionId]);
+
+  useEffect(() => {
+    const runnable = ['coding', 'fillInTheBlanksCoding', 'codingWithDriver'];
+    if (question && !runnable.includes(question.type)) {
+      setActiveTab('preview');
+    }
+  }, [question]);
 
   useEffect(() => {
     console.log('[AdminQuestionPreview] Component mounted/updated', { 
@@ -145,6 +166,31 @@ const AdminQuestionPreview = () => {
     fetchQuestion();
   }, [questionId]);
 
+  /** Ensure templateCode is visible as starterCode for previews (API may only persist template). */
+  const previewQuestion = useMemo(() => {
+    if (!question) return null;
+    if (question.type !== 'codingWithDriver' && question.type !== 'coding') return question;
+    const hasStarter = Array.isArray(question.starterCode) && question.starterCode.length > 0;
+    const hasTemplate = Array.isArray(question.templateCode) && question.templateCode.length > 0;
+    if (hasStarter || !hasTemplate) return question;
+    return {
+      ...question,
+      starterCode: question.templateCode.map((tc) => ({ language: tc.language, code: tc.code })),
+    };
+  }, [question]);
+
+  const questionTypeLabel = useMemo(() => {
+    const map = {
+      singleCorrectMcq: 'Single choice',
+      multipleCorrectMcq: 'Multiple choice',
+      fillInTheBlanks: 'Fill in the blanks',
+      fillInTheBlanksCoding: 'Fill in the blanks (code)',
+      coding: 'Coding',
+      codingWithDriver: 'Coding (LeetCode-style)',
+    };
+    return map[previewQuestion?.type] || previewQuestion?.type || '—';
+  }, [previewQuestion?.type]);
+
   if (loading) {
     console.log('[AdminQuestionPreview] Rendering loading state');
     return (
@@ -207,7 +253,7 @@ const AdminQuestionPreview = () => {
     );
   }
 
-  if (!question) {
+  if (!previewQuestion) {
     console.log('[AdminQuestionPreview] Rendering question not found state');
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -229,27 +275,28 @@ const AdminQuestionPreview = () => {
 
   // Test solution against test cases
   const handleTestSolution = async () => {
+    const q = previewQuestion;
     if (!solutionCode.trim()) {
       alert('Please write a solution first');
       return;
     }
-    if (!question.testCases || question.testCases.length === 0) {
+    if (!q.testCases || q.testCases.length === 0) {
       alert('Please add at least one test case');
       return;
     }
-    if (question.testCases.some(tc => !tc.input?.trim() || !tc.expectedOutput?.trim())) {
+    if (q.testCases.some(tc => !tc.input?.trim() || !tc.expectedOutput?.trim())) {
       alert('All test cases must have input and expected output');
       return;
     }
 
     // Check if question exists
-    if (!question._id) {
+    if (!q._id) {
       alert('Question ID is required to test the solution');
       return;
     }
 
     // Check if it's a coding question
-    if (question.type !== 'coding' && question.type !== 'fillInTheBlanksCoding') {
+    if (q.type !== 'coding' && q.type !== 'fillInTheBlanksCoding' && q.type !== 'codingWithDriver') {
       alert('Solution testing is only available for coding questions');
       return;
     }
@@ -258,15 +305,15 @@ const AdminQuestionPreview = () => {
     setTestResults(null);
 
     try {
-      console.log('[AdminQuestionPreview] Testing solution for question:', question._id);
+      console.log('[AdminQuestionPreview] Testing solution for question:', q._id);
       
       // Use the first classId if available, otherwise null (for testing purposes)
-      const fallbackClassId = classId || resolveClassId(question);
+      const fallbackClassId = classId || resolveClassId(q);
       const classIdForTest = fallbackClassId || null;
       
       // Call the teacher test API
       const response = await teacherTestQuestion(
-        question._id,
+        q._id,
         solutionCode,
         classIdForTest,
         solutionLanguage
@@ -301,8 +348,10 @@ const AdminQuestionPreview = () => {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="flex items-center mb-8">
         <button
-          onClick={() => navigate('/admin/questions')}
+          type="button"
+          onClick={handleBack}
           className="mr-4 p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200"
+          aria-label="Go back"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -328,9 +377,26 @@ const AdminQuestionPreview = () => {
             <strong>Preview Mode:</strong> This is how students will see this question. You can test the interface but submissions are disabled.
           </p>
         </div>
+
+        <div className="mb-6 flex flex-wrap gap-2 items-center text-sm">
+          <span className="px-3 py-1.5 rounded-full font-semibold bg-slate-800 text-white">{questionTypeLabel}</span>
+          {previewQuestion?.isDraft || previewQuestion?.status === 'draft' ? (
+            <span className="px-3 py-1.5 rounded-full font-medium bg-amber-100 text-amber-900">Draft</span>
+          ) : null}
+          {previewQuestion?.languages?.length > 0 && (
+            <span className="px-3 py-1.5 rounded-full font-medium bg-indigo-100 text-indigo-900">
+              Languages: {previewQuestion.languages.join(', ')}
+            </span>
+          )}
+          {previewQuestion?.testCases?.length > 0 && (
+            <span className="px-3 py-1.5 rounded-full font-medium bg-gray-100 text-gray-800">
+              {previewQuestion.testCases.length} test case{previewQuestion.testCases.length === 1 ? '' : 's'}
+            </span>
+          )}
+        </div>
         
         {/* Tabs Navigation - Only show Test Solution tab for coding questions */}
-        {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding') && (
+        {(previewQuestion.type === 'coding' || previewQuestion.type === 'fillInTheBlanksCoding' || previewQuestion.type === 'codingWithDriver') && (
           <div className="mb-6 border-b border-gray-200">
             <nav className="flex space-x-8" aria-label="Tabs">
               <button
@@ -359,11 +425,11 @@ const AdminQuestionPreview = () => {
         
         {/* Tab Content */}
         {activeTab === 'preview' && (
-        <QuestionStatement isPreview={true} question={question} />
+        <QuestionStatement isPreview={true} question={previewQuestion} />
         )}
         
         {/* Test Solution Tab - Only for coding questions */}
-        {activeTab === 'test' && (question.type === 'coding' || question.type === 'fillInTheBlanksCoding') && (
+        {activeTab === 'test' && (previewQuestion.type === 'coding' || previewQuestion.type === 'fillInTheBlanksCoding' || previewQuestion.type === 'codingWithDriver') && (
           <div>
             <h2 className="text-2xl font-bold text-gray-800 mb-4">Test Solution</h2>
             <div className="space-y-4">
@@ -374,7 +440,7 @@ const AdminQuestionPreview = () => {
                   onChange={(e) => setSolutionLanguage(e.target.value)}
                   className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
                 >
-                  {question.languages?.map(lang => (
+                  {previewQuestion.languages?.map(lang => (
                     <option key={lang} value={lang}>
                       {lang.charAt(0).toUpperCase() + lang.slice(1)}
                     </option>
@@ -402,7 +468,7 @@ const AdminQuestionPreview = () => {
                 <button
                   type="button"
                   onClick={handleTestSolution}
-                  disabled={isTestingSolution || !solutionCode.trim() || !question.testCases || question.testCases.length === 0 || !question._id}
+                  disabled={isTestingSolution || !solutionCode.trim() || !previewQuestion.testCases || previewQuestion.testCases.length === 0 || !previewQuestion._id}
                   className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
                   {isTestingSolution ? (

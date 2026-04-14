@@ -373,6 +373,16 @@ export const getParticipantStats = async (classId) => {
  * @param {string} classId - Class ID
  * @returns {Promise} Axios response
  */
+export const getQuestionSummary = async (classId) => {
+  try {
+    const response = await api.get(`/admin/classes/${classId}/question-summary`);
+    return response;
+  } catch (err) {
+    console.error('getQuestionSummary error', { classId, error: err.response?.data?.error });
+    throw err.response?.data?.error || 'Failed to fetch question summary';
+  }
+};
+
 export const getRunSubmitStats = async (classId) => {
   console.log('getRunSubmitStats called', { classId });
   try {
@@ -1055,7 +1065,7 @@ export const searchQuestions = async (filters = {}) => {
 export const viewSubmissionCode = async (submissionId) => {
   console.log('viewSubmissionCode called', { submissionId });
   try {
-    const response = await api.get(`/questions/submission/${submissionId}`);
+    const response = await api.get(`/questions/submissions/${submissionId}/code`);
     console.log('viewSubmissionCode success', { response: response.data });
     return response;
   } catch (err) {

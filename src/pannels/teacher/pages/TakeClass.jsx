@@ -3,12 +3,40 @@ import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { Menu, Transition, Portal } from '@headlessui/react';
+import parse from 'html-react-parser';
 import { getQuestionsByClass, teacherTestQuestion, teacherTestWithCustomInput, publishQuestion, unpublishQuestion, disableQuestion, enableQuestion } from '../../../common/services/api';
 import CodeEditor from '../../student/components/CodeEditor';
 import { DiJavascript } from "react-icons/di";
 import { FaJava,  FaPython, FaDatabase, FaBookOpen } from "react-icons/fa";
 import { GiNotebook } from "react-icons/gi";
 import { MdDataObject, MdDataArray } from "react-icons/md";
+
+const QUESTION_TYPE_LABELS = {
+  singleCorrectMcq: 'Single choice',
+  multipleCorrectMcq: 'Multiple choice',
+  fillInTheBlanks: 'Fill in the blanks',
+  fillInTheBlanksCoding: 'Fill in the blanks (code)',
+  coding: 'Coding',
+  codingWithDriver: 'Coding (LeetCode-style)',
+};
+
+const RUNNABLE_CODING_TYPES = ['coding', 'fillInTheBlanksCoding', 'codingWithDriver'];
+const FULL_CODE_EDITOR_TYPES = ['coding', 'codingWithDriver'];
+
+function stripHtml(html) {
+  if (!html) return '';
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  return doc.body.textContent || '';
+}
+
+function getCodeTemplateForLanguage(question, lang) {
+  if (!question || !lang) return '';
+  const fromTemplate = question.templateCode?.find((tc) => tc.language === lang);
+  if (fromTemplate?.code) return fromTemplate.code;
+  const fromStarter = question.starterCode?.find((sc) => sc.language === lang);
+  if (fromStarter?.code) return fromStarter.code;
+  return '';
+}
 
 const TakeClass = () => {
   const navigate = useNavigate();
@@ -20,6 +48,7 @@ const TakeClass = () => {
   const [selectedQuestion, setSelectedQuestion] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [code, setCode] = useState('');
+  const [fillInBlankLine, setFillInBlankLine] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('javascript');
   const [loading, setLoading] = useState(false);
   
@@ -85,6 +114,7 @@ const TakeClass = () => {
     setSelectedQuestion(null);
     setQuestions([]);
     setCode('');
+    setFillInBlankLine('');
   };
 
   const toggleSidebar = () => {
@@ -106,15 +136,26 @@ const TakeClass = () => {
   };
 
   const handleCopyCode = () => {
-    navigator.clipboard.writeText(code);
-    alert('Code copied to clipboard!');
+    const text =
+      selectedQuestion?.type === 'fillInTheBlanksCoding' ? fillInBlankLine : code;
+    navigator.clipboard.writeText(text || '');
+    alert(selectedQuestion?.type === 'fillInTheBlanksCoding' ? 'Blank line copied!' : 'Code copied to clipboard!');
   };
 
   const handleResetCode = () => {
-    if (selectedQuestion) {
-      const starterCode = selectedQuestion.starterCode?.find((sc) => sc.language === selectedLanguage);
-      setCode(starterCode?.code || selectedQuestion.codeSnippet || '// Write your code here...');
+    if (!selectedQuestion) return;
+    const q = selectedQuestion;
+    if (FULL_CODE_EDITOR_TYPES.includes(q.type)) {
+      setCode(getCodeTemplateForLanguage(q, selectedLanguage));
+    } else if (q.type === 'fillInTheBlanksCoding') {
+      setFillInBlankLine('');
     }
+  };
+
+  const getTeacherTestAnswer = () => {
+    if (!selectedQuestion) return '';
+    if (selectedQuestion.type === 'fillInTheBlanksCoding') return fillInBlankLine;
+    return code;
   };
 
   // Teacher-specific testing handlers
@@ -124,8 +165,18 @@ const TakeClass = () => {
       return;
     }
 
-    if (!code || code.trim() === '') {
-      alert('Please write some code to test');
+    if (!RUNNABLE_CODING_TYPES.includes(selectedQuestion.type)) {
+      alert('Run Code is only available for coding and fill-in-the-blanks (code) questions.');
+      return;
+    }
+
+    const answerPayload = getTeacherTestAnswer();
+    if (!answerPayload || answerPayload.trim() === '') {
+      alert(
+        selectedQuestion.type === 'fillInTheBlanksCoding'
+          ? 'Enter the line of code for the blank'
+          : 'Please write some code to test'
+      );
       return;
     }
 
@@ -141,7 +192,7 @@ const TakeClass = () => {
 
       const response = await teacherTestQuestion(
         selectedQuestion._id,
-        code,
+        answerPayload,
         selectedClass._id,
         selectedLanguage
       );
@@ -177,8 +228,18 @@ const TakeClass = () => {
       return;
     }
 
-    if (!code || code.trim() === '') {
-      alert('Please write some code to test');
+    if (!RUNNABLE_CODING_TYPES.includes(selectedQuestion.type)) {
+      alert('Custom run is only available for coding and fill-in-the-blanks (code) questions.');
+      return;
+    }
+
+    const answerPayload = getTeacherTestAnswer();
+    if (!answerPayload || answerPayload.trim() === '') {
+      alert(
+        selectedQuestion.type === 'fillInTheBlanksCoding'
+          ? 'Enter the line of code for the blank'
+          : 'Please write some code to test'
+      );
       return;
     }
 
@@ -201,7 +262,7 @@ const TakeClass = () => {
 
       const response = await teacherTestWithCustomInput(
         selectedQuestion._id,
-        code,
+        answerPayload,
         selectedClass._id,
         selectedLanguage,
         customInput,
@@ -467,13 +528,25 @@ const TakeClass = () => {
     }
   }, [selectedClass]);
 
-  // Update code when question or language changes
+  // Sync editor payload when question or language changes (type-aware)
   useEffect(() => {
-    if (selectedQuestion) {
-      const starterCode = selectedQuestion.starterCode?.find((sc) => sc.language === selectedLanguage);
-      setCode(starterCode?.code || selectedQuestion.codeSnippet || '// Write your code here...');
+    if (!selectedQuestion) return;
+    const q = selectedQuestion;
+    if (FULL_CODE_EDITOR_TYPES.includes(q.type)) {
+      setCode(getCodeTemplateForLanguage(q, selectedLanguage));
+    } else if (q.type === 'fillInTheBlanksCoding') {
+      setFillInBlankLine('');
+    } else {
+      setCode('');
+      setFillInBlankLine('');
     }
   }, [selectedQuestion, selectedLanguage]);
+
+  useEffect(() => {
+    if (selectedQuestion && !RUNNABLE_CODING_TYPES.includes(selectedQuestion.type) && isFullscreen) {
+      setIsFullscreen(false);
+    }
+  }, [selectedQuestion, isFullscreen]);
 
   // If no class is selected, show class selection screen
   if (!selectedClass) {
@@ -542,6 +615,11 @@ const TakeClass = () => {
       </div>
     );
   }
+
+  const questionType = selectedQuestion?.type;
+  const isRunnableCoding = Boolean(questionType && RUNNABLE_CODING_TYPES.includes(questionType));
+  const showFullCodeEditor = Boolean(questionType && FULL_CODE_EDITOR_TYPES.includes(questionType));
+  const isFillInBlanksCoding = questionType === 'fillInTheBlanksCoding';
 
   // Main layout when class is selected
   return (
@@ -663,6 +741,7 @@ const TakeClass = () => {
                         <button
                           onClick={() => {
                             setSelectedQuestion(q);
+                            setSelectedLanguage(q.languages?.[0] || 'javascript');
                             setShowQuestionsList(false);
                           }}
                           className="flex-1 flex items-start gap-2 text-left"
@@ -682,7 +761,7 @@ const TakeClass = () => {
                               ID: {q._id}
                             </p>
                             <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
-                              {q.difficulty} • {q.type}
+                              {q.difficulty} • {QUESTION_TYPE_LABELS[q.type] || q.type}
                             </p>
                           </div>
                         </button>
@@ -935,6 +1014,9 @@ const TakeClass = () => {
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">
                     {selectedQuestion.maxPoints || 10} points
                   </span>
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800">
+                    {QUESTION_TYPE_LABELS[selectedQuestion.type] || selectedQuestion.type}
+                  </span>
                   {(() => {
                     // Get class-specific settings
                     const classEntry = selectedQuestion.classes?.find(
@@ -1066,125 +1148,276 @@ const TakeClass = () => {
                 borderColor: 'var(--card-border)'
               }}
             >
-              {/* Editor Controls */}
+              {/* Editor Controls (type-aware) */}
               <div className="border-b p-3 sm:p-4 flex-shrink-0" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
-                    <div className="w-full sm:w-auto">
-                      <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                        Language
-                      </label>
-                      <select
-                        value={selectedLanguage}
-                        onChange={(e) => setSelectedLanguage(e.target.value)}
-                        className="w-full sm:w-auto rounded-lg border shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-1.5"
-                        style={{ 
-                          borderColor: 'var(--card-border)', 
-                          backgroundColor: 'var(--background-light)', 
-                          color: 'var(--text-primary)' 
-                        }}
-                      >
-                        {selectedQuestion.languages?.map((lang) => (
-                          <option key={lang} value={lang}>
-                            {lang.charAt(0).toUpperCase() + lang.slice(1)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="hidden sm:flex items-center gap-3">
-                      <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                        Time: 2s
-                      </span>
-                      <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                        Memory: 256MB
-                      </span>
-                    </div>
+                    {isRunnableCoding && selectedQuestion.languages?.length > 0 ? (
+                      <div className="w-full sm:w-auto">
+                        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                          Language
+                        </label>
+                        <select
+                          value={selectedLanguage}
+                          onChange={(e) => setSelectedLanguage(e.target.value)}
+                          className="w-full sm:w-auto rounded-lg border shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-1.5"
+                          style={{ 
+                            borderColor: 'var(--card-border)', 
+                            backgroundColor: 'var(--background-light)', 
+                            color: 'var(--text-primary)' 
+                          }}
+                        >
+                          {selectedQuestion.languages?.map((lang) => (
+                            <option key={lang} value={lang}>
+                              {lang.charAt(0).toUpperCase() + lang.slice(1)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : !isRunnableCoding ? (
+                      <div>
+                        <p className="text-xs font-semibold" style={{ color: 'var(--text-heading)' }}>
+                          {QUESTION_TYPE_LABELS[questionType] || questionType}
+                        </p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                          Student-style preview — Run Code is only for coding questions
+                        </p>
+                      </div>
+                    ) : null}
+                    {isRunnableCoding && (
+                      <div className="hidden sm:flex items-center gap-3">
+                        <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                          Time: {selectedQuestion.timeLimit ?? 2}s
+                        </span>
+                        <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                          Memory: {selectedQuestion.memoryLimit ?? 256}MB
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                    <button
-                      type="button"
-                      onClick={toggleFullscreen}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all duration-200 hover:shadow"
-                      style={{ 
-                        backgroundColor: 'var(--card-white)', 
-                        borderColor: 'var(--card-border)', 
-                        color: 'var(--text-primary)' 
-                      }}
-                      title="Fullscreen (F11)"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={handleResetCode}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all duration-200 hover:shadow"
-                      style={{ 
-                        backgroundColor: 'var(--card-white)', 
-                        borderColor: 'var(--card-border)', 
-                        color: 'var(--text-primary)' 
-                      }}
-                    >
-                      Reset
-                    </button>
-                    <button
-                      onClick={handleCopyCode}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all duration-200 hover:shadow"
-                      style={{ 
-                        backgroundColor: 'var(--card-white)', 
-                        borderColor: 'var(--card-border)', 
-                        color: 'var(--text-primary)' 
-                      }}
-                    >
-                      Copy
-                    </button>
+                    {(showFullCodeEditor || isFillInBlanksCoding) && (
+                      <button
+                        type="button"
+                        onClick={toggleFullscreen}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all duration-200 hover:shadow"
+                        style={{ 
+                          backgroundColor: 'var(--card-white)', 
+                          borderColor: 'var(--card-border)', 
+                          color: 'var(--text-primary)' 
+                        }}
+                        title="Fullscreen (F11)"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                        </svg>
+                      </button>
+                    )}
+                    {isRunnableCoding && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleResetCode}
+                          className="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all duration-200 hover:shadow"
+                          style={{ 
+                            backgroundColor: 'var(--card-white)', 
+                            borderColor: 'var(--card-border)', 
+                            color: 'var(--text-primary)' 
+                          }}
+                        >
+                          Reset
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCopyCode}
+                          className="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all duration-200 hover:shadow"
+                          style={{ 
+                            backgroundColor: 'var(--card-white)', 
+                            borderColor: 'var(--card-border)', 
+                            color: 'var(--text-primary)' 
+                          }}
+                        >
+                          Copy
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Code Editor Section */}
-              <div className="flex-1 flex flex-col overflow-hidden p-4">
-                {/* Code Editor - Dynamic height */}
-                <div 
-                  className="overflow-hidden transition-all duration-150"
-                  style={{ height: `${editorHeight}%` }}
-                >
-                  <CodeEditor
-                    value={code}
-                    onChange={setCode}
-                    defaultValue={selectedQuestion.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || ''}
-                    language={selectedLanguage}
-                    disabled={false}
-                    isFillInTheBlanks={false}
-                  />
-                </div>
-
-                {/* Vertical Divider */}
-                <div
-                  className="flex-shrink-0 relative group"
-                  style={{ 
-                    height: '4px',
-                    cursor: 'row-resize',
-                    backgroundColor: isDraggingVertical ? 'var(--accent-indigo)' : 'var(--card-border)',
-                    transition: isDraggingVertical ? 'none' : 'background-color 0.2s'
-                  }}
-                  onMouseDown={handleVerticalDividerMouseDown}
-                >
-                  <div 
-                    className="absolute inset-x-0 top-1/2 transform -translate-y-1/2 h-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                    style={{ 
-                      backgroundColor: 'var(--accent-indigo)',
-                      height: '2px'
-                    }}
-                  />
-                  <div className="absolute inset-x-0 -top-1 -bottom-1" />
-                </div>
+              {/* Code / preview section */}
+              <div className="flex-1 flex flex-col overflow-hidden p-4 min-h-0">
+                {isRunnableCoding ? (
+                  <>
+                    {showFullCodeEditor && (
+                      <>
+                        {questionType === 'codingWithDriver' && (
+                          <div
+                            className="mb-3 text-xs rounded-lg px-3 py-2 border"
+                            style={{
+                              backgroundColor: 'rgba(139, 92, 246, 0.08)',
+                              borderColor: 'var(--card-border)',
+                              color: 'var(--text-primary)',
+                            }}
+                          >
+                            <strong style={{ color: 'var(--text-heading)' }}>LeetCode-style:</strong>{' '}
+                            Complete the stub below. Your solution is merged with the hidden driver for judging.
+                          </div>
+                        )}
+                        <div
+                          className="overflow-hidden transition-all duration-150"
+                          style={{ height: `${editorHeight}%` }}
+                        >
+                          <CodeEditor
+                            value={code}
+                            onChange={setCode}
+                            defaultValue={getCodeTemplateForLanguage(selectedQuestion, selectedLanguage)}
+                            language={selectedLanguage}
+                            disabled={false}
+                            isFillInTheBlanks={false}
+                          />
+                        </div>
+                        <div
+                          className="flex-shrink-0 relative group"
+                          style={{ 
+                            height: '4px',
+                            cursor: 'row-resize',
+                            backgroundColor: isDraggingVertical ? 'var(--accent-indigo)' : 'var(--card-border)',
+                            transition: isDraggingVertical ? 'none' : 'background-color 0.2s'
+                          }}
+                          onMouseDown={handleVerticalDividerMouseDown}
+                        >
+                          <div 
+                            className="absolute inset-x-0 top-1/2 transform -translate-y-1/2 h-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                            style={{ 
+                              backgroundColor: 'var(--accent-indigo)',
+                              height: '2px'
+                            }}
+                          />
+                          <div className="absolute inset-x-0 -top-1 -bottom-1" />
+                        </div>
+                      </>
+                    )}
+                    {isFillInBlanksCoding && (
+                      <>
+                        <div
+                          className="flex flex-col min-h-0 overflow-hidden"
+                          style={{ height: `${editorHeight}%` }}
+                        >
+                          <h4 className="text-xs font-semibold mb-2 shrink-0" style={{ color: 'var(--text-heading)' }}>
+                            Template (line below replaces <code className="font-mono">// FILL_IN_THE_BLANK</code>)
+                          </h4>
+                          <pre
+                            className="text-xs mb-3 p-3 rounded-lg overflow-auto shrink-0 max-h-[45%] font-mono border leading-relaxed"
+                            style={{
+                              backgroundColor: 'var(--background-light)',
+                              borderColor: 'var(--card-border)',
+                              color: 'var(--text-primary)',
+                            }}
+                          >
+                            {stripHtml(selectedQuestion.codeSnippet || '') || '(No snippet)'}
+                          </pre>
+                          <label className="text-xs font-medium shrink-0" style={{ color: 'var(--text-secondary)' }}>
+                            Line for the blank
+                          </label>
+                          <textarea
+                            value={fillInBlankLine}
+                            onChange={(e) => setFillInBlankLine(e.target.value)}
+                            className="mt-1 flex-1 min-h-[96px] w-full rounded-lg border shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-xs p-2 font-mono"
+                            style={{ 
+                              borderColor: 'var(--card-border)', 
+                              backgroundColor: 'var(--card-white)', 
+                              color: 'var(--text-primary)' 
+                            }}
+                            placeholder="e.g. return a + b;"
+                          />
+                        </div>
+                        <div
+                          className="flex-shrink-0 relative group"
+                          style={{ 
+                            height: '4px',
+                            cursor: 'row-resize',
+                            backgroundColor: isDraggingVertical ? 'var(--accent-indigo)' : 'var(--card-border)',
+                            transition: isDraggingVertical ? 'none' : 'background-color 0.2s'
+                          }}
+                          onMouseDown={handleVerticalDividerMouseDown}
+                        >
+                          <div 
+                            className="absolute inset-x-0 top-1/2 transform -translate-y-1/2 h-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                            style={{ 
+                              backgroundColor: 'var(--accent-indigo)',
+                              height: '2px'
+                            }}
+                          />
+                          <div className="absolute inset-x-0 -top-1 -bottom-1" />
+                        </div>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      This question is not executed in the sandbox here. Use <strong>Preview as Student</strong> in the ⋮ menu for the full interactive view.
+                    </p>
+                    {questionType === 'singleCorrectMcq' && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-heading)' }}>
+                          Options (single correct)
+                        </p>
+                        {selectedQuestion.options?.map((option, index) => (
+                          <div
+                            key={index}
+                            className="flex items-start gap-3 p-3 rounded-lg border"
+                            style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--card-white)' }}
+                          >
+                            <span className="text-sm font-semibold shrink-0" style={{ color: 'var(--text-primary)' }}>
+                              {(index + 10).toString(36).toUpperCase()}.
+                            </span>
+                            <div className="text-sm prose prose-sm max-w-none flex-1" style={{ color: 'var(--text-primary)' }}>
+                              {parse(option || '')}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {questionType === 'multipleCorrectMcq' && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-heading)' }}>
+                          Options (multiple correct)
+                        </p>
+                        {selectedQuestion.options?.map((option, index) => (
+                          <div
+                            key={index}
+                            className="flex items-start gap-3 p-3 rounded-lg border"
+                            style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--card-white)' }}
+                          >
+                            <span className="text-sm font-semibold shrink-0" style={{ color: 'var(--text-primary)' }}>
+                              {(index + 10).toString(36).toUpperCase()}.
+                            </span>
+                            <div className="text-sm prose prose-sm max-w-none flex-1" style={{ color: 'var(--text-primary)' }}>
+                              {parse(option || '')}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {questionType === 'fillInTheBlanks' && (
+                      <div
+                        className="p-3 rounded-lg border text-sm"
+                        style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--background-light)', color: 'var(--text-primary)' }}
+                      >
+                        Students type a short answer in a text field (no code execution).
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Custom Test & Actions */}
-                <div className="flex-shrink-0 overflow-y-auto border-t pt-3 space-y-3" style={{ borderColor: 'var(--card-border)' }}>
+                <div className="flex-shrink-0 overflow-y-auto border-t pt-3 space-y-3 mt-auto" style={{ borderColor: 'var(--card-border)' }}>
                   <h4 className="text-sm font-semibold" style={{ color: 'var(--text-heading)' }}>
-                    Test & Present
+                    {isRunnableCoding ? 'Test & Present' : 'Present'}
                   </h4>
+                  {isRunnableCoding && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
@@ -1221,45 +1454,50 @@ const TakeClass = () => {
                       />
                     </div>
                   </div>
+                  )}
 
                   {/* Action Buttons */}
-                  <div className="flex justify-end space-x-2 border-t pt-3" style={{ borderColor: 'var(--card-border)' }}>
-                    <button
-                      type="button"
-                      onClick={handleRunCode}
-                      disabled={loading}
-                      className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 ${
-                        loading ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
-                      }`}
-                    >
-                      {loading ? (
-                        <>
-                          <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                          Running...
-                        </>
-                      ) : 'Run Code'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleRunWithCustomInput}
-                      disabled={!customInput.trim() || loading}
-                      className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-200 ${
-                        customInput.trim() && !loading ? 'bg-green-600 hover:bg-green-700 focus:ring-green-500' : 'bg-gray-400 cursor-not-allowed'
-                      }`}
-                    >
-                      {loading ? (
-                        <>
-                          <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                          Running...
-                        </>
-                      ) : 'Run Custom'}
-                    </button>
+                  <div className="flex flex-wrap justify-end gap-2 border-t pt-3" style={{ borderColor: 'var(--card-border)' }}>
+                    {isRunnableCoding && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleRunCode}
+                          disabled={loading}
+                          className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 ${
+                            loading ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                          }`}
+                        >
+                          {loading ? (
+                            <>
+                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Running...
+                            </>
+                          ) : isFillInBlanksCoding ? 'Run tests' : 'Run Code'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRunWithCustomInput}
+                          disabled={!customInput.trim() || loading}
+                          className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-200 ${
+                            customInput.trim() && !loading ? 'bg-green-600 hover:bg-green-700 focus:ring-green-500' : 'bg-gray-400 cursor-not-allowed'
+                          }`}
+                        >
+                          {loading ? (
+                            <>
+                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Running...
+                            </>
+                          ) : 'Run Custom'}
+                        </button>
+                      </>
+                    )}
                     <button
                       type="button"
                       onClick={handlePresentSolution}
@@ -1273,7 +1511,7 @@ const TakeClass = () => {
                   </div>
 
                   {/* Results */}
-                  {testResults && (
+                  {isRunnableCoding && testResults && (
                     <div className={`mt-4 p-4 rounded-lg border backdrop-blur-sm ${
                       testResults.error ? 'bg-red-50/80' : testResults.isCorrect || testResults.passed ? 'bg-green-50/80' : 'bg-yellow-50/80'
                     }`} style={{ borderColor: 'var(--card-border)' }}>
@@ -1409,35 +1647,37 @@ const TakeClass = () => {
         )}
       </div>
 
-      {/* Fullscreen Editor Overlay */}
-      {isFullscreen && selectedQuestion && (
+      {/* Fullscreen Editor Overlay (coding + fill-in-blanks coding only) */}
+      {isFullscreen && selectedQuestion && (showFullCodeEditor || isFillInBlanksCoding) && (
         <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: 'var(--background-content)' }}>
           <div className="flex-shrink-0 border-b p-4 flex items-center justify-between" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
               <div>
                 <h3 className="text-lg font-semibold" style={{ color: 'var(--text-heading)' }}>
-                  Code Editor - Fullscreen
+                  {isFillInBlanksCoding ? 'Fill-in code — Fullscreen' : 'Code Editor — Fullscreen'}
                 </h3>
                 <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
                   Press <kbd className="px-1.5 py-0.5 bg-gray-100 rounded border border-gray-300 text-xs">ESC</kbd> or <kbd className="px-1.5 py-0.5 bg-gray-100 rounded border border-gray-300 text-xs">F11</kbd> to exit
                 </p>
               </div>
-              <select
-                value={selectedLanguage}
-                onChange={(e) => setSelectedLanguage(e.target.value)}
-                className="rounded-lg border shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-1.5"
-                style={{ 
-                  borderColor: 'var(--card-border)', 
-                  backgroundColor: 'var(--background-light)', 
-                  color: 'var(--text-primary)' 
-                }}
-              >
-                {selectedQuestion.languages?.map((lang) => (
-                  <option key={lang} value={lang}>
-                    {lang.charAt(0).toUpperCase() + lang.slice(1)}
-                  </option>
-                ))}
-              </select>
+              {isRunnableCoding && selectedQuestion.languages?.length > 0 && (
+                <select
+                  value={selectedLanguage}
+                  onChange={(e) => setSelectedLanguage(e.target.value)}
+                  className="rounded-lg border shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-1.5"
+                  style={{ 
+                    borderColor: 'var(--card-border)', 
+                    backgroundColor: 'var(--background-light)', 
+                    color: 'var(--text-primary)' 
+                  }}
+                >
+                  {selectedQuestion.languages?.map((lang) => (
+                    <option key={lang} value={lang}>
+                      {lang.charAt(0).toUpperCase() + lang.slice(1)}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -1445,7 +1685,7 @@ const TakeClass = () => {
                 onClick={handleRunCode}
                 className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
-                Run Code
+                {isFillInBlanksCoding ? 'Run tests' : 'Run Code'}
               </button>
               <button
                 type="button"
@@ -1471,15 +1711,42 @@ const TakeClass = () => {
               </button>
             </div>
           </div>
-          <div className="flex-1 overflow-hidden p-4">
-            <CodeEditor
-              value={code}
-              onChange={setCode}
-              defaultValue={selectedQuestion.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || ''}
-              language={selectedLanguage}
-              disabled={false}
-              isFillInTheBlanks={false}
-            />
+          <div className="flex-1 overflow-hidden p-4 min-h-0 flex flex-col">
+            {showFullCodeEditor && (
+              <CodeEditor
+                value={code}
+                onChange={setCode}
+                defaultValue={getCodeTemplateForLanguage(selectedQuestion, selectedLanguage)}
+                language={selectedLanguage}
+                disabled={false}
+                isFillInTheBlanks={false}
+              />
+            )}
+            {isFillInBlanksCoding && (
+              <div className="flex flex-col flex-1 min-h-0 gap-3">
+                <pre
+                  className="text-xs p-3 rounded-lg overflow-auto font-mono border leading-relaxed shrink-0 max-h-[40%]"
+                  style={{
+                    backgroundColor: 'var(--background-light)',
+                    borderColor: 'var(--card-border)',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  {stripHtml(selectedQuestion.codeSnippet || '') || '(No snippet)'}
+                </pre>
+                <textarea
+                  value={fillInBlankLine}
+                  onChange={(e) => setFillInBlankLine(e.target.value)}
+                  className="flex-1 min-h-[120px] w-full rounded-lg border shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-xs p-2 font-mono"
+                  style={{ 
+                    borderColor: 'var(--card-border)', 
+                    backgroundColor: 'var(--card-white)', 
+                    color: 'var(--text-primary)' 
+                  }}
+                  placeholder="Line for // FILL_IN_THE_BLANK"
+                />
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -217,7 +217,7 @@ const ClassEdit = () => {
                     />
                     <label className="ml-3 text-sm text-gray-800 flex-1">
                       <span className="font-medium">{q.title}</span>
-                      {q.type === 'coding' && (
+                      {(q.type === 'coding' || q.type === 'codingWithDriver') && (
                         <span className="ml-2 text-xs text-gray-500">
                           ({q.languages?.join(', ') || 'No languages'})
                         </span>

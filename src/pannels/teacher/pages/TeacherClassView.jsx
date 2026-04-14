@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useCallback, Fragment } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { io } from 'socket.io-client';
+import { API_BASE_URL } from '../../../common/constants';
 import { useSelector } from 'react-redux';
 import { Tab, Menu, Transition, Dialog, Disclosure, Combobox } from '@headlessui/react';
 import { CheckIcon, ChevronUpDownIcon } from '@heroicons/react/20/solid';
@@ -34,6 +36,7 @@ import {
   getQuestionPerspectiveReport,
   adminSearchQuestionsById,
   getClassStudents,
+  getQuestionSummary,
 } from '../../../common/services/api';
 import TeacherQuestionCard from '../components/TeacherQuestionCard';
 
@@ -54,7 +57,10 @@ const TeacherClassView = () => {
   const [availableQuestions, setAvailableQuestions] = useState([]);
   const [filteredQuestions, setFilteredQuestions] = useState([]);
   const [submissionCode, setSubmissionCode] = useState('');
+  const [submissionViewData, setSubmissionViewData] = useState(null); // { code, language, questionId, classId, isCorrect, status }
   const [questionReport, setQuestionReport] = useState(null);
+  const [questionSummary, setQuestionSummary] = useState([]);
+  const [analyticsStudentFilter, setAnalyticsStudentFilter] = useState('all'); // all | correct | incorrect | inactive | active
   const [loading, setLoading] = useState(true);
   const [reportLoading, setReportLoading] = useState(false);
   const [error, setError] = useState('');
@@ -93,6 +99,9 @@ const TeacherClassView = () => {
   // Student modal
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [studentModalSubmissionData, setStudentModalSubmissionData] = useState(null);
+  const [studentModalSubmissionLoading, setStudentModalSubmissionLoading] = useState(false);
+  const [studentModalLoadingSubmissionId, setStudentModalLoadingSubmissionId] = useState(null);
   
   // Tab state - persist selected tab
   const [selectedTabIndex, setSelectedTabIndex] = useState(0);
@@ -196,11 +205,25 @@ const TeacherClassView = () => {
   );
   const assignmentTotalPages = Math.ceil(filteredAssignments.length / assignmentItemsPerPage);
 
+  // Filter students by analytics filter (correct/incorrect/inactive/active)
+  const studentsByAnalyticsFilter = analyticsStudentFilter === 'all'
+    ? leaderboard
+    : leaderboard.filter((s) => {
+        const correct = s.correctAttempts || 0;
+        const total = s.totalAttempts || s.totalSubmissions || 0;
+        const status = (s.activityStatus || 'inactive').toLowerCase();
+        if (analyticsStudentFilter === 'correct') return correct > 0;
+        if (analyticsStudentFilter === 'incorrect') return total > 0 && correct === 0;
+        if (analyticsStudentFilter === 'inactive') return total === 0 || status === 'inactive';
+        if (analyticsStudentFilter === 'active') return status === 'active';
+        return true;
+      });
+
   // Filter students based on search
   const filteredStudents =
     studentSearch === ''
-      ? leaderboard
-      : leaderboard.filter((studentData) => {
+      ? studentsByAnalyticsFilter
+      : studentsByAnalyticsFilter.filter((studentData) => {
           const studentInfo = studentData.studentId || {};
           const searchLower = studentSearch.toLowerCase();
           return (
@@ -354,6 +377,15 @@ const TeacherClassView = () => {
         setAvailableQuestions(userQuestions);
         setFilteredQuestions(userQuestions); // Initialize filteredQuestions with user's questions
         setAllAvailableQuestions(allQuestionsResponse.data.questions);
+
+        // Fetch question-wise summary
+        try {
+          const summaryRes = await getQuestionSummary(classId);
+          setQuestionSummary(summaryRes.data.summaries || []);
+        } catch (err) {
+          console.error('[TeacherClassView] Failed to fetch question summary:', err.message);
+          setQuestionSummary([]);
+        }
       } else {
         setError('Class not found or you are not authorized');
       }
@@ -370,6 +402,27 @@ const TeacherClassView = () => {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Real-time analytics: listen for updates
+  useEffect(() => {
+    if (!classId) return;
+    const socket = io(API_BASE_URL, { transports: ['websocket', 'polling'] });
+    socket.emit('joinClass', classId);
+    socket.on('analyticsUpdated', ({ classId: updatedClassId }) => {
+      if (updatedClassId === classId) fetchData(true);
+    });
+    socket.on('codeRun', () => fetchData(true));
+    socket.on('submissionUpdate', () => fetchData(true));
+    socket.on('studentBlockStatusUpdated', () => fetchData(true));
+    return () => {
+      socket.off('analyticsUpdated');
+      socket.off('codeRun');
+      socket.off('submissionUpdate');
+      socket.off('studentBlockStatusUpdated');
+      socket.emit('leaveClass', classId);
+      socket.disconnect();
+    };
+  }, [classId, fetchData]);
 
   // Debug: Log when availableQuestions changes
   useEffect(() => {
@@ -587,12 +640,29 @@ const TeacherClassView = () => {
     }
   };
 
-  const handleViewSubmissionCode = async (submissionId) => {
+  const handleViewSubmissionCode = async (sid) => {
+    setError('');
+    setSubmissionCode('');
+    setSubmissionViewData(null);
     try {
-      const response = await viewSubmissionCode(classId, submissionId);
-      setSubmissionCode(response.data.code || 'No code available');
+      const response = await viewSubmissionCode(sid);
+      const d = response.data;
+      setSubmissionCode(d.code ?? 'No code available');
+      setSubmissionViewData({
+        code: d.code,
+        language: d.language || 'javascript',
+        questionId: d.questionId,
+        classId: d.classId,
+        isCorrect: Boolean(d.isCorrect),
+        status: d.status,
+        passedTestCases: d.passedTestCases,
+        totalTestCases: d.totalTestCases,
+        studentName: d.studentName,
+        questionTitle: d.questionTitle,
+      });
     } catch (err) {
-      setError(err.error || 'Failed to fetch submission code');
+      setError(err.response?.data?.error || err.error || 'Failed to fetch submission code');
+      setSubmissionViewData(null);
     }
   };
 
@@ -604,67 +674,232 @@ const TeacherClassView = () => {
   const closeStudentModal = () => {
     setSelectedStudent(null);
     setIsModalOpen(false);
+    setStudentModalSubmissionData(null);
   };
 
-  // Component: Student Details Modal
+  const handleViewStudentSubmission = async (submissionIdVal) => {
+    if (!submissionIdVal) return;
+    setStudentModalLoadingSubmissionId(submissionIdVal);
+    setStudentModalSubmissionLoading(true);
+    setStudentModalSubmissionData(null);
+    try {
+      const response = await viewSubmissionCode(submissionIdVal);
+      setStudentModalSubmissionData(response.data);
+    } catch (err) {
+      setStudentModalSubmissionData({ error: err.response?.data?.error || err.message || 'Failed to load submission' });
+    } finally {
+      setStudentModalSubmissionLoading(false);
+      setStudentModalLoadingSubmissionId(null);
+    }
+  };
+
+  // Component: Student Details Modal (tabbed: Overview, Questions Attempted with answers)
   const StudentDetailsModal = () => {
     if (!selectedStudent) return null;
 
-    // Handle both data structures
     const studentInfo = selectedStudent.studentId || selectedStudent.student || {};
-    const totalRuns = selectedStudent.totalRuns || 0;
-    const totalSubmissions = selectedStudent.totalSubmissions || 0;
+    const totalRuns = selectedStudent.totalRuns ?? selectedStudent.totalSubmits ?? 0;
+    const totalSubmissions = selectedStudent.totalSubmissions ?? selectedStudent.totalSubmits ?? 0;
     const activityStatus = selectedStudent.activityStatus || 'N/A';
     const correctAttempts = selectedStudent.correctAttempts || 0;
     const wrongAttempts = selectedStudent.wrongAttempts || 0;
+    const highestScores = selectedStudent.highestScores || [];
+    const attempts = selectedStudent.attempts || [];
+
+    const getQuestionTitle = (qId) => {
+      const q = questions.find((qu) => String(qu._id) === String(qId));
+      return q?.title ? String(q.title).replace(/<[^>]*>/g, '').slice(0, 60) : `Question ${String(qId).slice(-6)}`;
+    };
+
+    const entriesToShow = highestScores.length > 0
+      ? highestScores.map((h) => ({ questionId: h.questionId, submissionId: h.submissionId, score: h.score, isCorrect: h.isCorrect, submittedAt: h.submittedAt }))
+      : [...attempts]
+          .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
+          .filter((a, i, arr) => arr.findIndex((x) => String(x.questionId) === String(a.questionId)) === i)
+          .map((a) => ({ questionId: a.questionId, submissionId: a.submissionId, score: a.score, isCorrect: a.isCorrect, submittedAt: a.submittedAt }));
 
     return (
       <Dialog open={isModalOpen} onClose={closeStudentModal} className="relative z-50">
         <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
-        <div className="fixed inset-0 flex items-center justify-center p-4">
-          <Dialog.Panel className="mx-auto max-w-2xl w-full rounded-2xl bg-white p-8 shadow-xl">
-            <Dialog.Title className="text-2xl font-bold text-gray-800 mb-6">
-              Student Details
-            </Dialog.Title>
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-gray-500">Name</p>
-                  <p className="text-lg font-semibold text-gray-800">{studentInfo.name || 'N/A'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Student ID</p>
-                  <p className="text-lg font-semibold text-gray-800">{studentInfo._id || 'N/A'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Email</p>
-                  <p className="text-lg font-semibold text-gray-800">{studentInfo.email || 'N/A'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Activity Status</p>
-                  <p className="text-lg font-semibold text-gray-800">{activityStatus}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Total Runs</p>
-                  <p className="text-lg font-semibold text-gray-800">{totalRuns}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Total Submissions</p>
-                  <p className="text-lg font-semibold text-gray-800">{totalSubmissions}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Correct Attempts</p>
-                  <p className="text-lg font-semibold text-gray-800">{correctAttempts}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Wrong Attempts</p>
-                  <p className="text-lg font-semibold text-gray-800">{wrongAttempts}</p>
-                </div>
-              </div>
+        <div className="fixed inset-0 flex items-center justify-center p-4 overflow-y-auto">
+          <Dialog.Panel className="mx-auto max-w-4xl w-full rounded-2xl bg-white shadow-xl my-8">
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <Dialog.Title className="text-2xl font-bold text-gray-800">
+                {studentInfo.name || 'Student'} – Details
+              </Dialog.Title>
+              <button
+                onClick={closeStudentModal}
+                className="text-gray-500 hover:text-gray-700 p-1 rounded"
+                aria-label="Close"
+              >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
             </div>
 
-            <div className="mt-8 flex justify-end">
+            <Tab.Group>
+              <Tab.List className="flex gap-1 px-6 pt-2 border-b border-gray-200">
+                <Tab className={({ selected }) =>
+                  `py-3 px-4 text-sm font-medium border-b-2 -mb-px focus:outline-none ${selected ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`
+                }>
+                  Overview
+                </Tab>
+                <Tab className={({ selected }) =>
+                  `py-3 px-4 text-sm font-medium border-b-2 -mb-px focus:outline-none ${selected ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`
+                }>
+                  Questions Attempted
+                  {entriesToShow.length > 0 && (
+                    <span className="ml-1.5 bg-gray-200 text-gray-700 text-xs px-2 py-0.5 rounded-full">{entriesToShow.length}</span>
+                  )}
+                </Tab>
+              </Tab.List>
+
+              <Tab.Panels className="p-6">
+                {/* Overview: analytics and stats */}
+                <Tab.Panel className="space-y-6 focus:outline-none">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-xs text-gray-500 uppercase">Name</p>
+                      <p className="font-semibold text-gray-900">{studentInfo.name || 'N/A'}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-xs text-gray-500 uppercase">Email</p>
+                      <p className="font-semibold text-gray-900 truncate" title={studentInfo.email}>{studentInfo.email || 'N/A'}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-xs text-gray-500 uppercase">Student ID</p>
+                      <p className="font-mono text-sm text-gray-700 truncate" title={studentInfo._id}>{studentInfo._id || 'N/A'}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-xs text-gray-500 uppercase">Activity</p>
+                      <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
+                        activityStatus === 'active' ? 'bg-green-100 text-green-800' :
+                        activityStatus === 'focused' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-700'
+                      }`}>{activityStatus}</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="bg-indigo-50 rounded-lg p-4">
+                      <p className="text-xs text-indigo-600 uppercase">Total Runs</p>
+                      <p className="text-xl font-bold text-indigo-900">{totalRuns}</p>
+                    </div>
+                    <div className="bg-indigo-50 rounded-lg p-4">
+                      <p className="text-xs text-indigo-600 uppercase">Submissions</p>
+                      <p className="text-xl font-bold text-indigo-900">{totalSubmissions}</p>
+                    </div>
+                    <div className="bg-green-50 rounded-lg p-4">
+                      <p className="text-xs text-green-600 uppercase">Correct</p>
+                      <p className="text-xl font-bold text-green-900">{correctAttempts}</p>
+                    </div>
+                    <div className="bg-red-50 rounded-lg p-4">
+                      <p className="text-xs text-red-600 uppercase">Wrong</p>
+                      <p className="text-xl font-bold text-red-900">{wrongAttempts}</p>
+                    </div>
+                  </div>
+                  {totalSubmissions > 0 && (
+                    <div className="flex items-center gap-4">
+                      <p className="text-sm text-gray-600">Success rate</p>
+                      <div className="flex-1 h-3 bg-gray-200 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-green-500 rounded-full transition-all"
+                          style={{ width: `${totalSubmissions ? Math.round((correctAttempts / totalSubmissions) * 100) : 0}%` }}
+                        />
+                      </div>
+                      <span className="text-sm font-medium text-gray-700">
+                        {totalSubmissions ? Math.round((correctAttempts / totalSubmissions) * 100) : 0}%
+                      </span>
+                    </div>
+                  )}
+                </Tab.Panel>
+
+                {/* Questions Attempted: list + view answer */}
+                <Tab.Panel className="space-y-4 focus:outline-none">
+                  {entriesToShow.length === 0 ? (
+                    <p className="text-gray-500">No questions attempted yet.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Question</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Score</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Submitted</th>
+                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {entriesToShow.map((entry) => (
+                            <tr key={entry.submissionId || entry.questionId}>
+                              <td className="px-4 py-3 text-sm text-gray-900 max-w-xs truncate" title={getQuestionTitle(entry.questionId)}>
+                                {getQuestionTitle(entry.questionId)}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${entry.isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                  {entry.isCorrect ? 'Correct' : 'Incorrect'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-700">{entry.score ?? '–'}</td>
+                              <td className="px-4 py-3 text-sm text-gray-500">
+                                {entry.submittedAt ? format(new Date(entry.submittedAt), 'MMM d, yyyy HH:mm') : '–'}
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                {entry.submissionId && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleViewStudentSubmission(entry.submissionId)}
+                                    disabled={studentModalLoadingSubmissionId === String(entry.submissionId)}
+                                    className="text-indigo-600 hover:text-indigo-800 text-sm font-medium disabled:opacity-50"
+                                  >
+                                    {studentModalLoadingSubmissionId === String(entry.submissionId) ? 'Loading…' : 'View Answer'}
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Shown submission code / answer */}
+                  {studentModalSubmissionLoading && (
+                    <div className="mt-4 p-4 bg-gray-50 rounded-lg text-center text-gray-500">Loading submission…</div>
+                  )}
+                  {studentModalSubmissionData && !studentModalSubmissionData.error && (
+                    <div className="mt-6 p-4 border rounded-lg bg-gray-50 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className={`font-semibold ${studentModalSubmissionData.isCorrect ? 'text-green-700' : 'text-red-700'}`}>
+                          {studentModalSubmissionData.isCorrect ? '✓ Successful' : '✗ Unsuccessful'}
+                        </span>
+                        {studentModalSubmissionData.status && ['tle', 'mle'].includes(String(studentModalSubmissionData.status).toLowerCase()) && (
+                          <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-200 text-amber-900 uppercase">{studentModalSubmissionData.status}</span>
+                        )}
+                        <span className="text-sm text-gray-600">
+                          {studentModalSubmissionData.passedTestCases ?? 0}/{studentModalSubmissionData.totalTestCases ?? 0} test cases passed
+                        </span>
+                        {studentModalSubmissionData.questionId && studentModalSubmissionData.classId && (
+                          <Link
+                            to={`/teacher/classes/${String(studentModalSubmissionData.classId)}/questions/${String(studentModalSubmissionData.questionId)}`}
+                            state={{ initialCode: studentModalSubmissionData.code, initialLanguage: studentModalSubmissionData.language }}
+                            className="px-3 py-1.5 bg-indigo-600 text-white rounded text-sm font-medium hover:bg-indigo-700"
+                          >
+                            Edit & Run
+                          </Link>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-600">Question: {studentModalSubmissionData.questionTitle || '–'}</p>
+                      <p className="text-xs text-gray-500 font-mono">Code</p>
+                      <pre className="p-3 bg-white border rounded text-sm overflow-x-auto max-h-64 overflow-y-auto">{studentModalSubmissionData.code || 'No code'}</pre>
+                    </div>
+                  )}
+                  {studentModalSubmissionData?.error && (
+                    <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{studentModalSubmissionData.error}</div>
+                  )}
+                </Tab.Panel>
+              </Tab.Panels>
+            </Tab.Group>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
               <button
                 onClick={closeStudentModal}
                 className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors duration-200"
@@ -884,7 +1119,7 @@ const TeacherClassView = () => {
       {/* Tabs */}
       <Tab.Group selectedIndex={selectedTabIndex} onChange={handleTabChange}>
         <Tab.List className="flex gap-2 rounded-xl p-1.5 mb-8 border" style={{ backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }}>
-          {['Analytics', 'Students', 'Assignments', 'Questions', 'Management'].map((tabName) => (
+          {['Leaderboard', 'Assignments', 'Questions', 'Management'].map((tabName) => (
             <Tab key={tabName} className="flex-1">
               {({ selected }) => (
                 <div
@@ -905,10 +1140,44 @@ const TeacherClassView = () => {
         </Tab.List>
 
         <Tab.Panels className="overflow-visible">
-          {/* Analytics Tab */}
+          {/* Leaderboard Tab: students, filters, analytics, view code, block/unblock */}
           <Tab.Panel className="overflow-visible">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+              {/* Left: Registered students with filters (correct, incorrect, active, inactive) */}
+              <div className="lg:col-span-1 order-2 lg:order-1">
+                <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-4" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
+                  <h3 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-heading)' }}>Registered Students</h3>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {['all', 'correct', 'incorrect', 'active', 'inactive'].map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => setAnalyticsStudentFilter(f)}
+                        className={`px-3 py-1 rounded text-xs font-medium capitalize ${analyticsStudentFilter === f ? 'bg-indigo-600 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {filteredStudents.slice(0, 20).map((s) => {
+                      const info = s.studentId || {};
+                      return (
+                        <div key={info._id} className="flex justify-between items-center py-1.5 border-b border-gray-100 text-sm">
+                          <span className="truncate">{info.name || 'Unknown'}</span>
+                          <span className={`px-1.5 py-0.5 rounded text-xs ${(s.correctAttempts || 0) > 0 ? 'bg-green-100 text-green-700' : (s.totalAttempts || 0) > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100'}`}>
+                            {(s.correctAttempts || 0) > 0 ? 'Correct' : (s.totalAttempts || 0) > 0 ? 'Incorrect' : 'Inactive'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">Showing {Math.min(filteredStudents.length, 20)} of {filteredStudents.length}</p>
+                </div>
+              </div>
+              {/* Right: Analytics charts */}
+              <div className="lg:col-span-2 order-1 lg:order-2">
             {/* Statistics Pie Charts */}
-            <div className="mb-8">
+            <div className="mb-6">
               <h2 className="text-2xl font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>Analytics Overview</h2>
 
               {(participantStats || runSubmitStats) && (
@@ -1067,16 +1336,18 @@ const TeacherClassView = () => {
             </div>
 
             {/* Attempt Statistics */}
-            <div className="mb-8">
+            <div className="mb-6">
               <h2 className="text-2xl font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>Attempt Statistics</h2>
               <div className="backdrop-blur-sm rounded-2xl shadow-lg p-6 border transition-all duration-300 hover:shadow-2xl" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
                 <StatsGraphs />
               </div>
             </div>
-          </Tab.Panel>
+              </div>
+            </div>
 
-          {/* Students Tab */}
-          <Tab.Panel className="overflow-visible">
+            {/* Full Student Table with Block/Unblock */}
+            <div className="mt-8">
+              <h2 className="text-xl font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>Student Actions</h2>
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-semibold" style={{ color: 'var(--text-heading)' }}>
                 Students ({filteredStudents.length})
@@ -1347,7 +1618,59 @@ const TeacherClassView = () => {
                 )}
               </div>
             )}
+            </div>
 
+            {/* View Submission Code (in Leaderboard so teacher can view success/fail and Edit & Run) */}
+            <div className="mt-8 backdrop-blur-sm rounded-2xl shadow-lg border p-6" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
+              <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>View Submission Code</h3>
+              <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>Enter a submission ID to view student code (success/fail, TLE/MLE) and use Edit & Run.</p>
+              <form onSubmit={(e) => { e.preventDefault(); handleViewSubmissionCode(submissionId); }} className="flex gap-3">
+                <input
+                  type="text"
+                  value={submissionId}
+                  onChange={(e) => setSubmissionId(e.target.value)}
+                  placeholder="Enter submission ID"
+                  className="flex-1 rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                />
+                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium">
+                  View Code
+                </button>
+              </form>
+              {submissionCode && (
+                <div className="mt-6">
+                  {submissionViewData && (
+                    <div className={`mb-4 p-4 rounded-lg border ${submissionViewData.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <span className={`text-lg font-semibold ${submissionViewData.isCorrect ? 'text-green-800' : 'text-red-800'}`}>
+                            {submissionViewData.isCorrect ? '✓ Successful' : '✗ Unsuccessful'}
+                          </span>
+                          {submissionViewData.status && ['tle', 'mle'].includes(String(submissionViewData.status).toLowerCase()) && (
+                            <span className="px-2 py-1 rounded text-sm font-medium bg-amber-200 text-amber-900 uppercase">{submissionViewData.status}</span>
+                          )}
+                          <span className="text-sm text-gray-600">
+                            {submissionViewData.passedTestCases}/{submissionViewData.totalTestCases} test cases passed
+                          </span>
+                        </div>
+                        {submissionViewData.questionId && submissionViewData.classId && (
+                          <Link
+                            to={`/teacher/classes/${String(submissionViewData.classId)}/questions/${String(submissionViewData.questionId)}`}
+                            state={{ initialCode: submissionViewData.code, initialLanguage: submissionViewData.language }}
+                            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium whitespace-nowrap"
+                          >
+                            Edit & Run
+                          </Link>
+                        )}
+                      </div>
+                      {submissionViewData.studentName && <p className="mt-2 text-sm text-gray-600">Student: {submissionViewData.studentName}</p>}
+                      {submissionViewData.questionTitle && <p className="text-sm text-gray-600">Question: {submissionViewData.questionTitle}</p>}
+                    </div>
+                  )}
+                  <h4 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-heading)' }}>Code</h4>
+                  <pre className="p-4 bg-gray-50/80 rounded-lg text-sm overflow-x-auto" style={{ color: 'var(--text-primary)' }}>{submissionCode}</pre>
+                </div>
+              )}
+            </div>
             <StudentDetailsModal />
           </Tab.Panel>
 
@@ -1716,7 +2039,13 @@ const TeacherClassView = () => {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-visible">
                   {questions.map((question) => (
-                    <TeacherQuestionCard key={question._id} question={question} classId={classId} onQuestionUpdate={() => fetchData(true)} />
+                    <TeacherQuestionCard
+                      key={question._id}
+                      question={question}
+                      classId={classId}
+                      onQuestionUpdate={() => fetchData(true)}
+                      summary={questionSummary.find(s => String(s.questionId) === String(question._id))}
+                    />
                   ))}
                 </div>
               )}
@@ -1862,9 +2191,57 @@ const TeacherClassView = () => {
             </div>
 
             {/* View Submission Code */}
+            <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 mb-8" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
+              <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>View Submission Code</h3>
+              <form onSubmit={(e) => { e.preventDefault(); handleViewSubmissionCode(submissionId); }} className="flex gap-3">
+                <input
+                  type="text"
+                  value={submissionId}
+                  onChange={(e) => setSubmissionId(e.target.value)}
+                  placeholder="Enter submission ID"
+                  className="flex-1 rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                />
+                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium">
+                  View Code
+                </button>
+              </form>
+            </div>
             {submissionCode && (
               <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 transition-all duration-300 hover:shadow-2xl" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-                <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>Submission Code</h3>
+                {/* Success / Unsuccessful banner */}
+                {submissionViewData && (
+                  <div className={`mb-4 p-4 rounded-lg border ${submissionViewData.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <span className={`text-lg font-semibold ${submissionViewData.isCorrect ? 'text-green-800' : 'text-red-800'}`}>
+                          {submissionViewData.isCorrect ? '✓ Successful' : '✗ Unsuccessful'}
+                        </span>
+                        {submissionViewData.status && ['tle', 'mle'].includes(String(submissionViewData.status).toLowerCase()) && (
+                          <span className="px-2 py-1 rounded text-sm font-medium bg-amber-200 text-amber-900 uppercase">{submissionViewData.status}</span>
+                        )}
+                        <span className="text-sm text-gray-600">
+                          {submissionViewData.passedTestCases}/{submissionViewData.totalTestCases} test cases passed
+                        </span>
+                      </div>
+                      {submissionViewData.questionId && submissionViewData.classId && (
+                        <Link
+                          to={`/teacher/classes/${String(submissionViewData.classId)}/questions/${String(submissionViewData.questionId)}`}
+                          state={{ initialCode: submissionViewData.code, initialLanguage: submissionViewData.language }}
+                          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium whitespace-nowrap"
+                        >
+                          Edit & Run
+                        </Link>
+                      )}
+                    </div>
+                    {submissionViewData.studentName && (
+                      <p className="mt-2 text-sm text-gray-600">Student: {submissionViewData.studentName}</p>
+                    )}
+                    {submissionViewData.questionTitle && (
+                      <p className="text-sm text-gray-600">Question: {submissionViewData.questionTitle}</p>
+                    )}
+                  </div>
+                )}
+                <h3 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-heading)' }}>Code</h3>
                 <pre className="p-4 bg-gray-50/80 backdrop-blur-sm rounded-lg text-sm overflow-x-auto" style={{ color: 'var(--text-primary)' }}>
                   {submissionCode}
                 </pre>

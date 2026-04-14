@@ -56,10 +56,8 @@ const EditExam = () => {
         setExam(examData);
         setAvailableQuestions(questionsRes.data.questions || []);
         
-        // Check if exam can be edited (only draft exams can be fully edited)
-        if (examData.status !== 'draft') {
-          alert('Only draft exams can be edited. This exam is in ' + examData.status + ' status.');
-          // Still allow viewing but disable editing
+        if (examData.status === 'completed' || examData.status === 'archived') {
+          console.warn('[EditExam] Exam is read-only:', examData.status);
         }
         
         // Populate form with existing exam data
@@ -206,6 +204,11 @@ const EditExam = () => {
       return;
     }
 
+    if (exam?.status === 'completed' || exam?.status === 'archived') {
+      alert('This exam can no longer be edited.');
+      return;
+    }
+
     try {
       setSaving(true);
       
@@ -284,6 +287,10 @@ const EditExam = () => {
     );
   }
 
+  /** Matches teacher list: editable for draft, scheduled, active; not after completion/archival */
+  const examIsEditable =
+    exam && exam.status !== 'completed' && exam.status !== 'archived';
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
       <div className="container mx-auto px-4 max-w-6xl">
@@ -303,11 +310,14 @@ const EditExam = () => {
             ← Back
           </button>
           <h1 className="text-3xl font-bold">Edit Exam</h1>
-          {exam && exam.status !== 'draft' && (
-            <div className="mt-2 p-3 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded">
-              ⚠️ Warning: Only draft exams can be fully edited. This exam is in <strong>{exam.status}</strong> status.
-              {exam.status === 'scheduled' || exam.status === 'active' || exam.status === 'completed' ? 
-                ' Editing is restricted to prevent changes to exams that students may have already started.' : ''}
+          {exam && !examIsEditable && (
+            <div className="mt-2 p-3 bg-red-50 border border-red-300 text-red-800 rounded">
+              This exam is <strong>{exam.status}</strong> and cannot be edited.
+            </div>
+          )}
+          {exam && examIsEditable && exam.status !== 'draft' && (
+            <div className="mt-2 p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded">
+              This exam is <strong>{exam.status}</strong>. Changes may affect students who can already see or take it — save carefully.
             </div>
           )}
         </div>
@@ -615,9 +625,9 @@ const EditExam = () => {
               </button>
               <button
                 onClick={() => setStep(3)}
-                disabled={selectedQuestions.length === 0 || (exam && exam.status !== 'draft')}
+                disabled={selectedQuestions.length === 0 || !examIsEditable}
                 className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
-                title={exam && exam.status !== 'draft' ? 'Only draft exams can be edited' : ''}
+                title={!examIsEditable ? 'This exam can no longer be edited' : ''}
               >
                 Next: Sections
               </button>
@@ -721,9 +731,9 @@ const EditExam = () => {
               </button>
               <button
                 onClick={() => setStep(4)}
-                disabled={exam && exam.status !== 'draft'}
+                disabled={!examIsEditable}
                 className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
-                title={exam && exam.status !== 'draft' ? 'Only draft exams can be edited' : ''}
+                title={!examIsEditable ? 'This exam can no longer be edited' : ''}
               >
                 Next: Settings
               </button>
@@ -922,9 +932,9 @@ const EditExam = () => {
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={saving || (exam && exam.status !== 'draft')}
+                disabled={saving || !examIsEditable}
                 className="px-6 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                title={exam && exam.status !== 'draft' ? 'Only draft exams can be edited' : 'Save changes'}
+                title={!examIsEditable ? 'This exam can no longer be edited' : 'Save changes'}
               >
                 {saving ? 'Saving...' : 'Save Changes'}
               </button>

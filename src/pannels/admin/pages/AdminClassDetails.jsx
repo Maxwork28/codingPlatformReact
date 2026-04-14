@@ -42,7 +42,7 @@ const AdminClassDetails = () => {
   const [allStudents, setAllStudents] = useState([]);
   const [allTeachers, setAllTeachers] = useState([]);
   const [teacherId, setTeacherId] = useState('');
-  const [studentId, setStudentId] = useState('');
+  const [pendingStudentIds, setPendingStudentIds] = useState([]);
   const [editMode, setEditMode] = useState(false);
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
@@ -213,16 +213,16 @@ const AdminClassDetails = () => {
 
   const handleEditClass = async (e) => {
     e.preventDefault();
-    console.log('handleEditClass called', { classId, editName, editDescription, studentId, teacherId });
+    console.log('handleEditClass called', { classId, editName, editDescription, pendingStudentIds, teacherId });
     try {
       const data = { name: editName, description: editDescription };
-      if (studentId) data.studentIds = [studentId];
+      if (pendingStudentIds.length > 0) data.studentIds = [...pendingStudentIds];
       if (teacherId) data.teacherIds = [teacherId];
       console.log('editClass payload', data);
       await editClass(classId, data);
       await fetchClassDetails(classId);
       setEditMode(false);
-      setStudentId('');
+      setPendingStudentIds([]);
       setTeacherId('');
       setMessage('Class updated successfully');
       setError('');
@@ -567,6 +567,20 @@ const AdminClassDetails = () => {
         student.email.toLowerCase().includes(studentSearchQuery.toLowerCase())
       );
 
+  const classStudentIdSet = new Set(
+    classStudents.map((s) => String(s._id ?? ''))
+  );
+  const studentsAvailableToAdd = filteredStudents.filter(
+    (student) => !classStudentIdSet.has(String(student._id))
+  );
+
+  const togglePendingStudent = (id) => {
+    const sid = String(id);
+    setPendingStudentIds((prev) =>
+      prev.includes(sid) ? prev.filter((x) => x !== sid) : [...prev, sid]
+    );
+  };
+
   const filteredTeachers = teacherSearchQuery === ''
     ? allTeachers
     : allTeachers.filter((teacher) =>
@@ -812,6 +826,10 @@ const AdminClassDetails = () => {
               <button
                 onClick={() => {
                   console.log('Edit Class toggled', { editMode: !editMode });
+                  if (editMode) {
+                    setPendingStudentIds([]);
+                    setStudentSearchQuery('');
+                  }
                   setEditMode(!editMode);
                 }}
                     className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600"
@@ -896,62 +914,63 @@ const AdminClassDetails = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Add Student</label>
-                    <Combobox value={studentId} onChange={(value) => {
-                      console.log('studentId updated', { newValue: value });
-                      setStudentId(value);
-                    }}>
-                      <div className="relative">
-                        <Combobox.Input
-                          className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm pl-3 pr-10 py-2"
-                          onChange={(event) => setStudentSearchQuery(event.target.value)}
-                          displayValue={(id) => {
-                            const student = allStudents.find(s => s._id === id);
-                            return student ? `${student.name} (${student.email})` : '';
-                          }}
-                          placeholder="Search students..."
-                        />
-                        <Combobox.Button className="absolute inset-y-0 right-0 flex items-center pr-2">
-                          <ChevronUpDownIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
-                        </Combobox.Button>
-                        <Combobox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm">
-                          {filteredStudents && filteredStudents.length > 0 ? (
-                            filteredStudents.map((student) => (
-                              <Combobox.Option
-                                key={student._id}
-                                value={student._id}
-                                className={({ active }) =>
-                                  `relative cursor-pointer select-none py-2 pl-10 pr-4 ${
-                                    active ? 'bg-indigo-600 text-white' : 'text-gray-900'
-                                  }`
-                                }
-                              >
-                                {({ selected, active }) => (
-                                  <>
-                                    <span className={`block truncate ${selected ? 'font-medium' : 'font-normal'}`}>
-                              {student.name || 'No Name'} ({student.email || 'No Email'})
-                                    </span>
-                                    {selected && (
-                                      <span
-                                        className={`absolute inset-y-0 left-0 flex items-center pl-3 ${
-                                          active ? 'text-white' : 'text-indigo-600'
-                                        }`}
-                                      >
-                                        <CheckIcon className="h-5 w-5" aria-hidden="true" />
-                                      </span>
-                                    )}
-                                  </>
-                                )}
-                              </Combobox.Option>
-                            ))
-                          ) : (
-                            <div className="relative cursor-default select-none py-2 px-4 text-gray-700">
-                              {studentSearchQuery ? 'No students found' : 'No students available'}
-                            </div>
-                          )}
-                        </Combobox.Options>
-                      </div>
-                    </Combobox>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Add students
+                      </label>
+                      {pendingStudentIds.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setPendingStudentIds([])}
+                          className="text-xs font-medium text-indigo-600 hover:text-indigo-500"
+                        >
+                          Clear ({pendingStudentIds.length})
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mb-2">
+                      Search and select one or more students. They are added when you save the class.
+                    </p>
+                    <input
+                      type="text"
+                      value={studentSearchQuery}
+                      onChange={(e) => setStudentSearchQuery(e.target.value)}
+                      className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm pl-3 py-2 mb-2"
+                      placeholder="Search students..."
+                    />
+                    <div className="max-h-60 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-sm">
+                      {studentsAvailableToAdd.length > 0 ? (
+                        <ul className="divide-y divide-gray-100">
+                          {studentsAvailableToAdd.map((student) => {
+                            const sid = String(student._id);
+                            const checked = pendingStudentIds.includes(sid);
+                            return (
+                              <li key={sid}>
+                                <label className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-gray-50">
+                                  <input
+                                    type="checkbox"
+                                    className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                    checked={checked}
+                                    onChange={() => togglePendingStudent(sid)}
+                                  />
+                                  <span className="text-sm text-gray-900 truncate">
+                                    {student.name || 'No Name'} ({student.email || 'No Email'})
+                                  </span>
+                                </label>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : (
+                        <div className="px-3 py-6 text-center text-sm text-gray-500">
+                          {allStudents.length === 0
+                            ? 'No students available'
+                            : studentSearchQuery
+                              ? 'No matching students to add (they may already be in this class)'
+                              : 'All students are already in this class'}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

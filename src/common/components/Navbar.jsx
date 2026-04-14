@@ -2,15 +2,14 @@ import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { logout } from '../components/redux/authSlice';
-import { useSidebar } from '../context/SidebarContext';
 import { useTheme } from '../context/ThemeContext';
 import ThemeToggle from './ThemeToggle';
+import HeaderNavigationMenu from './HeaderNavigationMenu';
 
 const Navbar = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { user } = useSelector((state) => state.auth);
-  const { isCollapsed, toggleSidebar } = useSidebar();
   const { isDark } = useTheme();
   // Debug: Log user data
   console.log('Navbar: Current user data:', user);
@@ -47,7 +46,8 @@ const Navbar = () => {
           </div>
 
           {/* Right: Actions */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
+            <HeaderNavigationMenu />
             {/* Theme Toggle */}
             <ThemeToggle />
 
