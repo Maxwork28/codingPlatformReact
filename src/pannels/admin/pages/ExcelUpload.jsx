@@ -8,6 +8,7 @@ const UploadExcel = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [uploadSummary, setUploadSummary] = useState(null);
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!file) {
@@ -15,13 +16,22 @@ const UploadExcel = () => {
       return;
     }
     setIsUploading(true);
+    setUploadSummary(null);
     try {
       const response = await uploadExcel(file, role);
-      setMessage(response.data.message);
+      setMessage(response.data.message || 'Upload finished.');
+      setUploadSummary({
+        created: response.data.created,
+        skipped: response.data.skipped || [],
+        invalid: response.data.invalid || []
+      });
       setError('');
       setFile(null);
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to upload file');
+      const msg = typeof err === 'string' ? err : err.response?.data?.error || 'Failed to upload file';
+      setError(msg);
+      setMessage('');
+      setUploadSummary(null);
     } finally {
       setIsUploading(false);
     }
@@ -118,20 +128,46 @@ const UploadExcel = () => {
 
         {/* Feedback Messages */}
         {message && (
-          <div className="mt-6 flex items-center p-4 bg-green-50/80 backdrop-blur-sm rounded-xl shadow-sm border border-green-200">
-            <svg
-              className="h-6 w-6 text-green-500 mr-3"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <p className="text-sm font-semibold text-green-800">{message}</p>
+          <div className="mt-6 p-4 bg-green-50/80 dark:bg-green-900/20 backdrop-blur-sm rounded-xl shadow-sm border border-green-200 dark:border-green-800">
+            <div className="flex items-start">
+              <svg
+                className="h-6 w-6 text-green-500 mr-3 flex-shrink-0 mt-0.5"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              <div className="text-sm text-green-800 dark:text-green-200 space-y-2">
+                <p className="font-semibold">{message}</p>
+                {uploadSummary?.skipped?.length > 0 && (
+                  <div>
+                    <p className="font-medium text-green-900 dark:text-green-100">Skipped rows</p>
+                    <ul className="list-disc pl-5 mt-1">
+                      {uploadSummary.skipped.map((s, i) => (
+                        <li key={`${s.email}-${i}`}>
+                          {s.email}
+                          {s.reason === 'already_registered'
+                            ? ' (already in database)'
+                            : s.reason === 'duplicate_in_file'
+                              ? ' (duplicate email in this file)'
+                              : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {uploadSummary?.invalid?.length > 0 && (
+                  <p>
+                    Invalid rows (missing name, email, or number): {uploadSummary.invalid.length}
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
         )}
         {error && (
@@ -164,6 +200,7 @@ const UploadExcel = () => {
               Required columns: <strong>name</strong>, <strong>email</strong>, <strong>number</strong>
             </li>
             <li>File size should not exceed 5MB</li>
+            <li>Rows with an email that already exists are skipped (no error); new users receive credentials by email</li>
           </ul>
         </div>
       </div>

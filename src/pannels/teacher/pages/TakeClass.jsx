@@ -456,10 +456,10 @@ const TakeClass = () => {
     const handleMouseMove = (e) => {
       if (!isDraggingVertical) return;
       
-      const rightPanel = document.getElementById('teacher-right-panel');
-      if (!rightPanel) return;
-      
-      const rect = rightPanel.getBoundingClientRect();
+      const split = document.getElementById('teacher-code-split');
+      if (!split) return;
+
+      const rect = split.getBoundingClientRect();
       const relativeY = e.clientY - rect.top;
       const newHeight = (relativeY / rect.height) * 100;
       
@@ -622,8 +622,12 @@ const TakeClass = () => {
   const isFillInBlanksCoding = questionType === 'fillInTheBlanksCoding';
 
   // Main layout when class is selected
+  // Height matches App <main> (navbar is h-16 = 4rem). h-screen/100vh was too tall and broke sidebar scroll.
   return (
-    <div className="h-screen flex flex-col" style={{ backgroundColor: 'var(--background-content)' }}>
+    <div
+      className="flex flex-col min-h-0 overflow-hidden w-full h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)]"
+      style={{ backgroundColor: 'var(--background-content)' }}
+    >
       {/* Top Bar */}
       <div className="border-b p-3 sm:p-4 flex-shrink-0" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
         <div className="max-w-full mx-auto flex items-center gap-2 sm:gap-4">
@@ -671,23 +675,24 @@ const TakeClass = () => {
         />
       )}
 
-      {/* Main Content */}
+      {/* Main Content — row height must stay within viewport; middle column needs min-h-0 or it expands the row and clips the sidebar */}
       <div
-        className="flex-1 flex flex-col lg:flex-row"
-        style={{ overflowX: 'visible', overflowY: 'hidden' }}
+        className="flex-1 flex flex-col lg:flex-row min-h-0 items-stretch overflow-hidden"
+        style={{ overflowX: 'visible' }}
       >
         {/* Questions Sidebar */}
         <div 
           className={`${
-            showQuestionsList ? 'fixed inset-y-0 left-0 z-40 lg:relative' : 'hidden'
+            showQuestionsList ? 'fixed inset-y-0 left-0 z-40 flex h-full max-h-dvh flex-col lg:relative lg:max-h-none' : 'hidden'
           } ${
-            isSidebarCollapsed ? 'lg:hidden' : 'lg:block'
-          } w-64 flex-shrink-0 border-r flex flex-col transition-all duration-300`} 
+            isSidebarCollapsed ? 'lg:hidden' : 'lg:flex lg:flex-col'
+          } w-64 flex-shrink-0 border-r transition-all duration-300 lg:h-full lg:min-h-0 lg:self-stretch`} 
           style={{ 
             backgroundColor: 'var(--card-white)', 
             borderColor: 'var(--card-border)',
             zIndex: 100,
-            overflow: 'visible'
+            overflow: 'hidden',
+            minHeight: 0
           }}
         >
           {/* Header */}
@@ -712,9 +717,13 @@ const TakeClass = () => {
             </button>
           </div>
           
-          {/* Questions List - Full height scrollable */}
-          <div className="flex-1" style={{ overflowY: 'auto', overflowX: 'visible', minHeight: 0, position: 'relative', zIndex: 1 }}>
-            <div className="px-4 pb-4 pt-3" style={{ position: 'relative' }}>
+          {/* relative + absolute inset-0: reliable scroll area (flex-1 alone often gets unbounded height in nested flex) */}
+          <div className="relative min-h-0 flex-1 w-full" style={{ minHeight: 0 }}>
+            <div
+              className="absolute inset-0 overflow-y-scroll overflow-x-hidden overscroll-contain pr-1 touch-pan-y"
+              style={{ WebkitOverflowScrolling: 'touch' }}
+            >
+            <div className="px-4 pb-4 pt-3">
               {loading ? (
                 <div className="text-center py-8">
                   <div className="w-8 h-8 border-4 border-t-transparent rounded-full animate-spin mx-auto" style={{ borderColor: 'var(--text-primary)', borderTopColor: 'transparent' }}></div>
@@ -969,6 +978,7 @@ const TakeClass = () => {
                 </div>
               )}
             </div>
+            </div>
           </div>
         </div>
 
@@ -990,7 +1000,7 @@ const TakeClass = () => {
         {selectedQuestion ? (
           <>
             <div 
-              className="overflow-y-auto p-4 sm:p-6 transition-all duration-150" 
+              className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-6 transition-all duration-150" 
               style={{ 
                 width: `${leftPanelWidth}%`,
                 backgroundColor: 'var(--background-content)'
@@ -1141,7 +1151,7 @@ const TakeClass = () => {
             {/* Right Column - Code Editor */}
             <div 
               id="teacher-right-panel"
-              className="w-full lg:flex-1 border-t lg:border-t-0 flex flex-col transition-all duration-150" 
+              className="w-full lg:flex-1 min-h-0 min-w-0 border-t lg:border-t-0 flex flex-col transition-all duration-150" 
               style={{ 
                 width: !isSidebarCollapsed && selectedQuestion ? `${100 - leftPanelWidth}%` : 'auto',
                 backgroundColor: 'var(--background-content)',
@@ -1245,8 +1255,12 @@ const TakeClass = () => {
                 </div>
               </div>
 
-              {/* Code / preview section */}
+              {/* Code / preview section — inner wrapper splits editor vs Test; id used for vertical drag */}
               <div className="flex-1 flex flex-col overflow-hidden p-4 min-h-0">
+                <div
+                  id={isRunnableCoding ? 'teacher-code-split' : undefined}
+                  className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden w-full"
+                >
                 {isRunnableCoding ? (
                   <>
                     {showFullCodeEditor && (
@@ -1265,8 +1279,8 @@ const TakeClass = () => {
                           </div>
                         )}
                         <div
-                          className="overflow-hidden transition-all duration-150"
-                          style={{ height: `${editorHeight}%` }}
+                          className="flex flex-col min-h-0 overflow-hidden transition-all duration-150"
+                          style={{ flex: `${editorHeight} 1 0%`, minHeight: '8rem' }}
                         >
                           <CodeEditor
                             value={code}
@@ -1275,6 +1289,7 @@ const TakeClass = () => {
                             language={selectedLanguage}
                             disabled={false}
                             isFillInTheBlanks={false}
+                            height="100%"
                           />
                         </div>
                         <div
@@ -1302,7 +1317,7 @@ const TakeClass = () => {
                       <>
                         <div
                           className="flex flex-col min-h-0 overflow-hidden"
-                          style={{ height: `${editorHeight}%` }}
+                          style={{ flex: `${editorHeight} 1 0%`, minHeight: '8rem' }}
                         >
                           <h4 className="text-xs font-semibold mb-2 shrink-0" style={{ color: 'var(--text-heading)' }}>
                             Template (line below replaces <code className="font-mono">// FILL_IN_THE_BLANK</code>)
@@ -1413,7 +1428,13 @@ const TakeClass = () => {
                 )}
 
                 {/* Custom Test & Actions */}
-                <div className="flex-shrink-0 overflow-y-auto border-t pt-3 space-y-3 mt-auto" style={{ borderColor: 'var(--card-border)' }}>
+                <div
+                  className={`overflow-y-auto border-t pt-3 space-y-3 ${isRunnableCoding ? 'min-h-0' : 'flex-shrink-0 mt-auto'}`}
+                  style={{
+                    borderColor: 'var(--card-border)',
+                    ...(isRunnableCoding ? { flex: `${100 - editorHeight} 1 0%`, minHeight: 0 } : {}),
+                  }}
+                >
                   <h4 className="text-sm font-semibold" style={{ color: 'var(--text-heading)' }}>
                     {isRunnableCoding ? 'Test & Present' : 'Present'}
                   </h4>
@@ -1627,6 +1648,7 @@ const TakeClass = () => {
                     </div>
                   )}
                 </div>
+                </div>
               </div>
             </div>
           </>
@@ -1713,14 +1735,17 @@ const TakeClass = () => {
           </div>
           <div className="flex-1 overflow-hidden p-4 min-h-0 flex flex-col">
             {showFullCodeEditor && (
-              <CodeEditor
-                value={code}
-                onChange={setCode}
-                defaultValue={getCodeTemplateForLanguage(selectedQuestion, selectedLanguage)}
-                language={selectedLanguage}
-                disabled={false}
-                isFillInTheBlanks={false}
-              />
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                <CodeEditor
+                  value={code}
+                  onChange={setCode}
+                  defaultValue={getCodeTemplateForLanguage(selectedQuestion, selectedLanguage)}
+                  language={selectedLanguage}
+                  disabled={false}
+                  isFillInTheBlanks={false}
+                  height="100%"
+                />
+              </div>
             )}
             {isFillInBlanksCoding && (
               <div className="flex flex-col flex-1 min-h-0 gap-3">

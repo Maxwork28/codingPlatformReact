@@ -613,9 +613,9 @@ func main() {
     if (type === 'codingWithDriver') {
       const getDefaultDriverCode = (lang) => {
         if (lang === 'python') {
-          return 'import json\n\n# {{USER_CODE}}\n\nif __name__ == "__main__":\n    data = json.loads(input())\n    result = your_function(data)\n    print(result)';
+          return 'import json\n\n{{USER_CODE}}\n\nif __name__ == "__main__":\n    data = json.loads(input())\n    result = your_function(data)\n    print(result)';
         }
-        return '// {{USER_CODE}}\n\nconst fs = require(\'fs\');\nconst data = JSON.parse(fs.readFileSync(0, \'utf8\').trim());\nconst result = yourFunction(data);\nconsole.log(typeof result === \'object\' ? JSON.stringify(result) : result);\n';
+        return '{{USER_CODE}}\n\nconst fs = require(\'fs\');\nconst data = JSON.parse(fs.readFileSync(0, \'utf8\').trim());\nconst result = yourFunction(data);\nconsole.log(typeof result === \'object\' ? JSON.stringify(result) : result);\n';
       };
       setDriverCode((prev) =>
         languages.map((lang) => {

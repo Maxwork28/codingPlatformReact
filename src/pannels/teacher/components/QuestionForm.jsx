@@ -584,12 +584,12 @@ func main() {
       setDriverCode(prevDriverCode => {
         const getDefaultDriverCode = (lang) => {
           if (lang === 'python') {
-            return 'import json\n\n# {{USER_CODE}}\n\nif __name__ == "__main__":\n    data = json.loads(input())\n    result = your_function(data)  # customize param names\n    print(result)';
+            return 'import json\n\n{{USER_CODE}}\n\nif __name__ == "__main__":\n    data = json.loads(input())\n    result = your_function(data)  # customize param names\n    print(result)';
           }
           if (lang === 'javascript') {
-            return '// {{USER_CODE}}\n\nconst fs = require(\'fs\');\nconst data = JSON.parse(fs.readFileSync(0, \'utf8\').trim());\nconst result = yourFunction(data);\nconsole.log(typeof result === \'object\' ? JSON.stringify(result) : result);\n';
+            return '{{USER_CODE}}\n\nconst fs = require(\'fs\');\nconst data = JSON.parse(fs.readFileSync(0, \'utf8\').trim());\nconst result = yourFunction(data);\nconsole.log(typeof result === \'object\' ? JSON.stringify(result) : result);\n';
           }
-          return '// {{USER_CODE}}\n// Add driver logic that reads stdin, calls user function, prints result';
+          return '{{USER_CODE}}\n\n// Add driver logic that reads stdin, calls user function, prints result';
         };
         return languages.map(lang => {
           const existing = prevDriverCode.find(dc => dc.language === lang);
