@@ -13,7 +13,7 @@ import CodeEditor from '../components/CodeEditor';
 import TestCaseResultsList, { parseTestCaseResultsList } from '../components/TestCaseResultsList';
 
 // Socket.IO initialization
-const socket = io('http://localhost:5000/', {
+const socket = io('https://api.algosutra.co.in/', {
   withCredentials: true,
 });
 
