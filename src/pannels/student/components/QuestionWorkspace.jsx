@@ -201,13 +201,55 @@ const QuestionWorkspace = ({
           </div>
         </div>
 
-        {(question.examples && question.examples.length > 0) && (
+        {isCodingQuestion && question.inputFormat && (
           <div className="border-b border-gray-100 px-6 py-4">
-            <div className="text-sm font-semibold text-gray-900">Examples</div>
-            <div className="mt-2 space-y-2">
-              {question.examples.map((example, idx) => (
-                <pre key={idx} className="overflow-x-auto rounded-md bg-gray-900 px-4 py-3 text-xs text-gray-100" dangerouslySetInnerHTML={{ __html: example }} />
-              ))}
+            <h3 className="text-sm font-semibold text-gray-900">Input format</h3>
+            <div
+              className="mt-2 text-sm text-gray-600 leading-relaxed prose prose-sm max-w-none"
+              dangerouslySetInnerHTML={{ __html: question.inputFormat }}
+            />
+          </div>
+        )}
+
+        {isCodingQuestion && question.outputFormat && (
+          <div className="border-b border-gray-100 px-6 py-4">
+            <h3 className="text-sm font-semibold text-gray-900">Output format</h3>
+            <div
+              className="mt-2 text-sm text-gray-600 leading-relaxed prose prose-sm max-w-none"
+              dangerouslySetInnerHTML={{ __html: question.outputFormat }}
+            />
+          </div>
+        )}
+
+        {isCodingQuestion && question.explanation && (
+          <div className="border-b border-gray-100 px-6 py-4">
+            <h3 className="text-sm font-semibold text-gray-900">Explanation</h3>
+            <div
+              className="mt-2 text-sm text-gray-600 leading-relaxed prose prose-sm max-w-none"
+              dangerouslySetInnerHTML={{ __html: question.explanation }}
+            />
+          </div>
+        )}
+
+        {isCodingQuestion &&
+          question.sampleIo?.some((p) => (p.input || '').trim() || (p.output || '').trim()) && (
+          <div className="border-b border-gray-100 px-6 py-4">
+            <div className="text-sm font-semibold text-gray-900">Sample input / output</div>
+            <div className="mt-2 space-y-3">
+              {question.sampleIo
+                .filter((p) => (p.input || '').trim() || (p.output || '').trim())
+                .map((pair, idx) => (
+                  <div key={idx} className="rounded-md border border-gray-200 bg-white p-3 text-xs space-y-2">
+                    <div>
+                      <span className="font-semibold text-gray-600">Input</span>
+                      <pre className="mt-1 overflow-x-auto rounded bg-gray-900 px-3 py-2 font-mono text-gray-100 whitespace-pre-wrap">{pair.input || '—'}</pre>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-gray-600">Output</span>
+                      <pre className="mt-1 overflow-x-auto rounded bg-gray-900 px-3 py-2 font-mono text-gray-100 whitespace-pre-wrap">{pair.output || '—'}</pre>
+                    </div>
+                  </div>
+                ))}
             </div>
           </div>
         )}

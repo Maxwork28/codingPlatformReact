@@ -399,6 +399,33 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion }) => {
           </div>
         </div>
 
+        {RUNNABLE_CODING_TYPES.includes(question.type) && question.inputFormat && (
+          <div>
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">Input format</h3>
+            <div className="text-sm text-gray-700 prose prose-sm max-w-none rounded-xl border border-gray-100 bg-gray-50/80 p-4">
+              {parse(question.inputFormat)}
+            </div>
+          </div>
+        )}
+
+        {RUNNABLE_CODING_TYPES.includes(question.type) && question.outputFormat && (
+          <div>
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">Output format</h3>
+            <div className="text-sm text-gray-700 prose prose-sm max-w-none rounded-xl border border-gray-100 bg-gray-50/80 p-4">
+              {parse(question.outputFormat)}
+            </div>
+          </div>
+        )}
+
+        {question.explanation && (
+          <div>
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">Explanation</h3>
+            <div className="text-sm text-gray-700 prose prose-sm max-w-none rounded-xl border border-gray-100 bg-gray-50/80 p-4">
+              {parse(question.explanation)}
+            </div>
+          </div>
+        )}
+
         {question.constraints && (
           <div>
             <h3 className="text-lg font-semibold text-gray-800 mb-2">Constraints</h3>
@@ -408,18 +435,32 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion }) => {
           </div>
         )}
 
-        {question.examples?.length > 0 && (
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">Examples</h3>
-            <div className="space-y-3">
-              {question.examples.map((example, index) => (
-                <div key={index} className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-                  <div className="text-sm text-gray-700 prose prose-sm max-w-none">{parse(example)}</div>
-                </div>
-              ))}
+        {RUNNABLE_CODING_TYPES.includes(question.type) &&
+          question.sampleIo?.some((p) => (p.input || '').trim() || (p.output || '').trim()) && (
+            <div>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">Sample input / output</h3>
+              <div className="space-y-3">
+                {question.sampleIo
+                  .filter((p) => (p.input || '').trim() || (p.output || '').trim())
+                  .map((pair, index) => (
+                    <div key={index} className="bg-gray-50 p-4 rounded-xl border border-gray-100 space-y-2">
+                      <div>
+                        <span className="text-xs font-semibold text-gray-500 uppercase">Input</span>
+                        <pre className="mt-1 text-sm text-gray-800 font-mono whitespace-pre-wrap break-all bg-white p-3 rounded-lg border border-gray-100">
+                          {pair.input || '—'}
+                        </pre>
+                      </div>
+                      <div>
+                        <span className="text-xs font-semibold text-gray-500 uppercase">Output</span>
+                        <pre className="mt-1 text-sm text-gray-800 font-mono whitespace-pre-wrap break-all bg-white p-3 rounded-lg border border-gray-100">
+                          {pair.output || '—'}
+                        </pre>
+                      </div>
+                    </div>
+                  ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
         {question.functionSignature && (
           <div>

@@ -1,36 +1,79 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Slate, Editable, withReact, useSlate } from 'slate-react';
-import { createEditor, Transforms, Editor, Text } from 'slate';
+import { createEditor, Transforms, Editor, Text, Range } from 'slate';
 import { withHistory } from 'slate-history';
 import isHotkey from 'is-hotkey';
 import { ChevronDownIcon, ChevronUpIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
 import CodeEditor from '../../student/components/CodeEditor';
 import { teacherTestQuestion } from '../../../common/services/api';
 
-// Custom Slate editor with formatting
+// Custom Slate editor with formatting and multi-line paste
 const withFormatting = editor => {
-  const { insertData, insertText, normalizeNode } = editor;
+  const { insertData: originalInsertData, isInline, isVoid, normalizeNode } = editor;
+
+  editor.isInline = element => (element.type === 'link' ? true : isInline(element));
+  editor.isVoid = element => (element.type === 'code-block' ? true : isVoid(element));
 
   editor.insertData = data => {
-    const text = data.getData('text/plain');
-    if (text) {
-      insertText(text);
-      return;
+    try {
+      const text = data.getData('text/plain');
+      const html = data.getData('text/html');
+
+      if (html && html.trim() && html.includes('<')) {
+        originalInsertData(data);
+        return;
+      }
+
+      if (text && text.trim()) {
+        const lines = text.split(/\r?\n/);
+
+        if (lines.length <= 1) {
+          Transforms.insertText(editor, text);
+          return;
+        }
+
+        if (!editor.selection) {
+          Transforms.select(editor, Editor.end(editor, []));
+        }
+        if (editor.selection && !Range.isCollapsed(editor.selection)) {
+          Transforms.delete(editor);
+        }
+
+        const paragraphNodes = lines
+          .filter(line => line !== undefined && line !== null)
+          .map(line => ({ type: 'paragraph', children: [{ text: line || '' }] }));
+
+        if (paragraphNodes.length === 1) {
+          Transforms.insertText(editor, lines[0] || '');
+        } else if (paragraphNodes.length > 1) {
+          const [, ...restParagraphs] = paragraphNodes;
+          Transforms.insertText(editor, paragraphNodes[0].children[0].text || '');
+          restParagraphs.forEach(paragraph => {
+            Transforms.insertNodes(editor, paragraph);
+          });
+        }
+        return;
+      }
+
+      originalInsertData(data);
+    } catch (error) {
+      console.error('[withFormatting] Error in insertData:', error);
+      try {
+        originalInsertData(data);
+      } catch {
+        // ignore fallback failure
+      }
     }
-    insertData(data);
   };
 
   editor.normalizeNode = entry => {
     const [node, path] = entry;
-
-    // Ensure all nodes have children array
     if (node && typeof node === 'object' && !Text.isText(node)) {
       if (!node.children || !Array.isArray(node.children)) {
         Transforms.removeNodes(editor, { at: path });
         return;
       }
     }
-
     normalizeNode(entry);
   };
 
@@ -392,6 +435,8 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
   const [type, setType] = useState(initialData?.type || 'singleCorrectMcq');
   const [title, setTitle] = useState(deserializeFromHTML(initialData?.title || ''));
   const [description, setDescription] = useState(deserializeFromHTML(initialData?.description || ''));
+  const [inputFormat, setInputFormat] = useState(deserializeFromHTML(initialData?.inputFormat || ''));
+  const [outputFormat, setOutputFormat] = useState(deserializeFromHTML(initialData?.outputFormat || ''));
   const [points, setPoints] = useState(initialData?.points || 10);
   const [difficulty, setDifficulty] = useState(initialData?.difficulty || 'easy');
   const [tags, setTags] = useState(
@@ -402,9 +447,12 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
         : ''
   );
   const [constraints, setConstraints] = useState(deserializeFromHTML(initialData?.constraints || ''));
-  const [examples, setExamples] = useState(
-    (Array.isArray(initialData?.examples) ? initialData.examples : ['']).map(ex => deserializeFromHTML(ex))
-  );
+  const [sampleIo, setSampleIo] = useState(() => {
+    if (Array.isArray(initialData?.sampleIo) && initialData.sampleIo.length > 0) {
+      return initialData.sampleIo.map((p) => ({ input: p.input ?? '', output: p.output ?? '' }));
+    }
+    return [{ input: '', output: '' }];
+  });
   const [options, setOptions] = useState(
     (Array.isArray(initialData?.options) ? initialData.options : ['', '', '', '']).map(opt => deserializeFromHTML(opt))
   );
@@ -440,8 +488,29 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
     (defaultClassId ? [defaultClassId] : [])
   );
   const [inputErrors, setInputErrors] = useState(testCases.map(() => ''));
-  const [solutionCode, setSolutionCode] = useState(initialData?.solutionCode || '');
-  const [solutionLanguage, setSolutionLanguage] = useState(initialData?.solutionLanguage || (initialData?.languages?.[0] || 'python'));
+  const buildSolutionCodesFromInitial = (data, langs = []) => {
+    if (Array.isArray(data?.solutionCodes) && data.solutionCodes.length > 0) {
+      const fromApi = data.solutionCodes.map((s) => ({ language: s.language, code: s.code || '' }));
+      const langList = langs.length > 0 ? langs : fromApi.map((s) => s.language);
+      return langList.map((lang) => {
+        const existing = fromApi.find((s) => s.language === lang);
+        return existing || { language: lang, code: '' };
+      });
+    }
+    const primaryLang = data?.solutionLanguage || langs[0] || 'python';
+    const primaryCode = data?.solutionCode || '';
+    if (langs.length > 0) {
+      return langs.map((lang) => ({ language: lang, code: lang === primaryLang ? primaryCode : '' }));
+    }
+    return primaryCode ? [{ language: primaryLang, code: primaryCode }] : [];
+  };
+  const [solutionCodes, setSolutionCodes] = useState(() =>
+    buildSolutionCodesFromInitial(initialData, initialData?.languages || [])
+  );
+  const [solutionLanguage, setSolutionLanguage] = useState(
+    initialData?.solutionLanguage || initialData?.languages?.[0] || 'python'
+  );
+  const activeSolutionCode = solutionCodes.find((s) => s.language === solutionLanguage)?.code ?? '';
   const [isTestingSolution, setIsTestingSolution] = useState(false);
   const [testResults, setTestResults] = useState(null);
   // Use initialData ID or timestamp to force editor remount only when question changes
@@ -453,6 +522,8 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
       setType(initialData.type || 'singleCorrectMcq');
       setTitle(deserializeFromHTML(initialData.title || ''));
       setDescription(deserializeFromHTML(initialData.description || ''));
+      setInputFormat(deserializeFromHTML(initialData.inputFormat || ''));
+      setOutputFormat(deserializeFromHTML(initialData.outputFormat || ''));
       setPoints(initialData.points || 10);
       setDifficulty(initialData.difficulty || 'easy');
       setTags(
@@ -463,7 +534,11 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
             : ''
       );
       setConstraints(deserializeFromHTML(initialData.constraints || ''));
-      setExamples((Array.isArray(initialData.examples) ? initialData.examples : ['']).map(ex => deserializeFromHTML(ex)));
+      setSampleIo(
+        Array.isArray(initialData.sampleIo) && initialData.sampleIo.length > 0
+          ? initialData.sampleIo.map((p) => ({ input: p.input ?? '', output: p.output ?? '' }))
+          : [{ input: '', output: '' }]
+      );
       setOptions((Array.isArray(initialData.options) ? initialData.options : ['', '', '', '']).map(opt => deserializeFromHTML(opt)));
       setCorrectOption(initialData.correctOption || 0);
       setCorrectOptions(initialData.correctOptions || []);
@@ -495,14 +570,28 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
         initialData.classes?.map(c => c.classId?.toString()) || 
         (defaultClassId ? [defaultClassId] : [])
       );
-      setSolutionCode(initialData.solutionCode || '');
+      setSolutionCodes(buildSolutionCodesFromInitial(initialData, initialData.languages || []));
       setSolutionLanguage(initialData.solutionLanguage || (initialData.languages?.[0] || 'python'));
     }
   }, [initialData, defaultClassId]);
 
+  // Sync solutionCodes with selected languages (preserve code per language)
+  useEffect(() => {
+    if (type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver') {
+      setSolutionCodes((prev) =>
+        languages.map((lang) => {
+          const existing = prev.find((s) => s.language === lang);
+          return existing || { language: lang, code: '' };
+        })
+      );
+    } else {
+      setSolutionCodes([]);
+    }
+  }, [languages, type]);
+
   // Update solutionLanguage when languages change (if current language is not in the list)
   useEffect(() => {
-    if ((type === 'coding' || type === 'fillInTheBlanksCoding') && languages.length > 0) {
+    if ((type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver') && languages.length > 0) {
       if (!languages.includes(solutionLanguage)) {
         setSolutionLanguage(languages[0]);
       }
@@ -511,72 +600,20 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
 
   const supportedLanguages = ['javascript', 'c', 'cpp', 'java', 'python', 'php', 'ruby', 'go'];
 
-  // Default starter code for coding questions
-  const getDefaultStarterCode = useCallback((lang) => {
-    switch (lang) {
-      case 'c':
-      case 'cpp':
-        return `// Write your solution here
-#include <stdio.h>
-int main() {
-    // Input handling
-    return 0;
-}`;
-      case 'javascript':
-        return `// Write your solution here
-function solution() {
-    // Input handling
-}`;
-      case 'python':
-        return `# Write your solution here
-def solution():
-    # Input handling
-    pass`;
-      case 'java':
-        return `// Write your solution here
-public class Solution {
-    public static void main(String[] args) {
-        // Input handling
-    }
-}`;
-      case 'php':
-        return `<?php
-// Write your solution here
-function solution() {
-    // Input handling
-}
-?>`;
-      case 'ruby':
-        return `# Write your solution here
-def solution
-    # Input handling
-end`;
-      case 'go':
-        return `// Write your solution here
-package main
-import "fmt"
-func main() {
-    // Input handling
-}`;
-      default:
-        return '// Write your code here';
-    }
-  }, []);
-
-  // Sync starterCode with selected languages
+  // Sync starterCode with selected languages (new languages start empty — no default template)
   useEffect(() => {
     if (type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver') {
       setStarterCode(prevStarterCode => {
         const updatedStarterCode = languages.map(lang => {
           const existing = prevStarterCode.find(sc => sc.language === lang);
-          return existing || { language: lang, code: getDefaultStarterCode(lang) };
+          return existing || { language: lang, code: '' };
         });
         return updatedStarterCode;
       });
     } else {
       setStarterCode([]);
     }
-  }, [languages, type, getDefaultStarterCode]);
+  }, [languages, type]);
 
   // Sync driverCode with selected languages (LeetCode-style only)
   useEffect(() => {
@@ -673,18 +710,19 @@ func main() {
     }
   };
 
-  const handleAddExample = () => {
-    setExamples([...examples, deserializeFromHTML('')]);
+  const handleSampleIoChange = (index, field, value) => {
+    const next = [...sampleIo];
+    next[index] = { ...next[index], [field]: value };
+    setSampleIo(next);
   };
 
-  const handleExampleChange = (index, value) => {
-    const updatedExamples = [...examples];
-    updatedExamples[index] = value;
-    setExamples(updatedExamples);
+  const handleAddSampleIo = () => {
+    setSampleIo([...sampleIo, { input: '', output: '' }]);
   };
 
-  const handleRemoveExample = (index) => {
-    setExamples(examples.filter((_, i) => i !== index));
+  const handleRemoveSampleIo = (index) => {
+    if (sampleIo.length <= 1) return;
+    setSampleIo(sampleIo.filter((_, i) => i !== index));
   };
 
   const handleLanguageToggle = (lang) => {
@@ -711,9 +749,15 @@ func main() {
     setDriverCode(updatedDriverCode);
   };
 
+  const handleSolutionCodeChange = (code) => {
+    setSolutionCodes((prev) =>
+      prev.map((s) => (s.language === solutionLanguage ? { ...s, code } : s))
+    );
+  };
+
   // Test solution against test cases
   const handleTestSolution = async () => {
-    if (!solutionCode.trim()) {
+    if (!activeSolutionCode.trim()) {
       alert('Please write a solution first');
       return;
     }
@@ -750,7 +794,7 @@ func main() {
       // Call the teacher test API (which also works for admins and drafts)
       const response = await teacherTestQuestion(
         initialData._id,
-        solutionCode,
+        activeSolutionCode,
         classIdForTest, // classId is optional for drafts
         solutionLanguage
       );
@@ -872,11 +916,25 @@ func main() {
       difficulty,
       tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag),
       constraints: serializeToHTML(constraints),
-      examples: examples.map(ex => serializeToHTML(ex)).filter(ex => ex.trim()),
       explanation: serializeToHTML(explanation),
       maxAttempts: maxAttempts ? Number(maxAttempts) : undefined,
       classIds,
     };
+
+    const codingTypes = ['fillInTheBlanksCoding', 'coding', 'codingWithDriver'];
+    if (codingTypes.includes(type)) {
+      questionData.inputFormat = serializeToHTML(inputFormat);
+      questionData.outputFormat = serializeToHTML(outputFormat);
+      questionData.sampleIo = sampleIo
+        .filter((p) => (p.input || '').trim() !== '' || (p.output || '').trim() !== '')
+        .map((p) => ({ input: p.input || '', output: p.output || '' }));
+      questionData.examples = [];
+    } else {
+      questionData.inputFormat = '';
+      questionData.outputFormat = '';
+      questionData.sampleIo = [];
+      questionData.examples = [];
+    }
 
     if (type === 'singleCorrectMcq') {
       questionData.options = options.map(opt => serializeToHTML(opt));
@@ -900,9 +958,12 @@ func main() {
       }));
       questionData.timeLimit = Number(timeLimit);
       questionData.memoryLimit = Number(memoryLimit);
-      if (solutionCode.trim()) {
-        questionData.solutionCode = solutionCode;
-        questionData.solutionLanguage = solutionLanguage;
+      const filledSolutions = solutionCodes.filter((s) => (s.code || '').trim());
+      if (filledSolutions.length > 0) {
+        questionData.solutionCodes = filledSolutions;
+        const primary = filledSolutions.find((s) => s.language === solutionLanguage) || filledSolutions[0];
+        questionData.solutionCode = primary.code;
+        questionData.solutionLanguage = primary.language;
       }
     } else if (type === 'coding' || type === 'codingWithDriver') {
       questionData.languages = languages;
@@ -918,9 +979,12 @@ func main() {
       }));
       questionData.timeLimit = Number(timeLimit);
       questionData.memoryLimit = Number(memoryLimit);
-      if (solutionCode.trim()) {
-        questionData.solutionCode = solutionCode;
-        questionData.solutionLanguage = solutionLanguage;
+      const filledSolutions = solutionCodes.filter((s) => (s.code || '').trim());
+      if (filledSolutions.length > 0) {
+        questionData.solutionCodes = filledSolutions;
+        const primary = filledSolutions.find((s) => s.language === solutionLanguage) || filledSolutions[0];
+        questionData.solutionCode = primary.code;
+        questionData.solutionLanguage = primary.language;
       }
       if (type === 'codingWithDriver') {
         questionData.driverCode = driverCode.map(dc => ({
@@ -1178,7 +1242,7 @@ func main() {
       {/* Fill in the Blanks (Coding) or Coding Problem */}
       {(type === 'fillInTheBlanksCoding' || type === 'coding' || type === 'codingWithDriver') && (
         <>
-          <CollapsibleSection title="Languages and Starter Code">
+          <CollapsibleSection title="Languages and Starter Code" defaultOpen={false}>
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Supported Languages</label>
@@ -1239,7 +1303,90 @@ func main() {
             </CollapsibleSection>
           )}
 
-          <CollapsibleSection title="Constraints and Examples">
+          <CollapsibleSection title="I/O format & sample cases" defaultOpen={false}>
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Input format (optional)</label>
+                <p className="text-xs text-gray-500 mb-2">How students should read stdin or arguments.</p>
+                <RichTextEditor
+                  key={`inputFormat-${editorResetKey}`}
+                  value={inputFormat}
+                  onChange={setInputFormat}
+                  placeholder="e.g. First line: n. Second line: n space-separated integers."
+                  className="w-full"
+                />
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <h3 className="text-sm font-semibold text-gray-600 mb-2">Preview</h3>
+                  <div className="text-gray-800 prose max-w-none" dangerouslySetInnerHTML={{ __html: serializeToHTML(inputFormat) || 'No content' }} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Output format (optional)</label>
+                <p className="text-xs text-gray-500 mb-2">Expected stdout or printed result shape.</p>
+                <RichTextEditor
+                  key={`outputFormat-${editorResetKey}`}
+                  value={outputFormat}
+                  onChange={setOutputFormat}
+                  placeholder="e.g. Print a single integer on one line."
+                  className="w-full"
+                />
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <h3 className="text-sm font-semibold text-gray-600 mb-2">Preview</h3>
+                  <div className="text-gray-800 prose max-w-none" dangerouslySetInnerHTML={{ __html: serializeToHTML(outputFormat) || 'No content' }} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Sample input / output</label>
+                <p className="text-xs text-gray-500 mb-2">Optional plain-text samples shown to students (separate from official test cases).</p>
+                {sampleIo.map((pair, idx) => (
+                  <div key={idx} className="mb-4 p-4 border border-gray-200 rounded-lg space-y-3 bg-white">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-semibold text-gray-700">Sample {idx + 1}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSampleIo(idx)}
+                        className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600 disabled:bg-red-300 transition-colors"
+                        disabled={sampleIo.length <= 1}
+                        aria-label="Remove sample"
+                      >
+                        <TrashIcon className="h-5 w-5" />
+                      </button>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 mb-1">Sample input</label>
+                      <textarea
+                        value={pair.input}
+                        onChange={(e) => handleSampleIoChange(idx, 'input', e.target.value)}
+                        className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                        rows={4}
+                        placeholder="stdin / example input"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 mb-1">Sample output</label>
+                      <textarea
+                        value={pair.output}
+                        onChange={(e) => handleSampleIoChange(idx, 'output', e.target.value)}
+                        className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                        rows={4}
+                        placeholder="expected stdout"
+                      />
+                    </div>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={handleAddSampleIo}
+                  className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                >
+                  <PlusIcon className="h-5 w-5 mr-2" />
+                  Add sample
+                </button>
+              </div>
+            </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Constraints">
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Constraints</label>
@@ -1253,46 +1400,6 @@ func main() {
                 <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
                   <h3 className="text-sm font-semibold text-gray-600 mb-2">Preview</h3>
                   <div className="text-gray-800 prose max-w-none" dangerouslySetInnerHTML={{ __html: serializeToHTML(constraints) || 'No content' }} />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Examples</label>
-                {examples.map((example, idx) => (
-                  <div key={idx} className="flex items-start gap-3 mb-4">
-                    <RichTextEditor
-                      key={`example-${idx}-${editorResetKey}`}
-                      value={example}
-                      onChange={value => handleExampleChange(idx, value)}
-                      placeholder={`Example ${idx + 1}`}
-                      className="flex-1"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveExample(idx)}
-                      className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600 disabled:bg-red-300 transition-colors"
-                      disabled={examples.length <= 1}
-                      aria-label="Remove example"
-                    >
-                      <TrashIcon className="h-5 w-5" />
-                    </button>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={handleAddExample}
-                  className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-                >
-                  <PlusIcon className="h-5 w-5 mr-2" />
-                  Add Example
-                </button>
-                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                  <h3 className="text-sm font-semibold text-gray-600 mb-2">Preview Examples</h3>
-                  {examples.map((ex, idx) => (
-                    <div key={idx} className="mb-2">
-                      <span className="text-sm font-semibold text-gray-700">Example {idx + 1}</span>
-                      <div className="text-gray-800 prose max-w-none" dangerouslySetInnerHTML={{ __html: serializeToHTML(ex) || 'No content' }} />
-                    </div>
-                  ))}
                 </div>
               </div>
             </div>
@@ -1420,8 +1527,9 @@ func main() {
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Solution Code</label>
                 <div className="border border-gray-200 rounded-lg overflow-hidden">
                   <CodeEditor
-                    value={solutionCode}
-                    onChange={setSolutionCode}
+                    key={`solution-${solutionLanguage}-${editorResetKey}`}
+                    value={activeSolutionCode}
+                    onChange={handleSolutionCodeChange}
                     language={solutionLanguage}
                     disabled={false}
                     isFillInTheBlanks={false}
@@ -1435,7 +1543,7 @@ func main() {
                 <button
                   type="button"
                   onClick={handleTestSolution}
-                  disabled={isTestingSolution || !solutionCode.trim() || testCases.length === 0 || !initialData?._id}
+                  disabled={isTestingSolution || !activeSolutionCode.trim() || testCases.length === 0 || !initialData?._id}
                   className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
                   {isTestingSolution ? (

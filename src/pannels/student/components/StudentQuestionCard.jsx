@@ -13,12 +13,19 @@ const stripHtml = (html) => {
   }
 };
 
+const CODING_TYPES = ['coding', 'fillInTheBlanksCoding', 'codingWithDriver'];
+
 const StudentQuestionCard = ({ question, assignment }) => {
   const titleText = useMemo(() => stripHtml(question.title), [question.title]);
   const descriptionText = useMemo(
     () => stripHtml(question.description),
     [question.description]
   );
+  const explanationText = useMemo(
+    () => stripHtml(question.explanation),
+    [question.explanation]
+  );
+  const isCodingQuestion = CODING_TYPES.includes(question.type);
 
   console.log('StudentQuestionCard: Rendered with question', {
     id: question._id,
@@ -39,6 +46,12 @@ const StudentQuestionCard = ({ question, assignment }) => {
           <p className="mt-2 text-sm text-gray-600 leading-relaxed">
             {descriptionText || 'No Description'}
           </p>
+          {isCodingQuestion && explanationText && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold text-gray-700">Explanation</p>
+              <p className="mt-1 text-sm text-gray-600 leading-relaxed">{explanationText}</p>
+            </div>
+          )}
           <div className="mt-3 flex flex-wrap gap-2">
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 shadow-sm">
               {question.difficulty}
@@ -71,6 +84,8 @@ StudentQuestionCard.propTypes = {
     _id: PropTypes.string.isRequired,
     title: PropTypes.string,
     description: PropTypes.string,
+    explanation: PropTypes.string,
+    type: PropTypes.string,
     difficulty: PropTypes.string,
     isPublished: PropTypes.bool,
     isDisabled: PropTypes.bool,

@@ -4,6 +4,10 @@ import { Menu, Transition, Portal } from '@headlessui/react';
 import { publishQuestion, unpublishQuestion, disableQuestion, enableQuestion } from '../../../common/services/api';
 import parse from 'html-react-parser';
 
+/** API helpers throw the message string; axios errors have response.data.error */
+const getApiErrorMessage = (err, fallback) =>
+  (typeof err === 'string' && err) || err?.response?.data?.error || fallback;
+
 const TeacherQuestionCard = ({ question, classId, onQuestionUpdate, summary }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -31,7 +35,7 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate, summary }) =
         onQuestionUpdate();
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to toggle publish status');
+      setError(getApiErrorMessage(err, 'Failed to toggle publish status'));
     } finally {
       setIsLoading(false);
     }
@@ -54,7 +58,7 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate, summary }) =
         onQuestionUpdate();
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to toggle disable status');
+      setError(getApiErrorMessage(err, 'Failed to toggle disable status'));
     } finally {
       setIsLoading(false);
     }

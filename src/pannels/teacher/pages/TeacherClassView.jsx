@@ -1677,7 +1677,7 @@ const TeacherClassView = () => {
           {/* Assignments Tab */}
           <Tab.Panel className="overflow-visible">
             {/* Create Assignment Form */}
-            <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 mb-8 transition-all duration-300 hover:shadow-2xl" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
+            <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 mb-8 transition-all duration-300 hover:shadow-2xl overflow-visible" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
               <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>Create Assignment</h3>
 
               {assignmentMessage && (
@@ -1710,7 +1710,9 @@ const TeacherClassView = () => {
                           className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm pl-3 pr-10 py-2"
                           onChange={(event) => setAssignmentQuestionSearchQuery(event.target.value)}
                           displayValue={(id) => {
-                            const question = allQuestionsForAssignment.find(q => q._id === id);
+                            if (assignmentQuestionSearchQuery) return assignmentQuestionSearchQuery;
+                            if (!id) return '';
+                            const question = allQuestionsForAssignment.find((q) => q._id === id);
                             return question ? stripHtml(question.title) : '';
                           }}
                           placeholder="Search questions by name..."
@@ -1718,7 +1720,10 @@ const TeacherClassView = () => {
                         <Combobox.Button className="absolute inset-y-0 right-0 flex items-center pr-2">
                           <ChevronUpDownIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
                         </Combobox.Button>
-                        <Combobox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm">
+                        <Combobox.Options
+                          anchor="bottom start"
+                          className="z-[100] mt-1 max-h-60 w-[var(--input-width)] overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black/5 focus:outline-none sm:text-sm empty:invisible [--anchor-gap:4px]"
+                        >
                           {filteredAssignmentQuestions && filteredAssignmentQuestions.length > 0 ? (
                             filteredAssignmentQuestions.map((question) => (
                               <Combobox.Option
@@ -1928,7 +1933,7 @@ const TeacherClassView = () => {
           {/* Questions Tab */}
           <Tab.Panel className="overflow-visible">
             {/* Attach Question to Class */}
-            <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 mb-8 transition-all duration-300 hover:shadow-2xl" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
+            <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 mb-8 transition-all duration-300 hover:shadow-2xl overflow-visible" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
               <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>Attach Question to Class</h3>
               <div className="space-y-6">
                 {/* Search Questions */}
@@ -1956,21 +1961,34 @@ const TeacherClassView = () => {
                 {/* Available Questions */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Select Question to Attach</label>
-                  <Combobox value={selectedQuestionId} onChange={(value) => setSelectedQuestionId(value)}>
+                  <Combobox
+                    value={selectedQuestionId}
+                    onChange={(value) => {
+                      setSelectedQuestionId(value);
+                      setAttachQuestionSearchQuery('');
+                    }}
+                  >
                     <div className="relative">
                       <Combobox.Input
                         className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm pl-3 pr-10 py-2"
                         onChange={(event) => setAttachQuestionSearchQuery(event.target.value)}
                         displayValue={(id) => {
-                          const question = availableQuestions.find(q => q._id === id);
-                          return question ? `${stripHtml(question.title)} - ${question.type} (${question.points || 0} points)` : '';
+                          if (attachQuestionSearchQuery) return attachQuestionSearchQuery;
+                          if (!id) return '';
+                          const question = availableQuestions.find((q) => q._id === id);
+                          return question
+                            ? `${stripHtml(question.title)} - ${question.type} (${question.points || 0} points)`
+                            : '';
                         }}
                         placeholder="Search questions by title or ID..."
                       />
                       <Combobox.Button className="absolute inset-y-0 right-0 flex items-center pr-2">
                         <ChevronUpDownIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
                       </Combobox.Button>
-                      <Combobox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm">
+                      <Combobox.Options
+                        anchor="bottom start"
+                        className="z-[100] mt-1 max-h-60 w-[var(--input-width)] overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black/5 focus:outline-none sm:text-sm empty:invisible [--anchor-gap:4px]"
+                      >
                         {filteredAttachQuestions && filteredAttachQuestions.length > 0 ? (
                           filteredAttachQuestions.map((question) => {
                             if (!question._id || !question.title) {

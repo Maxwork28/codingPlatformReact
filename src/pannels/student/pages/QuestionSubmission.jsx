@@ -10,9 +10,10 @@ import {
   resetSubmission,
 } from '../../../common/components/redux/questionSlice';
 import CodeEditor from '../components/CodeEditor';
+import TestCaseResultsList, { parseTestCaseResultsList } from '../components/TestCaseResultsList';
 
 // Socket.IO initialization
-const socket = io('https://api.algosutra.co.in/', {
+const socket = io('http://localhost:5000/', {
   withCredentials: true,
 });
 
@@ -28,19 +29,43 @@ socket.on('disconnect', (reason) => {
   console.log('[QuestionSubmission] Socket.IO disconnected:', reason);
 });
 
+const CODING_QUESTION_TYPES = ['coding', 'fillInTheBlanksCoding', 'codingWithDriver'];
+
+const isCodingQuestionType = (type) => CODING_QUESTION_TYPES.includes(type);
+
+const resolveLanguageForQuestion = (question, currentLanguage) => {
+  const langs = question?.languages || [];
+  if (langs.length === 0) return currentLanguage || '';
+  if (currentLanguage && langs.includes(currentLanguage)) return currentLanguage;
+  return langs[0];
+};
+
+const getTestCaseResultsFromApi = (apiResponse) => {
+  if (!apiResponse) return [];
+  if (apiResponse.testResults != null) {
+    return parseTestCaseResultsList(apiResponse.testResults);
+  }
+  if (apiResponse.submission?.output) {
+    return parseTestCaseResultsList(apiResponse.submission.output);
+  }
+  return [];
+};
+
 const QuestionSubmission = () => {
   const { questionId } = useParams();
   const location = useLocation();
   const dispatch = useDispatch();
   const { question, submission, runResults, status, error } = useSelector((state) => state.questions);
   const [answer, setAnswer] = useState('');
-  const [selectedLanguage, setSelectedLanguage] = useState('javascript');
+  const [selectedLanguage, setSelectedLanguage] = useState('');
   const [customInput, setCustomInput] = useState('');
   const [expectedOutput, setExpectedOutput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [isRunningCustom, setIsRunningCustom] = useState(false);
   const [isQuestionActive, setIsQuestionActive] = useState(true);
+  /** Published and not teacher-disabled — controls editor, run, submit only */
+  const [answersUnlocked, setAnswersUnlocked] = useState(true);
   const [statusMessage, setStatusMessage] = useState('');
   const [apiResponse, setApiResponse] = useState(null);
   const [leftPanelWidth, setLeftPanelWidth] = useState(50); // Percentage
@@ -199,20 +224,28 @@ const QuestionSubmission = () => {
 
       socket.on('questionPublished', ({ questionId: updatedId, isPublished }) => {
         if (updatedId === questionId) {
-          const classData = question.classes.find((cls) => cls.classId === classId);
-          const newActiveState = classData ? isPublished && !classData.isDisabled : false;
-          console.log('[QuestionSubmission] Updating isQuestionActive:', newActiveState);
-          setIsQuestionActive(newActiveState);
+          const classData = question.classes.find(
+            (cls) => String(cls.classId?._id || cls.classId) === String(classId)
+          );
+          const published = Boolean(classData && isPublished);
+          const unlocked = Boolean(published && classData && !classData.isDisabled);
+          console.log('[QuestionSubmission] questionPublished:', { published, unlocked });
+          setIsQuestionActive(published);
+          setAnswersUnlocked(unlocked);
           setStatusMessage(`Question ${isPublished ? 'published' : 'unpublished'}`);
         }
       });
 
       socket.on('questionDisabled', ({ questionId: updatedId, isDisabled }) => {
         if (updatedId === questionId) {
-          const classData = question.classes.find((cls) => cls.classId === classId);
-          const newActiveState = classData ? classData.isPublished && !isDisabled : false;
-          console.log('[QuestionSubmission] Updating isQuestionActive:', newActiveState);
-          setIsQuestionActive(newActiveState);
+          const classData = question.classes.find(
+            (cls) => String(cls.classId?._id || cls.classId) === String(classId)
+          );
+          const published = Boolean(classData?.isPublished);
+          const unlocked = Boolean(published && !isDisabled);
+          console.log('[QuestionSubmission] questionDisabled:', { published, unlocked });
+          setIsQuestionActive(published);
+          setAnswersUnlocked(unlocked);
           setStatusMessage(`Question ${isDisabled ? 'disabled' : 'enabled'}`);
         }
       });
@@ -220,6 +253,7 @@ const QuestionSubmission = () => {
       socket.on('questionDeleted', ({ questionId: updatedId }) => {
         if (updatedId === questionId) {
           setIsQuestionActive(false);
+          setAnswersUnlocked(false);
           setStatusMessage('Question deleted');
         }
       });
@@ -267,21 +301,34 @@ const QuestionSubmission = () => {
 
   useEffect(() => {
     if (question && classId) {
-      const classData = question.classes.find((cls) => cls.classId === classId);
+      const classData = question.classes.find(
+        (cls) => String(cls.classId?._id || cls.classId) === String(classId)
+      );
       if (classData) {
-        const active = classData.isPublished && !classData.isDisabled;
-        console.log('[QuestionSubmission] Setting isQuestionActive:', active);
-        setIsQuestionActive(active);
+        const published = Boolean(classData.isPublished);
+        const unlocked = Boolean(classData.isPublished && !classData.isDisabled);
+        console.log('[QuestionSubmission] Class gate:', { published, unlocked });
+        setIsQuestionActive(published);
+        setAnswersUnlocked(unlocked);
       } else {
         console.log('[QuestionSubmission] Class not found for question');
         setIsQuestionActive(false);
+        setAnswersUnlocked(false);
         setStatusMessage('Class not found for this question');
+      }
+
+      if (isCodingQuestionType(question.type)) {
+        const resolvedLanguage = resolveLanguageForQuestion(question, selectedLanguage);
+        if (resolvedLanguage && resolvedLanguage !== selectedLanguage) {
+          setSelectedLanguage(resolvedLanguage);
+          return;
+        }
       }
 
       const qid = question._id?.toString() ?? '';
       const codingInitKey = `${qid}:${selectedLanguage}`;
 
-      if (question.type === 'coding' || question.type === 'fillInTheBlanksCoding' || question.type === 'codingWithDriver') {
+      if (isCodingQuestionType(question.type)) {
         if (lastAnswerInitKeyRef.current !== codingInitKey) {
           lastAnswerInitKeyRef.current = codingInitKey;
           const starterCode = question.starterCode?.find((sc) => sc.language === selectedLanguage);
@@ -307,6 +354,7 @@ const QuestionSubmission = () => {
     } else if (!classId) {
       console.log('[QuestionSubmission] No classId provided');
       setIsQuestionActive(false);
+      setAnswersUnlocked(false);
       setStatusMessage('No class associated with this question');
     }
   }, [question, classId, selectedLanguage]);
@@ -314,8 +362,13 @@ const QuestionSubmission = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!isQuestionActive) {
-      console.log('[QuestionSubmission] Submission blocked: Question is inactive');
-      setStatusMessage('Cannot submit: Question is inactive');
+      console.log('[QuestionSubmission] Submission blocked: Question not published');
+      setStatusMessage('Cannot submit: Question is not published for this class');
+      return;
+    }
+    if (!answersUnlocked) {
+      console.log('[QuestionSubmission] Submission blocked: Answers disabled by teacher');
+      setStatusMessage('Cannot submit: Your teacher has temporarily disabled answers for this question');
       return;
     }
     if (!classId) {
@@ -378,6 +431,9 @@ const QuestionSubmission = () => {
       setApiResponse({
         message: `Submission completed: ${normalizedSubmission.passedTestCases}/${normalizedSubmission.totalTestCases} test cases passed`,
         submission: normalizedSubmission,
+        testResults: result.testResults,
+        publicTestCases: result.publicTestCases,
+        hiddenTestCases: result.hiddenTestCases,
         type: 'submission',
       });
       setStatusMessage(`Submission completed: ${normalizedSubmission.passedTestCases}/${normalizedSubmission.totalTestCases} test cases passed`);
@@ -395,8 +451,13 @@ const QuestionSubmission = () => {
 
   const handleRunCode = async () => {
     if (!isQuestionActive) {
-      console.log('[QuestionSubmission] Code run blocked: Question is inactive');
-      setStatusMessage('Cannot run code: Question is inactive');
+      console.log('[QuestionSubmission] Code run blocked: Question not published');
+      setStatusMessage('Cannot run code: Question is not published for this class');
+      return;
+    }
+    if (!answersUnlocked) {
+      console.log('[QuestionSubmission] Code run blocked: Answers disabled');
+      setStatusMessage('Cannot run code: Your teacher has temporarily disabled answers for this question');
       return;
     }
     if (question.type !== 'coding' && question.type !== 'fillInTheBlanksCoding' && question.type !== 'codingWithDriver') {
@@ -454,8 +515,13 @@ const QuestionSubmission = () => {
 
   const handleRunCodeWithCustomInput = async () => {
     if (!isQuestionActive) {
-      console.log('[QuestionSubmission] Custom input run blocked: Question is inactive');
-      setStatusMessage('Cannot run code: Question is inactive');
+      console.log('[QuestionSubmission] Custom input run blocked: Question not published');
+      setStatusMessage('Cannot run code: Question is not published for this class');
+      return;
+    }
+    if (!answersUnlocked) {
+      console.log('[QuestionSubmission] Custom input run blocked: Answers disabled');
+      setStatusMessage('Cannot run code: Your teacher has temporarily disabled answers for this question');
       return;
     }
     if (question.type !== 'coding' && question.type !== 'fillInTheBlanksCoding' && question.type !== 'codingWithDriver') {
@@ -534,7 +600,9 @@ const QuestionSubmission = () => {
     const newLanguage = e.target.value;
     console.log('[QuestionSubmission] Language changed to:', newLanguage);
     setSelectedLanguage(newLanguage);
-    if (question?.type === 'coding' || question?.type === 'fillInTheBlanksCoding' || question?.type === 'codingWithDriver') {
+    if (question && isCodingQuestionType(question.type)) {
+      const qid = question._id?.toString() ?? '';
+      lastAnswerInitKeyRef.current = `${qid}:${newLanguage}`;
       const starterCode = question.starterCode?.find((sc) => sc.language === newLanguage);
       console.log('[QuestionSubmission] Starter code for', newLanguage, ':', starterCode?.code);
       setAnswer(starterCode?.code || question.codeSnippet || '');
@@ -615,88 +683,32 @@ const QuestionSubmission = () => {
       );
     }
 
+    if (source === 'customRun' && resultArray.length === 1) {
+      const result = resultArray[0];
+      return (
+        <div className="mt-4 space-y-3">
+          <h3 className="text-lg font-semibold text-gray-800">Custom Input Results</h3>
+          <p className={`text-sm font-medium ${result.passed ? 'text-green-700' : 'text-red-700'}`}>
+            {result.passed ? 'success' : 'failed'}
+          </p>
+        </div>
+      );
+    }
+
     const passedTestCases = apiResponse?.submission?.passedTestCases ?? submission?.passedTestCases ?? 0;
-    const totalTestCases = apiResponse?.submission?.totalTestCases ?? submission?.totalTestCases ?? 0;
+    const totalTestCases = apiResponse?.submission?.totalTestCases ?? submission?.totalTestCases ?? resultArray.length;
 
     return (
-      <div className="mt-4 space-y-4">
+      <div className="mt-4 space-y-3">
         <h3 className="text-lg font-semibold text-gray-800">
-          {source === 'run' ? 'Run Results' : source === 'customRun' ? 'Custom Input Results' : 'Test Results'}
+          {source === 'run' ? 'Run Results' : 'Submission Results'}
         </h3>
-        <div className="space-y-4">
-          {resultArray.map((result, index) => (
-            <div
-              key={index}
-              className={`p-4 rounded-xl border backdrop-blur-sm ${result.passed ? 'border-green-200 bg-green-50/80' : 'border-red-200 bg-red-50/80'} shadow-sm`}
-            >
-              <div className="flex items-start">
-                <div className={`flex-shrink-0 h-6 w-6 ${result.passed ? 'text-green-500' : 'text-red-500'}`}>
-                  {result.passed ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 0 100-16 8 0 000 16zm3.707-9.293a1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 0 00-1.414 1.414l2 2a1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                  ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 0 100-16 8 0 000 16zM8.707 7.293a1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                    </svg>
-                  )}
-                </div>
-                <div className="ml-3 flex-1">
-                  <h4 className="text-sm font-semibold text-gray-800">
-                    {source === 'customRun' ? 'Custom Input Result' : `Test Case ${index + 1}: `}
-                    <span className={result.passed ? 'text-green-700' : 'text-red-700'}>{result.passed ? 'Passed' : 'Failed'}</span>
-                    {result.isTLE && <span className="ml-2 px-2 py-0.5 rounded text-xs font-medium bg-amber-200 text-amber-900">TLE</span>}
-                    {result.isMLE && <span className="ml-2 px-2 py-0.5 rounded text-xs font-medium bg-amber-200 text-amber-900">MLE</span>}
-                  </h4>
-                  {result.error && (
-                    <div className="mt-2 bg-white p-3 rounded-lg border border-gray-100 shadow-sm">
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Error</p>
-                      <pre className="text-sm p-2 bg-gray-50 rounded overflow-x-auto whitespace-pre-wrap break-words text-red-600">
-                        {result.error}
-                      </pre>
-                    </div>
-                  )}
-                  <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-white p-3 rounded-lg border border-gray-100 shadow-sm">
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Input</p>
-                      <pre className="text-sm p-2 bg-gray-50 rounded overflow-x-auto whitespace-pre-wrap break-words">
-                        {typeof result.input === 'string' ? result.input : JSON.stringify(result.input, null, 2)}
-                      </pre>
-                    </div>
-                    <div className="bg-white p-3 rounded-lg border border-gray-100 shadow-sm">
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Output</p>
-                      <pre className="text-sm p-2 bg-gray-50 rounded overflow-x-auto whitespace-pre-wrap break-words">
-                        {typeof result.output === 'string' ? result.output : JSON.stringify(result.output, null, 2)}
-                      </pre>
-                    </div>
-                    <div className="bg-white p-3 rounded-lg border border-gray-100 shadow-sm">
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Expected</p>
-                      <pre className="text-sm p-2 bg-gray-50 rounded overflow-x-auto whitespace-pre-wrap break-words">
-                        {typeof result.expected === 'string' ? result.expected : JSON.stringify(result.expected, null, 2)}
-                      </pre>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-          {source === 'submission' && (
-            <div className="mt-4 p-4 bg-blue-50/80 backdrop-blur-sm rounded-xl border border-blue-200">
-              <p className="text-sm font-semibold text-blue-800">
-                Test Cases Passed: {passedTestCases}/{totalTestCases}
-              </p>
-              <p className="text-sm text-blue-800 mt-2">Score: {apiResponse?.submission?.score ?? submission?.score ?? 0}</p>
-            </div>
-          )}
-          {source === 'run' && (
-            <div className="mt-4 p-4 bg-blue-50/80 backdrop-blur-sm rounded-xl border border-blue-200">
-              <p className="text-sm font-semibold text-blue-800">
-                Public Test Cases Passed: {passedTestCases}/{totalTestCases}
-              </p>
-              <p className="text-sm text-blue-800 mt-2">Note: No score is assigned for running code.</p>
-            </div>
-          )}
-        </div>
+        <TestCaseResultsList results={resultArray} className="rounded-lg border border-gray-200 bg-white/80 p-3" />
+        {source === 'submission' && (
+          <p className="text-sm text-gray-600">
+            Score: {apiResponse?.submission?.score ?? submission?.score ?? 0} · {passedTestCases}/{totalTestCases} passed
+          </p>
+        )}
       </div>
     );
   };
@@ -759,6 +771,14 @@ const QuestionSubmission = () => {
         </div>
       )}
 
+      {isQuestionActive && !answersUnlocked && (
+        <div className="p-3 bg-amber-50/90 border-b border-amber-200 shadow-sm">
+          <p className="text-sm font-semibold text-amber-900 text-center">
+            Your teacher has disabled answers for this question. You can still read everything on the left; run and submit stay off until it is enabled again.
+          </p>
+        </div>
+      )}
+
       {/* Main Split Layout */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel - Question */}
@@ -795,6 +815,27 @@ const QuestionSubmission = () => {
             <h3 className="text-lg font-semibold text-gray-800">Description</h3>
             <div className="text-gray-600 mt-2 leading-relaxed" dangerouslySetInnerHTML={{ __html: question.description }} />
 
+            {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding' || question.type === 'codingWithDriver') && question.inputFormat && (
+              <>
+                <h3 className="text-lg font-semibold text-gray-800 mt-6">Input format</h3>
+                <div className="text-gray-600 mt-2 leading-relaxed" dangerouslySetInnerHTML={{ __html: question.inputFormat }} />
+              </>
+            )}
+
+            {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding' || question.type === 'codingWithDriver') && question.outputFormat && (
+              <>
+                <h3 className="text-lg font-semibold text-gray-800 mt-6">Output format</h3>
+                <div className="text-gray-600 mt-2 leading-relaxed" dangerouslySetInnerHTML={{ __html: question.outputFormat }} />
+              </>
+            )}
+
+            {isCodingQuestionType(question.type) && question.explanation && (
+              <>
+                <h3 className="text-lg font-semibold text-gray-800 mt-6">Explanation</h3>
+                <div className="text-gray-600 mt-2 leading-relaxed" dangerouslySetInnerHTML={{ __html: question.explanation }} />
+              </>
+            )}
+
             {question.constraints && (
               <>
                 <h3 className="text-lg font-semibold text-gray-800 mt-6">Constraints</h3>
@@ -820,13 +861,23 @@ const QuestionSubmission = () => {
               </>
             )}
 
-            {question.examples?.length > 0 && (
+            {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding' || question.type === 'codingWithDriver') &&
+              question.sampleIo?.some((p) => (p.input || '').trim() || (p.output || '').trim()) && (
               <>
-                <h3 className="text-lg font-semibold text-gray-800 mt-6">Examples</h3>
+                <h3 className="text-lg font-semibold text-gray-800 mt-6">Sample input / output</h3>
                 <div className="space-y-4 mt-2">
-                  {question.examples.map((example, index) => (
-                    <div key={index} className="bg-gray-50 p-4 rounded-lg border border-gray-100 shadow-sm">
-                      <pre className="text-sm overflow-x-auto whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: example }} />
+                  {question.sampleIo
+                    .filter((p) => (p.input || '').trim() || (p.output || '').trim())
+                    .map((pair, index) => (
+                    <div key={index} className="bg-gray-50 p-4 rounded-lg border border-gray-100 shadow-sm space-y-2">
+                      <div>
+                        <span className="text-xs font-semibold text-gray-500 uppercase">Input</span>
+                        <pre className="text-sm overflow-x-auto whitespace-pre-wrap font-mono text-gray-800 mt-1">{pair.input || '—'}</pre>
+                      </div>
+                      <div>
+                        <span className="text-xs font-semibold text-gray-500 uppercase">Output</span>
+                        <pre className="text-sm overflow-x-auto whitespace-pre-wrap font-mono text-gray-800 mt-1">{pair.output || '—'}</pre>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -881,7 +932,7 @@ const QuestionSubmission = () => {
                     value={selectedLanguage}
                     onChange={handleLanguageChange}
                     className="mt-1 block w-full rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm disabled:bg-gray-100 disabled:cursor-not-allowed py-1.5"
-                    disabled={!isQuestionActive}
+                    disabled={!answersUnlocked}
                   >
                     {question.languages?.map((lang) => (
                       <option key={lang} value={lang}>
@@ -941,7 +992,7 @@ const QuestionSubmission = () => {
                             onChange={setAnswer}
                             defaultValue={question.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || ''}
                             language={selectedLanguage}
-                            disabled={!isQuestionActive}
+                            disabled={!answersUnlocked}
                             isFillInTheBlanks={false}
                             height="100%"
                           />
@@ -953,7 +1004,7 @@ const QuestionSubmission = () => {
                             onChange={setAnswer}
                             defaultValue={question.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || question.codeSnippet || ''}
                             language={selectedLanguage}
-                            disabled={!isQuestionActive}
+                            disabled={!answersUnlocked}
                             isFillInTheBlanks={true}
                             height="100%"
                           />
@@ -1004,7 +1055,7 @@ const QuestionSubmission = () => {
                             rows={2}
                             className="block w-full mt-1 rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-xs disabled:bg-gray-100 disabled:cursor-not-allowed"
                             placeholder="e.g., [1, 5, 3, 9, 2]"
-                            disabled={!isQuestionActive}
+                            disabled={!answersUnlocked}
                           />
                         </div>
                         <div>
@@ -1018,7 +1069,7 @@ const QuestionSubmission = () => {
                             rows={2}
                             className="block w-full mt-1 rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-xs disabled:bg-gray-100 disabled:cursor-not-allowed"
                             placeholder="e.g., 9"
-                            disabled={!isQuestionActive}
+                            disabled={!answersUnlocked}
                           />
                         </div>
                       </div>
@@ -1027,9 +1078,9 @@ const QuestionSubmission = () => {
                         <button
                           type="button"
                           onClick={handleRunCode}
-                          disabled={isRunning || isRunningCustom || !isQuestionActive}
+                          disabled={isRunning || isRunningCustom || !answersUnlocked}
                           className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
-                            isRunning || isRunningCustom || !isQuestionActive ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                            isRunning || isRunningCustom || !answersUnlocked ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
                           }`}
                         >
                           {isRunning ? (
@@ -1044,18 +1095,20 @@ const QuestionSubmission = () => {
                               </svg>
                               Running...
                             </>
-                          ) : isQuestionActive ? (
-                            'Run Code'
+                          ) : !isQuestionActive ? (
+                            'Not published'
+                          ) : !answersUnlocked ? (
+                            'Answers locked'
                           ) : (
-                            'Question Inactive'
+                            'Run Code'
                           )}
                         </button>
                         <button
                           type="button"
                           onClick={handleRunCodeWithCustomInput}
-                          disabled={isRunning || isRunningCustom || !isQuestionActive || !customInput.trim()}
+                          disabled={isRunning || isRunningCustom || !answersUnlocked || !customInput.trim()}
                           className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
-                            isRunning || isRunningCustom || !isQuestionActive || !customInput.trim() ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
+                            isRunning || isRunningCustom || !answersUnlocked || !customInput.trim() ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
                           }`}
                         >
                           {isRunningCustom ? (
@@ -1070,17 +1123,19 @@ const QuestionSubmission = () => {
                               </svg>
                               Running Custom...
                             </>
-                          ) : isQuestionActive ? (
-                            'Run with Custom Input'
+                          ) : !isQuestionActive ? (
+                            'Not published'
+                          ) : !answersUnlocked ? (
+                            'Answers locked'
                           ) : (
-                            'Question Inactive'
+                            'Run with Custom Input'
                           )}
                         </button>
                         <button
                           type="submit"
-                          disabled={isSubmitting || !isQuestionActive}
+                          disabled={isSubmitting || !answersUnlocked}
                           className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
-                            isSubmitting || !isQuestionActive ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+                            isSubmitting || !answersUnlocked ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
                           }`}
                         >
                           {isSubmitting ? (
@@ -1095,10 +1150,12 @@ const QuestionSubmission = () => {
                               </svg>
                               Submitting...
                             </>
-                          ) : isQuestionActive ? (
-                            'Submit Answer'
+                          ) : !isQuestionActive ? (
+                            'Not published'
+                          ) : !answersUnlocked ? (
+                            'Answers locked'
                           ) : (
-                            'Question Inactive'
+                            'Submit Answer'
                           )}
                         </button>
                       </div>
@@ -1116,7 +1173,7 @@ const QuestionSubmission = () => {
                       onChange={setAnswer}
                       defaultValue={question.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || ''}
                       language={selectedLanguage}
-                      disabled={!isQuestionActive}
+                      disabled={!answersUnlocked}
                       isFillInTheBlanks={false}
                     />
                   </div>
@@ -1132,7 +1189,7 @@ const QuestionSubmission = () => {
                       onChange={setAnswer}
                       defaultValue={question.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || question.codeSnippet || ''}
                       language={selectedLanguage}
-                      disabled={!isQuestionActive}
+                      disabled={!answersUnlocked}
                       isFillInTheBlanks={true}
                     />
                   </div>
@@ -1150,7 +1207,7 @@ const QuestionSubmission = () => {
                         onChange={(e) => setAnswer(e.target.value)}
                         className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 disabled:opacity-50"
                         id={`option-${index}`}
-                        disabled={!isQuestionActive}
+                        disabled={!answersUnlocked}
                       />
                       <label
                         htmlFor={`option-${index}`}
@@ -1175,7 +1232,7 @@ const QuestionSubmission = () => {
                         }}
                         className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 disabled:opacity-50"
                         id={`option-${index}`}
-                        disabled={!isQuestionActive}
+                        disabled={!answersUnlocked}
                       />
                       <label
                         htmlFor={`option-${index}`}
@@ -1193,7 +1250,7 @@ const QuestionSubmission = () => {
                     onChange={(e) => setAnswer(e.target.value)}
                     placeholder="Enter your answer..."
                     className="block w-full mt-1 rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm p-3 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                    disabled={!isQuestionActive}
+                    disabled={!answersUnlocked}
                   />
                 </div>
               ) : null}
@@ -1204,9 +1261,9 @@ const QuestionSubmission = () => {
                     <div className="flex-shrink-0 flex justify-end border-t pt-3 mt-4" style={{ borderColor: 'var(--card-border)' }}>
                       <button
                         type="submit"
-                        disabled={isSubmitting || !isQuestionActive}
+                        disabled={isSubmitting || !answersUnlocked}
                         className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
-                          isSubmitting || !isQuestionActive ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+                          isSubmitting || !answersUnlocked ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
                         }`}
                       >
                         {isSubmitting ? (
@@ -1221,10 +1278,12 @@ const QuestionSubmission = () => {
                             </svg>
                             Submitting...
                           </>
-                        ) : isQuestionActive ? (
-                          'Submit Answer'
+                        ) : !isQuestionActive ? (
+                          'Not published'
+                        ) : !answersUnlocked ? (
+                          'Answers locked'
                         ) : (
-                          'Question Inactive'
+                          'Submit Answer'
                         )}
                       </button>
                     </div>
@@ -1287,13 +1346,16 @@ const QuestionSubmission = () => {
                     </div>
                   </div>
 
-                  {(apiResponse?.testResults || (apiResponse?.submission?.output && apiResponse?.type !== 'submission')) && (
-                    renderTestCaseResults(apiResponse?.testResults || JSON.parse(apiResponse?.submission?.output || '[]'), apiResponse?.type)
-                  )}
+                  {isCodingQuestionType(question?.type) &&
+                    getTestCaseResultsFromApi(apiResponse).length > 0 &&
+                    renderTestCaseResults(getTestCaseResultsFromApi(apiResponse), apiResponse?.type)}
                 </>
               )}
 
-              {runResults && !apiResponse?.submission && renderTestCaseResults(runResults, 'run')}
+              {runResults &&
+                !apiResponse &&
+                parseTestCaseResultsList(runResults).length > 0 &&
+                renderTestCaseResults(parseTestCaseResultsList(runResults), 'run')}
               </div>
             )}
           </div>
@@ -1320,7 +1382,7 @@ const QuestionSubmission = () => {
                   value={selectedLanguage}
                   onChange={handleLanguageChange}
                   className="rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm disabled:bg-gray-100 disabled:cursor-not-allowed px-3 py-1.5"
-                  disabled={!isQuestionActive}
+                  disabled={!answersUnlocked}
                 >
                   {question.languages?.map((lang) => (
                     <option key={lang} value={lang}>
@@ -1334,9 +1396,9 @@ const QuestionSubmission = () => {
               <button
                 type="button"
                 onClick={handleRunCode}
-                disabled={isRunning || isRunningCustom || !isQuestionActive}
+                disabled={isRunning || isRunningCustom || !answersUnlocked}
                 className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
-                  isRunning || isRunningCustom || !isQuestionActive ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                  isRunning || isRunningCustom || !answersUnlocked ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
                 }`}
               >
                 {isRunning ? 'Running...' : 'Run Code'}
@@ -1347,9 +1409,9 @@ const QuestionSubmission = () => {
                   e.preventDefault();
                   handleSubmit(e);
                 }}
-                disabled={isSubmitting || !isQuestionActive}
+                disabled={isSubmitting || !answersUnlocked}
                 className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
-                  isSubmitting || !isQuestionActive ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+                  isSubmitting || !answersUnlocked ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
                 }`}
               >
                 {isSubmitting ? 'Submitting...' : 'Submit Answer'}
@@ -1381,7 +1443,7 @@ const QuestionSubmission = () => {
                 onChange={setAnswer}
                 defaultValue={question.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || ''}
                 language={selectedLanguage}
-                disabled={!isQuestionActive}
+                disabled={!answersUnlocked}
                 isFillInTheBlanks={false}
               />
             ) : question.type === 'fillInTheBlanksCoding' ? (
@@ -1391,7 +1453,7 @@ const QuestionSubmission = () => {
                 onChange={setAnswer}
                 defaultValue={question.starterCode?.find((sc) => sc.language === selectedLanguage)?.code || question.codeSnippet || ''}
                 language={selectedLanguage}
-                disabled={!isQuestionActive}
+                disabled={!answersUnlocked}
                 isFillInTheBlanks={true}
               />
             ) : null}

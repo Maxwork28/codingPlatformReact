@@ -26,6 +26,7 @@ import {
   getClassDetails,
   getQuestionPerspectiveReport,
 } from '../../../common/services/api';
+import parse from 'html-react-parser';
 
 // Register Chart.js components
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
@@ -754,6 +755,46 @@ const ClassDetails = () => {
             <p className="text-sm font-medium text-gray-600">Description</p>
             <p className="text-gray-800">{questionReport.question.description}</p>
           </div>
+          {['fillInTheBlanksCoding', 'coding', 'codingWithDriver'].includes(questionReport.question.type) &&
+            questionReport.question.inputFormat && (
+            <div>
+              <p className="text-sm font-medium text-gray-600">Input format</p>
+              <div className="text-gray-800 prose prose-sm max-w-none">{parse(questionReport.question.inputFormat)}</div>
+            </div>
+          )}
+          {['fillInTheBlanksCoding', 'coding', 'codingWithDriver'].includes(questionReport.question.type) &&
+            questionReport.question.outputFormat && (
+            <div>
+              <p className="text-sm font-medium text-gray-600">Output format</p>
+              <div className="text-gray-800 prose prose-sm max-w-none">{parse(questionReport.question.outputFormat)}</div>
+            </div>
+          )}
+          {questionReport.question.explanation && (
+            <div>
+              <p className="text-sm font-medium text-gray-600">Explanation</p>
+              <div className="text-gray-800 prose prose-sm max-w-none">{parse(questionReport.question.explanation)}</div>
+            </div>
+          )}
+          {['fillInTheBlanksCoding', 'coding', 'codingWithDriver'].includes(questionReport.question.type) &&
+            questionReport.question.sampleIo?.some((p) => (p.input || '').trim() || (p.output || '').trim()) && (
+            <div>
+              <p className="text-sm font-medium text-gray-600">Sample input / output</p>
+              <div className="mt-2 space-y-2">
+                {questionReport.question.sampleIo
+                  .filter((p) => (p.input || '').trim() || (p.output || '').trim())
+                  .map((pair, i) => (
+                    <div key={i} className="text-sm rounded border border-gray-200 bg-gray-50 p-2 font-mono space-y-1">
+                      <div>
+                        <span className="text-gray-600">In:</span> <span className="text-gray-900 whitespace-pre-wrap">{pair.input || '—'}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Out:</span> <span className="text-gray-900 whitespace-pre-wrap">{pair.output || '—'}</span>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-sm font-medium text-gray-600">Difficulty</p>

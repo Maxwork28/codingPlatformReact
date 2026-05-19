@@ -149,6 +149,53 @@ const QuestionSolution = () => {
             </span>
           </div>
 
+          {['fillInTheBlanksCoding', 'coding', 'codingWithDriver'].includes(question.type) &&
+            (question.inputFormat || question.outputFormat) && (
+            <div className="space-y-4 border-b border-gray-100 pb-6">
+              {question.inputFormat && (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-2">Input format</h3>
+                  <div className="text-sm text-gray-700 prose prose-sm max-w-none">{parse(question.inputFormat)}</div>
+                </div>
+              )}
+              {question.outputFormat && (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-2">Output format</h3>
+                  <div className="text-sm text-gray-700 prose prose-sm max-w-none">{parse(question.outputFormat)}</div>
+                </div>
+              )}
+              {question.explanation && (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-2">Explanation</h3>
+                  <div className="text-sm text-gray-700 prose prose-sm max-w-none">{parse(question.explanation)}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {['fillInTheBlanksCoding', 'coding', 'codingWithDriver'].includes(question.type) &&
+            question.sampleIo?.some((p) => (p.input || '').trim() || (p.output || '').trim()) && (
+              <div className="space-y-4 border-b border-gray-100 pb-6">
+                <h3 className="text-lg font-semibold text-gray-800 mb-2">Sample input / output</h3>
+                <div className="space-y-3">
+                  {question.sampleIo
+                    .filter((p) => (p.input || '').trim() || (p.output || '').trim())
+                    .map((pair, i) => (
+                      <div key={i} className="rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm space-y-2">
+                        <div>
+                          <span className="text-xs font-semibold text-gray-500 uppercase">Input</span>
+                          <pre className="mt-1 font-mono text-gray-800 whitespace-pre-wrap break-all">{pair.input || '—'}</pre>
+                        </div>
+                        <div>
+                          <span className="text-xs font-semibold text-gray-500 uppercase">Output</span>
+                          <pre className="mt-1 font-mono text-gray-800 whitespace-pre-wrap break-all">{pair.output || '—'}</pre>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
           <div>
             <h3 className="text-lg font-semibold text-gray-800 mb-3">Solution</h3>
             {question.type === 'mcq' && question.options?.length > 0 && (

@@ -1,11 +1,14 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { Menu, Transition, Portal } from '@headlessui/react';
 import parse from 'html-react-parser';
+import { io } from 'socket.io-client';
 import { getQuestionsByClass, teacherTestQuestion, teacherTestWithCustomInput, publishQuestion, unpublishQuestion, disableQuestion, enableQuestion } from '../../../common/services/api';
+import { API_BASE_URL } from '../../../common/constants';
 import CodeEditor from '../../student/components/CodeEditor';
+import TestCaseResultsList from '../../student/components/TestCaseResultsList';
 import { DiJavascript } from "react-icons/di";
 import { FaJava,  FaPython, FaDatabase, FaBookOpen } from "react-icons/fa";
 import { GiNotebook } from "react-icons/gi";
@@ -40,6 +43,7 @@ function getCodeTemplateForLanguage(question, lang) {
 
 const TakeClass = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useSelector((state) => state.auth);
   const { classes } = useSelector((state) => state.classes);
   
@@ -65,6 +69,8 @@ const TakeClass = () => {
   const [customInput, setCustomInput] = useState('');
   const [customOutput, setCustomOutput] = useState('');
   const [testResults, setTestResults] = useState(null);
+  const [showResultsModal, setShowResultsModal] = useState(false);
+  const [resultsModalKind, setResultsModalKind] = useState(null); // 'run'
 
   // Filter classes taught by the current teacher
   const myClasses = classes.filter(
@@ -210,6 +216,7 @@ const TakeClass = () => {
         isCorrect: response.data.isCorrect,
         explanation: response.data.explanation
       });
+      openResultsModal('run');
 
     } catch (err) {
       console.error('Failed to run code:', err);
@@ -217,6 +224,7 @@ const TakeClass = () => {
         error: true,
         message: typeof err === 'string' ? err : 'Failed to execute code. Please try again.'
       });
+      openResultsModal('run');
     } finally {
       setLoading(false);
     }
@@ -282,6 +290,7 @@ const TakeClass = () => {
         isCustomTest: true,
         explanation: response.data.explanation
       });
+      openResultsModal('run');
 
     } catch (err) {
       console.error('Failed to run with custom input:', err);
@@ -289,6 +298,7 @@ const TakeClass = () => {
         error: true,
         message: typeof err === 'string' ? err : 'Failed to execute code with custom input. Please try again.'
       });
+      openResultsModal('run');
     } finally {
       setLoading(false);
     }
@@ -297,6 +307,105 @@ const TakeClass = () => {
   const handlePresentSolution = async () => {
     console.log('Presenting solution...', { questionId: selectedQuestion?._id, code });
     alert('Present Solution - Coming soon!\nThis will broadcast the solution to students in real-time via Socket.IO.');
+  };
+
+  const openResultsModal = (kind) => {
+    setResultsModalKind(kind);
+    setShowResultsModal(true);
+  };
+
+  const closeResultsModal = () => setShowResultsModal(false);
+
+  const renderTestResultsBody = () => {
+    if (!testResults) return null;
+
+    if (testResults.error) {
+      return (
+        <div className="text-xs text-red-600 p-3 bg-red-100 rounded">
+          {testResults.message}
+        </div>
+      );
+    }
+
+    if (testResults.isCustomTest) {
+      return (
+        <div className="space-y-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+            <div className="p-2 bg-white rounded border" style={{ borderColor: 'var(--card-border)' }}>
+              <div className="font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Input</div>
+              <pre className="whitespace-pre-wrap" style={{ color: 'var(--text-primary)' }}>
+                {testResults.customInput}
+              </pre>
+            </div>
+            <div className="p-2 bg-white rounded border" style={{ borderColor: 'var(--card-border)' }}>
+              <div className="font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Actual Output</div>
+              <pre className="whitespace-pre-wrap" style={{ color: 'var(--text-primary)' }}>
+                {testResults.actualOutput}
+              </pre>
+            </div>
+          </div>
+          {testResults.expectedOutput && (
+            <div className="p-2 bg-white rounded border" style={{ borderColor: 'var(--card-border)' }}>
+              <div className="font-medium mb-1 text-xs" style={{ color: 'var(--text-secondary)' }}>Expected Output</div>
+              <pre className="text-xs whitespace-pre-wrap" style={{ color: 'var(--text-primary)' }}>
+                {testResults.expectedOutput}
+              </pre>
+              <div className={`mt-2 text-xs font-semibold ${testResults.passed ? 'text-green-600' : 'text-red-600'}`}>
+                {testResults.passed ? 'Output matches expected' : 'Output does not match expected'}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-2">
+        <TestCaseResultsList
+          results={testResults.testResults}
+          className="p-2 bg-white rounded border"
+        />
+        {testResults.explanation && (
+          <div className="mt-3 p-3 bg-blue-50 rounded border" style={{ borderColor: 'var(--card-border)' }}>
+            <div className="text-xs font-semibold mb-1" style={{ color: 'var(--text-heading)' }}>
+              Explanation:
+            </div>
+            <div className="text-xs" style={{ color: 'var(--text-primary)' }}>
+              {stripHtml(testResults.explanation)}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderTestResultsCard = () => {
+    if (!testResults) return null;
+
+    return (
+      <div
+        className={`mt-4 p-4 rounded-lg border backdrop-blur-sm ${
+          testResults.error ? 'bg-red-50/80' : testResults.isCorrect || testResults.passed ? 'bg-green-50/80' : 'bg-yellow-50/80'
+        }`}
+        style={{ borderColor: 'var(--card-border)' }}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-sm font-semibold" style={{ color: 'var(--text-heading)' }}>
+            {testResults.error ? 'Error' : testResults.isCustomTest ? 'Custom Test Results' : 'Test Results'}
+          </h4>
+          {!testResults.error && !testResults.isCustomTest && (
+            <span
+              className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                testResults.isCorrect ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+              }`}
+            >
+              {testResults.passedTestCases}/{testResults.totalTestCases} Passed
+            </span>
+          )}
+        </div>
+        {renderTestResultsBody()}
+      </div>
+    );
   };
 
   const getClassNavigationState = () => (selectedClass?._id ? { classId: selectedClass._id } : undefined);
@@ -327,6 +436,17 @@ const TakeClass = () => {
     navigateWithClassContext(`/teacher/questions/${questionId}/preview`);
   };
 
+  const handleViewQuestionStatistics = () => {
+    if (!selectedClass?._id || !selectedQuestion?._id) {
+      alert('Please select a class and question first');
+      return;
+    }
+    navigate(
+      `/teacher/take-class/${selectedClass._id}/questions/${selectedQuestion._id}/statistics`,
+      { state: { fromTakeClass: true } }
+    );
+  };
+
   const handlePublish = async (questionId) => {
     try {
       // Find the question to check current status
@@ -345,10 +465,8 @@ const TakeClass = () => {
       setLoading(true);
       if (isPublished) {
         await unpublishQuestion(questionId, { classId: selectedClass._id });
-        alert('Question unpublished successfully');
       } else {
         await publishQuestion(questionId, { classId: selectedClass._id });
-        alert('Question published successfully');
       }
       
       // Refresh questions list
@@ -365,7 +483,11 @@ const TakeClass = () => {
       }
     } catch (err) {
       console.error('Failed to toggle publish status:', err);
-      const errorMsg = err.response?.data?.error || err.error || 'Failed to update publish status';
+      const errorMsg =
+        (typeof err === 'string' && err) ||
+        err?.response?.data?.error ||
+        err?.error ||
+        'Failed to update publish status';
       alert(errorMsg);
     } finally {
       setLoading(false);
@@ -390,10 +512,8 @@ const TakeClass = () => {
       setLoading(true);
       if (isDisabled) {
         await enableQuestion(questionId, { classId: selectedClass._id });
-        alert('Question enabled successfully');
       } else {
         await disableQuestion(questionId, { classId: selectedClass._id });
-        alert('Question disabled successfully');
       }
       
       // Refresh questions list
@@ -410,7 +530,11 @@ const TakeClass = () => {
       }
     } catch (err) {
       console.error('Failed to toggle disable status:', err);
-      const errorMsg = err.response?.data?.error || err.error || 'Failed to update disable status';
+      const errorMsg =
+        (typeof err === 'string' && err) ||
+        err?.response?.data?.error ||
+        err?.error ||
+        'Failed to update disable status';
       alert(errorMsg);
     } finally {
       setLoading(false);
@@ -505,6 +629,14 @@ const TakeClass = () => {
     };
   }, [isFullscreen]);
 
+  useEffect(() => {
+    const state = location.state;
+    if (state?.classId && myClasses.length && !selectedClass) {
+      const cls = myClasses.find((c) => String(c._id) === String(state.classId));
+      if (cls) setSelectedClass(cls);
+    }
+  }, [location.state, myClasses, selectedClass]);
+
   // Fetch questions when a class is selected
   useEffect(() => {
     if (selectedClass) {
@@ -514,7 +646,17 @@ const TakeClass = () => {
           const response = await getQuestionsByClass(selectedClass._id);
           const fetchedQuestions = response.data.questions || [];
           setQuestions(fetchedQuestions);
-          if (fetchedQuestions.length > 0) {
+          const restoreQuestionId = location.state?.questionId;
+          if (restoreQuestionId) {
+            const found = fetchedQuestions.find((q) => String(q._id) === String(restoreQuestionId));
+            if (found) {
+              setSelectedQuestion(found);
+              setSelectedLanguage(found.languages?.[0] || 'javascript');
+            } else if (fetchedQuestions.length > 0) {
+              setSelectedQuestion(fetchedQuestions[0]);
+              setSelectedLanguage(fetchedQuestions[0].languages?.[0] || 'javascript');
+            }
+          } else if (fetchedQuestions.length > 0) {
             setSelectedQuestion(fetchedQuestions[0]);
             setSelectedLanguage(fetchedQuestions[0].languages?.[0] || 'javascript');
           }
@@ -526,7 +668,38 @@ const TakeClass = () => {
       };
       fetchQuestions();
     }
-  }, [selectedClass]);
+  }, [selectedClass, location.state?.questionId]);
+
+  // Real-time: stay in sync when publish/disable changes (this teacher, co-teacher, or other clients)
+  useEffect(() => {
+    if (!selectedClass?._id) return undefined;
+    const classId = selectedClass._id;
+    const socket = io(`${API_BASE_URL}/`, { withCredentials: true });
+    socket.emit('joinClass', classId);
+    const refetchQuestions = async () => {
+      try {
+        const response = await getQuestionsByClass(classId);
+        const updated = response.data.questions || [];
+        setQuestions(updated);
+        setSelectedQuestion((sel) => {
+          if (!sel) return updated[0] || null;
+          const found = updated.find((q) => q._id === sel._id);
+          return found || updated[0] || null;
+        });
+      } catch (err) {
+        console.error('[TakeClass] Socket refetch failed:', err);
+      }
+    };
+    socket.on('questionPublished', refetchQuestions);
+    socket.on('questionDisabled', refetchQuestions);
+    socket.on('questionAssigned', refetchQuestions);
+    return () => {
+      socket.off('questionPublished', refetchQuestions);
+      socket.off('questionDisabled', refetchQuestions);
+      socket.off('questionAssigned', refetchQuestions);
+      socket.disconnect();
+    };
+  }, [selectedClass?._id]);
 
   // Sync editor payload when question or language changes (type-aware)
   useEffect(() => {
@@ -1013,7 +1186,14 @@ const TakeClass = () => {
                   dangerouslySetInnerHTML={{ __html: selectedQuestion.title }}
                 />
 
-                <div className="flex flex-wrap gap-2 mb-6">
+                <div className="flex flex-wrap items-center gap-2 mb-6">
+                  <button
+                    type="button"
+                    onClick={handleViewQuestionStatistics}
+                    className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    View question statistics
+                  </button>
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
                     selectedQuestion.difficulty === 'easy' ? 'bg-green-100 text-green-700' :
                     selectedQuestion.difficulty === 'medium' ? 'bg-yellow-100 text-yellow-700' :
@@ -1063,7 +1243,8 @@ const TakeClass = () => {
                   />
                 </div>
 
-                {selectedQuestion.inputFormat && (
+                {['fillInTheBlanksCoding', 'coding', 'codingWithDriver'].includes(selectedQuestion.type) &&
+                  selectedQuestion.inputFormat && (
                   <div className="mb-4 sm:mb-6">
                     <h3 className="text-base sm:text-lg font-semibold mb-2" style={{ color: 'var(--text-heading)' }}>
                       Input Format
@@ -1076,7 +1257,8 @@ const TakeClass = () => {
                   </div>
                 )}
 
-                {selectedQuestion.outputFormat && (
+                {['fillInTheBlanksCoding', 'coding', 'codingWithDriver'].includes(selectedQuestion.type) &&
+                  selectedQuestion.outputFormat && (
                   <div className="mb-4 sm:mb-6">
                     <h3 className="text-base sm:text-lg font-semibold mb-2" style={{ color: 'var(--text-heading)' }}>
                       Output Format
@@ -1085,6 +1267,19 @@ const TakeClass = () => {
                       className="text-xs sm:text-sm leading-relaxed" 
                       style={{ color: 'var(--text-primary)' }}
                       dangerouslySetInnerHTML={{ __html: selectedQuestion.outputFormat }}
+                    />
+                  </div>
+                )}
+
+                {selectedQuestion.explanation && (
+                  <div className="mb-4 sm:mb-6">
+                    <h3 className="text-base sm:text-lg font-semibold mb-2" style={{ color: 'var(--text-heading)' }}>
+                      Explanation
+                    </h3>
+                    <div
+                      className="text-xs sm:text-sm leading-relaxed"
+                      style={{ color: 'var(--text-primary)' }}
+                      dangerouslySetInnerHTML={{ __html: selectedQuestion.explanation }}
                     />
                   </div>
                 )}
@@ -1102,23 +1297,39 @@ const TakeClass = () => {
                   </div>
                 )}
 
-                {selectedQuestion.examples && selectedQuestion.examples.length > 0 && (
+                {['fillInTheBlanksCoding', 'coding', 'codingWithDriver'].includes(selectedQuestion.type) &&
+                  selectedQuestion.sampleIo?.some((p) => (p.input || '').trim() || (p.output || '').trim()) && (
                   <div className="mb-4 sm:mb-6">
                     <h3 className="text-base sm:text-lg font-semibold mb-2" style={{ color: 'var(--text-heading)' }}>
-                      Sample Input
+                      Sample input / output
                     </h3>
                     <div className="space-y-2 sm:space-y-3">
-                      {selectedQuestion.examples.map((example, index) => (
+                      {selectedQuestion.sampleIo
+                        .filter((p) => (p.input || '').trim() || (p.output || '').trim())
+                        .map((pair, index) => (
                         <div 
                           key={index} 
-                          className="p-2 sm:p-3 rounded-lg border" 
+                          className="p-2 sm:p-3 rounded-lg border space-y-2" 
                           style={{ backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }}
                         >
-                          <pre 
-                            className="text-xs sm:text-sm whitespace-pre-wrap" 
-                            style={{ color: 'var(--text-primary)' }}
-                            dangerouslySetInnerHTML={{ __html: example }}
-                          />
+                          <div>
+                            <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Input</span>
+                            <pre 
+                              className="text-xs sm:text-sm whitespace-pre-wrap mt-1" 
+                              style={{ color: 'var(--text-primary)' }}
+                            >
+                              {pair.input || '—'}
+                            </pre>
+                          </div>
+                          <div>
+                            <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Output</span>
+                            <pre 
+                              className="text-xs sm:text-sm whitespace-pre-wrap mt-1" 
+                              style={{ color: 'var(--text-primary)' }}
+                            >
+                              {pair.output || '—'}
+                            </pre>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1531,122 +1742,6 @@ const TakeClass = () => {
                     </button>
                   </div>
 
-                  {/* Results */}
-                  {isRunnableCoding && testResults && (
-                    <div className={`mt-4 p-4 rounded-lg border backdrop-blur-sm ${
-                      testResults.error ? 'bg-red-50/80' : testResults.isCorrect || testResults.passed ? 'bg-green-50/80' : 'bg-yellow-50/80'
-                    }`} style={{ borderColor: 'var(--card-border)' }}>
-                      <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-sm font-semibold" style={{ color: 'var(--text-heading)' }}>
-                          {testResults.error ? '❌ Error' : testResults.isCustomTest ? '🧪 Custom Test Results' : '🔬 Test Results'}
-                        </h4>
-                        {!testResults.error && !testResults.isCustomTest && (
-                          <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                            testResults.isCorrect ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                          }`}>
-                            {testResults.passedTestCases}/{testResults.totalTestCases} Passed
-                          </span>
-                        )}
-                      </div>
-
-                      {testResults.error ? (
-                        <div className="text-xs text-red-600 p-3 bg-red-100 rounded">
-                          {testResults.message}
-                        </div>
-                      ) : testResults.isCustomTest ? (
-                        <div className="space-y-2">
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div className="p-2 bg-white rounded border" style={{ borderColor: 'var(--card-border)' }}>
-                              <div className="font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Input:</div>
-                              <pre className="whitespace-pre-wrap" style={{ color: 'var(--text-primary)' }}>
-                                {testResults.customInput}
-                              </pre>
-                            </div>
-                            <div className="p-2 bg-white rounded border" style={{ borderColor: 'var(--card-border)' }}>
-                              <div className="font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Actual Output:</div>
-                              <pre className="whitespace-pre-wrap" style={{ color: 'var(--text-primary)' }}>
-                                {testResults.actualOutput}
-                              </pre>
-                            </div>
-                          </div>
-                          {testResults.expectedOutput && (
-                            <div className="p-2 bg-white rounded border" style={{ borderColor: 'var(--card-border)' }}>
-                              <div className="font-medium mb-1 text-xs" style={{ color: 'var(--text-secondary)' }}>Expected Output:</div>
-                              <pre className="text-xs whitespace-pre-wrap" style={{ color: 'var(--text-primary)' }}>
-                                {testResults.expectedOutput}
-                              </pre>
-                              <div className={`mt-2 text-xs font-semibold ${testResults.passed ? 'text-green-600' : 'text-red-600'}`}>
-                                {testResults.passed ? '✅ Output matches expected' : '❌ Output does not match expected'}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between text-xs p-2 bg-white rounded">
-                            <span style={{ color: 'var(--text-secondary)' }}>Public Test Cases:</span>
-                            <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{testResults.publicTestCases}</span>
-                          </div>
-                          <div className="flex items-center justify-between text-xs p-2 bg-white rounded">
-                            <span style={{ color: 'var(--text-secondary)' }}>Hidden Test Cases:</span>
-                            <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{testResults.hiddenTestCases}</span>
-                          </div>
-                          
-                          <div className="mt-3 space-y-2">
-                            <div className="text-xs font-semibold mb-2" style={{ color: 'var(--text-heading)' }}>
-                              Test Case Details:
-                            </div>
-                            {testResults.testResults?.map((result, idx) => (
-                              <div 
-                                key={idx} 
-                                className={`p-2 rounded border ${result.passed ? 'bg-green-50' : 'bg-red-50'}`}
-                                style={{ borderColor: result.passed ? '#86efac' : '#fca5a5' }}
-                              >
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
-                                    Test Case #{idx + 1} {result.isPublic ? '(Public)' : '(Hidden)'}
-                                  </span>
-                                  <span className={`text-xs font-bold ${result.passed ? 'text-green-600' : 'text-red-600'}`}>
-                                    {result.passed ? '✅ PASS' : '❌ FAIL'}
-                                  </span>
-                                </div>
-                                <div className="grid grid-cols-3 gap-2 text-xs mt-2">
-                                  <div>
-                                    <div className="font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Input:</div>
-                                    <pre className="whitespace-pre-wrap text-xs">{result.input}</pre>
-                                  </div>
-                                  <div>
-                                    <div className="font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Expected:</div>
-                                    <pre className="whitespace-pre-wrap text-xs">{result.expected}</pre>
-                                  </div>
-                                  <div>
-                                    <div className="font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Got:</div>
-                                    <pre className="whitespace-pre-wrap text-xs">{result.output || result.error || 'No output'}</pre>
-                                  </div>
-                                </div>
-                                {result.error && (
-                                  <div className="mt-2 p-2 bg-red-100 rounded text-xs text-red-600">
-                                    Error: {result.error}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-
-                          {testResults.explanation && (
-                            <div className="mt-3 p-3 bg-blue-50 rounded border" style={{ borderColor: 'var(--card-border)' }}>
-                              <div className="text-xs font-semibold mb-1" style={{ color: 'var(--text-heading)' }}>
-                                💡 Explanation:
-                              </div>
-                              <div className="text-xs" style={{ color: 'var(--text-primary)' }}>
-                                {testResults.explanation}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </div>
                 </div>
               </div>
@@ -1772,6 +1867,57 @@ const TakeClass = () => {
                 />
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {showResultsModal && testResults && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="results-modal-title"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/50 cursor-default"
+            onClick={closeResultsModal}
+            aria-label="Close results"
+          />
+          <div
+            className="relative w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-lg shadow-xl border p-5 z-10"
+            style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
+          >
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <h2 id="results-modal-title" className="text-lg font-semibold" style={{ color: 'var(--text-heading)' }}>
+                {testResults?.error
+                  ? 'Error'
+                  : testResults?.isCustomTest
+                    ? 'Custom Test Results'
+                    : 'Test Results'}
+              </h2>
+              <button
+                type="button"
+                onClick={closeResultsModal}
+                className="shrink-0 p-1 rounded hover:opacity-70 text-lg leading-none"
+                style={{ color: 'var(--text-secondary)' }}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            {!testResults?.error && !testResults?.isCustomTest && testResults?.totalTestCases != null && (
+              <div className="mb-3">
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                    testResults.isCorrect ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                  }`}
+                >
+                  {testResults.passedTestCases}/{testResults.totalTestCases} Passed
+                </span>
+              </div>
+            )}
+            {renderTestResultsBody()}
           </div>
         </div>
       )}

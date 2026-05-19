@@ -153,6 +153,46 @@ const TeacherQuestionDetail = () => {
           {question.description && (
             <div className="mt-4 prose prose-sm max-w-none text-gray-700">{parse(question.description)}</div>
           )}
+          {isCoding && question.inputFormat && (
+            <div className="mt-4">
+              <h2 className="text-sm font-semibold text-gray-600 mb-2">Input format</h2>
+              <div className="prose prose-sm max-w-none text-gray-700">{parse(question.inputFormat)}</div>
+            </div>
+          )}
+          {isCoding && question.outputFormat && (
+            <div className="mt-4">
+              <h2 className="text-sm font-semibold text-gray-600 mb-2">Output format</h2>
+              <div className="prose prose-sm max-w-none text-gray-700">{parse(question.outputFormat)}</div>
+            </div>
+          )}
+          {question.explanation && (
+            <div className="mt-4">
+              <h2 className="text-sm font-semibold text-gray-600 mb-2">Explanation</h2>
+              <div className="prose prose-sm max-w-none text-gray-700">{parse(question.explanation)}</div>
+            </div>
+          )}
+          {isCoding &&
+            question.sampleIo?.some((p) => (p.input || '').trim() || (p.output || '').trim()) && (
+              <div className="mt-4">
+                <h2 className="text-sm font-semibold text-gray-600 mb-2">Sample input / output</h2>
+                <div className="space-y-3">
+                  {question.sampleIo
+                    .filter((p) => (p.input || '').trim() || (p.output || '').trim())
+                    .map((pair, i) => (
+                      <div key={i} className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm space-y-2">
+                        <div>
+                          <span className="font-semibold text-gray-600">Input</span>
+                          <pre className="mt-1 font-mono text-gray-800 whitespace-pre-wrap break-all text-xs">{pair.input || '—'}</pre>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-gray-600">Output</span>
+                          <pre className="mt-1 font-mono text-gray-800 whitespace-pre-wrap break-all text-xs">{pair.output || '—'}</pre>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
         </div>
 
         {/* Teacher Attempt - Code Editor */}

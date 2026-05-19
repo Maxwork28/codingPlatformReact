@@ -13,7 +13,7 @@ This report identifies issues in the React application codebase that need to be 
 
 **Issue:**
 ```javascript
-export const API_BASE_URL = 'https://api.algosutra.co.in';
+export const API_BASE_URL = 'http://localhost:5000';
 ```
 
 **Impact:** Cannot change API URL without code changes. Blocks development/testing with different backends.

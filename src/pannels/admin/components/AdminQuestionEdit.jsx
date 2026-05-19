@@ -68,7 +68,11 @@ const AdminQuestionEdit = () => {
           difficulty: question.difficulty || 'easy',
           tags: Array.isArray(question.tags) ? question.tags.join(', ') : (typeof question.tags === 'string' ? question.tags : ''),
           constraints: question.constraints || '',
-          examples: question.examples?.length > 0 ? question.examples : [''],
+          inputFormat: question.inputFormat || '',
+          outputFormat: question.outputFormat || '',
+          sampleIo: Array.isArray(question.sampleIo) && question.sampleIo.length > 0
+            ? question.sampleIo.map((p) => ({ input: p.input ?? '', output: p.output ?? '' }))
+            : [{ input: '', output: '' }],
           functionSignature: question.functionSignature || '',
           languages: Array.isArray(question.languages) ? question.languages : (question.language ? [question.language] : ['javascript']),
           options: question.options?.length >= 2 ? question.options : ['', '', '', ''],
@@ -87,6 +91,11 @@ const AdminQuestionEdit = () => {
           classes: question.classes || [],
           solutionCode: question.solutionCode || '',
           solutionLanguage: question.solutionLanguage || question.languages?.[0] || 'javascript',
+          solutionCodes: Array.isArray(question.solutionCodes)
+            ? question.solutionCodes.map((s) => ({ language: s.language, code: s.code || '' }))
+            : question.solutionCode && question.solutionLanguage
+              ? [{ language: question.solutionLanguage, code: question.solutionCode }]
+              : [],
           status: question.status || (draft ? 'draft' : 'published'),
           isDraft: draft,
         };

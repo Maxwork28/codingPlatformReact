@@ -1075,6 +1075,19 @@ export const viewSubmissionCode = async (submissionId) => {
 };
 
 /**
+ * Teacher marks a student submission as correct (updates leaderboard).
+ * @param {string} submissionId - Submission ID
+ */
+export const markSubmissionCorrect = async (submissionId) => {
+  try {
+    const response = await api.post(`/questions/submissions/${submissionId}/mark-correct`);
+    return response;
+  } catch (err) {
+    throw err.response?.data?.error || err.response?.data || 'Failed to mark submission correct';
+  }
+};
+
+/**
  * Fetches question perspective report
  * @param {string} classId - Class ID
  * @param {string} questionId - Question ID

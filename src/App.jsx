@@ -36,6 +36,8 @@ import TeacherDashboard from './pannels/teacher/pages/TeacherDashboard';
 import TeacherClassManagement from './pannels/teacher/pages/TeacherClassManagement';
 import TeacherClassView from './pannels/teacher/pages/TeacherClassView';
 import TakeClass from './pannels/teacher/pages/TakeClass';
+import QuestionStatistics from './pannels/teacher/pages/QuestionStatistics';
+import QuestionAttemptReview from './pannels/teacher/pages/QuestionAttemptReview';
 import ClassDetails from './pannels/teacher/pages/ClassDetails';
 import ClassEdit from './pannels/teacher/pages/ClassEdit';
 import QuestionManagement from './pannels/teacher/pages/QuestionManagement';
@@ -160,6 +162,16 @@ const MainContent = () => {
         <Route path="/teacher/take-class" element={
           <ProtectedRoute role="teacher">
             <TakeClass />
+          </ProtectedRoute>
+        } />
+        <Route path="/teacher/take-class/:classId/questions/:questionId/statistics" element={
+          <ProtectedRoute role="teacher">
+            <QuestionStatistics />
+          </ProtectedRoute>
+        } />
+        <Route path="/teacher/take-class/:classId/questions/:questionId/statistics/attempts/:submissionId" element={
+          <ProtectedRoute role="teacher">
+            <QuestionAttemptReview />
           </ProtectedRoute>
         } />
         <Route path="/teacher/classes/:classId" element={

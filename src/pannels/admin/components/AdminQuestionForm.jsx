@@ -436,9 +436,14 @@ const AdminQuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId
   const [difficulty, setDifficulty] = useState(initialData?.difficulty || 'easy');
   const [tags, setTags] = useState(initialData?.tags || '');
   const [constraints, setConstraints] = useState(deserializeFromHTML(initialData?.constraints || ''));
-  const [examples, setExamples] = useState(
-    (Array.isArray(initialData?.examples) ? initialData.examples : ['']).map(ex => deserializeFromHTML(ex || ''))
-  );
+  const [inputFormat, setInputFormat] = useState(deserializeFromHTML(initialData?.inputFormat || ''));
+  const [outputFormat, setOutputFormat] = useState(deserializeFromHTML(initialData?.outputFormat || ''));
+  const [sampleIo, setSampleIo] = useState(() => {
+    if (Array.isArray(initialData?.sampleIo) && initialData.sampleIo.length > 0) {
+      return initialData.sampleIo.map((p) => ({ input: p.input ?? '', output: p.output ?? '' }));
+    }
+    return [{ input: '', output: '' }];
+  });
   const [options, setOptions] = useState(
     (Array.isArray(initialData?.options) ? initialData.options : ['', '', '', '']).map(opt => deserializeFromHTML(opt || ''))
   );
@@ -472,11 +477,29 @@ const AdminQuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId
   );
   const [inputErrors, setInputErrors] = useState(testCases.map(() => ''));
   
-  // Solution state
-  const [solutionCode, setSolutionCode] = useState(initialData?.solutionCode || '');
+  const buildSolutionCodesFromInitial = (data, langs = []) => {
+    if (Array.isArray(data?.solutionCodes) && data.solutionCodes.length > 0) {
+      const fromApi = data.solutionCodes.map((s) => ({ language: s.language, code: s.code || '' }));
+      const langList = langs.length > 0 ? langs : fromApi.map((s) => s.language);
+      return langList.map((lang) => {
+        const existing = fromApi.find((s) => s.language === lang);
+        return existing || { language: lang, code: '' };
+      });
+    }
+    const primaryLang = data?.solutionLanguage || langs[0] || 'javascript';
+    const primaryCode = data?.solutionCode || '';
+    if (langs.length > 0) {
+      return langs.map((lang) => ({ language: lang, code: lang === primaryLang ? primaryCode : '' }));
+    }
+    return primaryCode ? [{ language: primaryLang, code: primaryCode }] : [];
+  };
+  const [solutionCodes, setSolutionCodes] = useState(() =>
+    buildSolutionCodesFromInitial(initialData, initialData?.languages || ['javascript'])
+  );
   const [solutionLanguage, setSolutionLanguage] = useState(
     initialData?.solutionLanguage || initialData?.languages?.[0] || 'javascript'
   );
+  const activeSolutionCode = solutionCodes.find((s) => s.language === solutionLanguage)?.code ?? '';
   const [testResults, setTestResults] = useState(null);
   const [isTestingSolution, setIsTestingSolution] = useState(false);
   const navigate = useNavigate();
@@ -497,7 +520,13 @@ const AdminQuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId
           : ''
     );
     setConstraints(deserializeFromHTML(initialData.constraints || ''));
-    setExamples((Array.isArray(initialData.examples) ? initialData.examples : ['']).map(ex => deserializeFromHTML(ex || '')));
+    setInputFormat(deserializeFromHTML(initialData.inputFormat || ''));
+    setOutputFormat(deserializeFromHTML(initialData.outputFormat || ''));
+    setSampleIo(
+      Array.isArray(initialData.sampleIo) && initialData.sampleIo.length > 0
+        ? initialData.sampleIo.map((p) => ({ input: p.input ?? '', output: p.output ?? '' }))
+        : [{ input: '', output: '' }]
+    );
     setOptions((Array.isArray(initialData.options) ? initialData.options : ['', '', '', '']).map(opt => deserializeFromHTML(opt || '')));
     setCorrectOption(initialData.correctOption ?? 0);
     setCorrectOptions(Array.isArray(initialData.correctOptions) ? initialData.correctOptions : []);
@@ -525,86 +554,37 @@ const AdminQuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId
     setClassIds(
       initialData.classes?.map(c => c.classId?.toString()) || (defaultClassId ? [defaultClassId] : [])
     );
-    setSolutionCode(initialData.solutionCode || '');
+    setSolutionCodes(buildSolutionCodesFromInitial(initialData, initialData.languages || ['javascript']));
     setSolutionLanguage(initialData.solutionLanguage || initialData.languages?.[0] || 'javascript');
   }, [initialData, defaultClassId]);
 
   const supportedLanguages = ['javascript', 'c', 'cpp', 'java', 'python', 'php', 'ruby', 'go'];
 
-  // Default starter code for coding questions
-  const getDefaultStarterCode = (lang) => {
-    switch (lang) {
-      case 'c':
-      case 'cpp':
-        return `// Reads space-separated integers (e.g., "1 2 5") and outputs their sum
-#include <stdio.h>
-int main() {
-    int a, b, c;
-    if (scanf("%d %d %d", &a, &b, &c) != 3) {
-        fprintf(stderr, "Error: Expected three space-separated integers\\n");
-        return 1;
-    }
-    printf("%d", a + b + c);
-    return 0;
-}`;
-      case 'javascript':
-        return `// Reads space-separated integers from input (e.g., "1 2 5")
-const fs = require('fs');
-let input = fs.readFileSync('/dev/stdin').toString().trim().split(' ').map(Number);
-let result = input[0] + input[1] + input[2];
-console.log(result);`;
-      case 'python':
-        return `# Reads space-separated integers (e.g., "1 2 5")
-a, b, c = map(int, input().split())
-print(a + b + c)`;
-      case 'java':
-        return `// Reads space-separated integers (e.g., "1 2 5")
-import java.util.Scanner;
-public class Solution {
-    public static void main(String[] args) {
-        Scanner scanner = new Scanner(System.in);
-        int a = scanner.nextInt();
-        int b = scanner.nextInt();
-        int c = scanner.nextInt();
-        System.out.println(a + b + c);
-    }
-}`;
-      case 'php':
-        return `<?php
-// Reads space-separated integers (e.g., "1 2 5")
-$input = trim(fgets(STDIN));
-$numbers = array_map('intval', explode(' ', $input));
-echo array_sum(array_slice($numbers, 0, 3));
-?>`;
-      case 'ruby':
-        return `# Reads space-separated integers (e.g., "1 2 5")
-numbers = gets.strip.split.map(&:to_i)
-puts numbers[0] + numbers[1] + numbers[2]`;
-      case 'go':
-        return `// Reads space-separated integers (e.g., "1 2 5")
-package main
-import "fmt"
-func main() {
-    var a, b, c int
-    fmt.Scan(&a, &b, &c)
-    fmt.Println(a + b + c)
-}`;
-      default:
-        return '// Write your code here';
-    }
-  };
-
-  // Sync starterCode with selected languages (functional update so we don't overwrite API-loaded code)
+  // Sync starterCode with selected languages (new languages start empty — no default template)
   useEffect(() => {
     if (type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver') {
-      setStarterCode((prevStarterCode) => {
-        return languages.map((lang) => {
+      setStarterCode((prevStarterCode) =>
+        languages.map((lang) => {
           const existing = prevStarterCode.find((sc) => sc.language === lang);
-          return existing || { language: lang, code: getDefaultStarterCode(lang) };
-        });
-      });
+          return existing || { language: lang, code: '' };
+        })
+      );
     } else {
       setStarterCode([]);
+    }
+  }, [languages, type]);
+
+  // Sync solutionCodes with selected languages (preserve code per language)
+  useEffect(() => {
+    if (type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver') {
+      setSolutionCodes((prev) =>
+        languages.map((lang) => {
+          const existing = prev.find((s) => s.language === lang);
+          return existing || { language: lang, code: '' };
+        })
+      );
+    } else {
+      setSolutionCodes([]);
     }
   }, [languages, type]);
 
@@ -705,18 +685,19 @@ func main() {
     );
   };
 
-  const handleAddExample = () => {
-    setExamples([...examples, deserializeFromHTML('')]);
+  const handleSampleIoChange = (index, field, value) => {
+    const next = [...sampleIo];
+    next[index] = { ...next[index], [field]: value };
+    setSampleIo(next);
   };
 
-  const handleExampleChange = (index, value) => {
-    const updatedExamples = [...examples];
-    updatedExamples[index] = value;
-    setExamples(updatedExamples);
+  const handleAddSampleIo = () => {
+    setSampleIo([...sampleIo, { input: '', output: '' }]);
   };
 
-  const handleRemoveExample = (index) => {
-    setExamples(examples.filter((_, i) => i !== index));
+  const handleRemoveSampleIo = (index) => {
+    if (sampleIo.length <= 1) return;
+    setSampleIo(sampleIo.filter((_, i) => i !== index));
   };
 
   const handleLanguageToggle = (lang) => {
@@ -743,12 +724,18 @@ func main() {
     setDriverCode(updatedDriverCode);
   };
 
+  const handleSolutionCodeChange = (code) => {
+    setSolutionCodes((prev) =>
+      prev.map((s) => (s.language === solutionLanguage ? { ...s, code } : s))
+    );
+  };
+
   // Test solution against test cases (client-side validation)
   const handleTestSolution = async () => {
     console.log('========================================');
     console.log('[AdminQuestionForm] ====== TEST SOLUTION START ======');
     console.log('[AdminQuestionForm] Current state:', {
-      solutionCodeLength: solutionCode?.length || 0,
+      solutionCodeLength: activeSolutionCode?.length || 0,
       solutionLanguage,
       testCasesCount: testCases?.length || 0,
       questionId: initialData?._id,
@@ -763,7 +750,7 @@ func main() {
       } : null
     });
 
-    if (!solutionCode.trim()) {
+    if (!activeSolutionCode.trim()) {
       console.error('[AdminQuestionForm] ERROR: Solution code is empty');
       alert('Please write a solution first');
       return;
@@ -804,7 +791,7 @@ func main() {
     try {
       console.log('[AdminQuestionForm] Calling teacherTestQuestion API with:', {
         questionId: initialData._id,
-        solutionCodeLength: solutionCode.length,
+        solutionCodeLength: activeSolutionCode.length,
         solutionLanguage,
         classId: null
       });
@@ -812,7 +799,7 @@ func main() {
       // Call the teacher test API (which also works for admins and drafts)
       const response = await teacherTestQuestion(
         initialData._id,
-        solutionCode,
+        activeSolutionCode,
         null, // classId is optional for drafts
         solutionLanguage
       );
@@ -995,10 +982,24 @@ func main() {
       difficulty,
       tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag),
       constraints: serializeToHTML(constraints),
-      examples: examples.map(ex => serializeToHTML(ex)).filter(ex => ex.trim()),
       explanation: serializeToHTML(explanation),
       classIds,
     };
+
+    const codingTypes = ['fillInTheBlanksCoding', 'coding', 'codingWithDriver'];
+    if (codingTypes.includes(type)) {
+      questionData.inputFormat = serializeToHTML(inputFormat);
+      questionData.outputFormat = serializeToHTML(outputFormat);
+      questionData.sampleIo = sampleIo
+        .filter((p) => (p.input || '').trim() !== '' || (p.output || '').trim() !== '')
+        .map((p) => ({ input: p.input || '', output: p.output || '' }));
+      questionData.examples = [];
+    } else {
+      questionData.inputFormat = '';
+      questionData.outputFormat = '';
+      questionData.sampleIo = [];
+      questionData.examples = [];
+    }
 
     if (type === 'singleCorrectMcq') {
       questionData.options = options.map(opt => serializeToHTML(opt));
@@ -1025,9 +1026,12 @@ func main() {
       }));
       questionData.timeLimit = Number(timeLimit);
       questionData.memoryLimit = Number(memoryLimit);
-      if (solutionCode.trim()) {
-        questionData.solutionCode = solutionCode;
-        questionData.solutionLanguage = solutionLanguage;
+      const filledSolutions = solutionCodes.filter((s) => (s.code || '').trim());
+      if (filledSolutions.length > 0) {
+        questionData.solutionCodes = filledSolutions;
+        const primary = filledSolutions.find((s) => s.language === solutionLanguage) || filledSolutions[0];
+        questionData.solutionCode = primary.code;
+        questionData.solutionLanguage = primary.language;
       }
       if (type === 'codingWithDriver') {
         // Backend expects templateCode + driverCode for LeetCode-style questions.
@@ -1320,7 +1324,7 @@ func main() {
 
       {(type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver') && (
         <>
-          <CollapsibleSection title="Languages and Starter Code">
+          <CollapsibleSection title="Languages and Starter Code" defaultOpen={false}>
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Supported Languages</label>
@@ -1381,7 +1385,88 @@ func main() {
             </CollapsibleSection>
           )}
 
-          <CollapsibleSection title="Constraints and Examples">
+          <CollapsibleSection title="I/O format & sample cases" defaultOpen={false}>
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Input format (optional)</label>
+                <p className="text-xs text-gray-500 mb-2">How students should read stdin or arguments (coding questions only).</p>
+                <RichTextEditor
+                  value={inputFormat}
+                  onChange={setInputFormat}
+                  placeholder="e.g. First line: n. Second line: n space-separated integers."
+                  className="w-full"
+                />
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <h3 className="text-sm font-semibold text-gray-600 mb-2">Preview</h3>
+                  <div className="text-gray-800 prose max-w-none" dangerouslySetInnerHTML={{ __html: serializeToHTML(inputFormat) || 'No content' }} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Output format (optional)</label>
+                <p className="text-xs text-gray-500 mb-2">Expected stdout or printed result shape.</p>
+                <RichTextEditor
+                  value={outputFormat}
+                  onChange={setOutputFormat}
+                  placeholder="e.g. Print a single integer on one line."
+                  className="w-full"
+                />
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <h3 className="text-sm font-semibold text-gray-600 mb-2">Preview</h3>
+                  <div className="text-gray-800 prose max-w-none" dangerouslySetInnerHTML={{ __html: serializeToHTML(outputFormat) || 'No content' }} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Sample input / output</label>
+                <p className="text-xs text-gray-500 mb-2">Optional plain-text samples shown to students (separate from official test cases).</p>
+                {sampleIo.map((pair, idx) => (
+                  <div key={idx} className="mb-4 p-4 border border-gray-200 rounded-lg space-y-3 bg-white">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-semibold text-gray-700">Sample {idx + 1}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSampleIo(idx)}
+                        className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600 disabled:bg-red-300 transition-colors"
+                        disabled={sampleIo.length <= 1}
+                        aria-label="Remove sample"
+                      >
+                        <TrashIcon className="h-5 w-5" />
+                      </button>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 mb-1">Sample input</label>
+                      <textarea
+                        value={pair.input}
+                        onChange={(e) => handleSampleIoChange(idx, 'input', e.target.value)}
+                        className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                        rows={4}
+                        placeholder="stdin / example input"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 mb-1">Sample output</label>
+                      <textarea
+                        value={pair.output}
+                        onChange={(e) => handleSampleIoChange(idx, 'output', e.target.value)}
+                        className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                        rows={4}
+                        placeholder="expected stdout"
+                      />
+                    </div>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={handleAddSampleIo}
+                  className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                >
+                  <PlusIcon className="h-5 w-5 mr-2" />
+                  Add sample
+                </button>
+              </div>
+            </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Constraints">
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Constraints</label>
@@ -1394,45 +1479,6 @@ func main() {
                 <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
                   <h3 className="text-sm font-semibold text-gray-600 mb-2">Preview</h3>
                   <div className="text-gray-800 prose max-w-none" dangerouslySetInnerHTML={{ __html: serializeToHTML(constraints) || 'No content' }} />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Examples</label>
-                {examples.map((example, idx) => (
-                  <div key={idx} className="flex items-start gap-3 mb-4">
-                    <RichTextEditor
-                      value={example}
-                      onChange={value => handleExampleChange(idx, value)}
-                      placeholder={`Example ${idx + 1}`}
-                      className="flex-1"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveExample(idx)}
-                      className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600 disabled:bg-red-300 transition-colors"
-                      disabled={examples.length <= 1}
-                      aria-label="Remove example"
-                    >
-                      <TrashIcon className="h-5 w-5" />
-                    </button>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={handleAddExample}
-                  className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-                >
-                  <PlusIcon className="h-5 w-5 mr-2" />
-                  Add Example
-                </button>
-                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                  <h3 className="text-sm font-semibold text-gray-600 mb-2">Preview Examples</h3>
-                  {examples.map((ex, idx) => (
-                    <div key={idx} className="mb-2">
-                      <span className="text-sm font-semibold text-gray-700">Example {idx + 1}</span>
-                      <div className="text-gray-800 prose max-w-none" dangerouslySetInnerHTML={{ __html: serializeToHTML(ex) || 'No content' }} />
-                    </div>
-                  ))}
                 </div>
               </div>
             </div>
@@ -1558,8 +1604,9 @@ func main() {
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Solution Code</label>
                 <div className="border border-gray-200 rounded-lg overflow-hidden">
                   <CodeEditor
-                    value={solutionCode}
-                    onChange={setSolutionCode}
+                    key={`solution-${solutionLanguage}-${initialData?._id || 'new'}`}
+                    value={activeSolutionCode}
+                    onChange={handleSolutionCodeChange}
                     language={solutionLanguage}
                     disabled={false}
                     isFillInTheBlanks={false}
@@ -1573,7 +1620,7 @@ func main() {
                 <button
                   type="button"
                   onClick={handleTestSolution}
-                  disabled={isTestingSolution || !solutionCode.trim() || testCases.length === 0}
+                  disabled={isTestingSolution || !activeSolutionCode.trim() || testCases.length === 0}
                   className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
                   {isTestingSolution ? (

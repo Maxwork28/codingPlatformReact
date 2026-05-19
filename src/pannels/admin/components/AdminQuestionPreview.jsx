@@ -6,6 +6,24 @@ import CodeEditor from '../../student/components/CodeEditor';
 
 const DEFAULT_BACK = '/admin/questions';
 
+const buildSolutionCodesFromQuestion = (q) => {
+  const langs = Array.isArray(q?.languages) && q.languages.length > 0 ? q.languages : [];
+  if (Array.isArray(q?.solutionCodes) && q.solutionCodes.length > 0) {
+    const fromApi = q.solutionCodes.map((s) => ({ language: s.language, code: s.code || '' }));
+    const langList = langs.length > 0 ? langs : fromApi.map((s) => s.language);
+    return langList.map((lang) => {
+      const existing = fromApi.find((s) => s.language === lang);
+      return existing || { language: lang, code: '' };
+    });
+  }
+  const primaryLang = q?.solutionLanguage || langs[0] || 'javascript';
+  const primaryCode = q?.solutionCode || '';
+  if (langs.length > 0) {
+    return langs.map((lang) => ({ language: lang, code: lang === primaryLang ? primaryCode : '' }));
+  }
+  return primaryCode ? [{ language: primaryLang, code: primaryCode }] : [{ language: 'javascript', code: '' }];
+};
+
 const AdminQuestionPreview = () => {
   const { questionId } = useParams();
   const navigate = useNavigate();
@@ -22,8 +40,9 @@ const AdminQuestionPreview = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [classId, setClassId] = useState(location.state?.classId || '');
-  const [solutionCode, setSolutionCode] = useState('');
+  const [solutionCodes, setSolutionCodes] = useState([]);
   const [solutionLanguage, setSolutionLanguage] = useState('javascript');
+  const activeSolutionCode = solutionCodes.find((s) => s.language === solutionLanguage)?.code ?? '';
   const [isTestingSolution, setIsTestingSolution] = useState(false);
   const [testResults, setTestResults] = useState(null);
   const [activeTab, setActiveTab] = useState('preview');
@@ -101,15 +120,14 @@ const AdminQuestionPreview = () => {
           setQuestion(fetchedQuestion);
           setError('');
           
-          // Set solution code and language from question if available
-          if (fetchedQuestion.solutionCode) {
-            setSolutionCode(fetchedQuestion.solutionCode);
-          }
-          if (fetchedQuestion.solutionLanguage) {
-            setSolutionLanguage(fetchedQuestion.solutionLanguage);
-          } else if (fetchedQuestion.languages && fetchedQuestion.languages.length > 0) {
-            setSolutionLanguage(fetchedQuestion.languages[0]);
-          }
+          const codes = buildSolutionCodesFromQuestion(fetchedQuestion);
+          setSolutionCodes(codes);
+          const defaultLang =
+            fetchedQuestion.solutionLanguage ||
+            (codes.find((s) => s.code?.trim())?.language) ||
+            fetchedQuestion.languages?.[0] ||
+            'javascript';
+          setSolutionLanguage(defaultLang);
           
           // Extract classId if available
           const classEntry = fetchedQuestion.classes?.[0];
@@ -273,10 +291,16 @@ const AdminQuestionPreview = () => {
     return '';
   };
 
+  const handleSolutionCodeChange = (code) => {
+    setSolutionCodes((prev) =>
+      prev.map((s) => (s.language === solutionLanguage ? { ...s, code } : s))
+    );
+  };
+
   // Test solution against test cases
   const handleTestSolution = async () => {
     const q = previewQuestion;
-    if (!solutionCode.trim()) {
+    if (!activeSolutionCode.trim()) {
       alert('Please write a solution first');
       return;
     }
@@ -314,7 +338,7 @@ const AdminQuestionPreview = () => {
       // Call the teacher test API
       const response = await teacherTestQuestion(
         q._id,
-        solutionCode,
+        activeSolutionCode,
         classIdForTest,
         solutionLanguage
       );
@@ -440,35 +464,38 @@ const AdminQuestionPreview = () => {
                   onChange={(e) => setSolutionLanguage(e.target.value)}
                   className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
                 >
-                  {previewQuestion.languages?.map(lang => (
+                  {(previewQuestion.languages?.length > 0
+                    ? previewQuestion.languages
+                    : solutionCodes.map((s) => s.language)
+                  ).map((lang) => (
                     <option key={lang} value={lang}>
                       {lang.charAt(0).toUpperCase() + lang.slice(1)}
+                      {solutionCodes.find((s) => s.language === lang && s.code?.trim()) ? '' : ' (no solution saved)'}
                     </option>
-                  )) || (
-                    <option value="javascript">JavaScript</option>
-                  )}
+                  ))}
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Solution Code</label>
                 <div className="border border-gray-200 rounded-lg overflow-hidden">
                   <CodeEditor
-                    value={solutionCode}
-                    onChange={setSolutionCode}
+                    key={`solution-${solutionLanguage}-${previewQuestion._id}`}
+                    value={activeSolutionCode}
+                    onChange={handleSolutionCodeChange}
                     language={solutionLanguage}
                     disabled={false}
                     isFillInTheBlanks={false}
                   />
                 </div>
                 <p className="mt-2 text-xs text-gray-500">
-                  Write or paste your solution code here to test it against all test cases (including hidden ones).
+                  Switch language to view or edit each saved solution. You can test the code shown for the selected language.
                 </p>
               </div>
               <div className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={handleTestSolution}
-                  disabled={isTestingSolution || !solutionCode.trim() || !previewQuestion.testCases || previewQuestion.testCases.length === 0 || !previewQuestion._id}
+                  disabled={isTestingSolution || !activeSolutionCode.trim() || !previewQuestion.testCases || previewQuestion.testCases.length === 0 || !previewQuestion._id}
                   className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
                   {isTestingSolution ? (

@@ -90,6 +90,50 @@ const QuestionView = () => {
           </div>
         )}
 
+        {isCoding && question.inputFormat && (
+          <div className="p-6 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-600 mb-2">Input format</h2>
+            <div className="prose max-w-none text-gray-700">{parse(question.inputFormat)}</div>
+          </div>
+        )}
+
+        {isCoding && question.outputFormat && (
+          <div className="p-6 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-600 mb-2">Output format</h2>
+            <div className="prose max-w-none text-gray-700">{parse(question.outputFormat)}</div>
+          </div>
+        )}
+
+        {question.explanation && (
+          <div className="p-6 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-600 mb-2">Explanation</h2>
+            <div className="prose max-w-none text-gray-700">{parse(question.explanation)}</div>
+          </div>
+        )}
+
+        {isCoding &&
+          question.sampleIo?.some((p) => (p.input || '').trim() || (p.output || '').trim()) && (
+            <div className="p-6 border-b border-gray-100">
+              <h2 className="text-sm font-semibold text-gray-600 mb-3">Sample input / output</h2>
+              <div className="space-y-4">
+                {question.sampleIo
+                  .filter((p) => (p.input || '').trim() || (p.output || '').trim())
+                  .map((pair, i) => (
+                    <div key={i} className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-2 text-sm">
+                      <div>
+                        <span className="font-semibold text-gray-600">Input</span>
+                        <pre className="mt-1 font-mono text-gray-800 whitespace-pre-wrap break-all">{pair.input || '—'}</pre>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-gray-600">Output</span>
+                        <pre className="mt-1 font-mono text-gray-800 whitespace-pre-wrap break-all">{pair.output || '—'}</pre>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
         {isCoding && question.starterCode?.length > 0 && (
           <div className="p-6 border-b border-gray-100">
             <h2 className="text-sm font-semibold text-gray-600 mb-2">Starter Code</h2>
