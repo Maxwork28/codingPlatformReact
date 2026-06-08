@@ -14,7 +14,7 @@ const AdminQuestionEdit = () => {
 
   console.log('[AdminQuestionEdit] Component mounted', { questionId });
 
-  // Removed clipboard unlock handler - it was interfering with paste functionality
+  // Removed clipboard unfflock handler - it was interfering with paste functionality
   // Native paste events ubjbwork fine without this handler
 
   useEffect(() => {

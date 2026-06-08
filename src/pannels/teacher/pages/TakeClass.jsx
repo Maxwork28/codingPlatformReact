@@ -920,34 +920,6 @@ const TakeClass = () => {
                       }}
                     >
                       <div className="flex items-start gap-2 p-3">
-                        <button
-                          onClick={() => {
-                            setSelectedQuestion(q);
-                            setSelectedLanguage(q.languages?.[0] || 'javascript');
-                            setShowQuestionsList(false);
-                          }}
-                          className="flex-1 flex items-start gap-2 text-left"
-                        >
-                          <span className="flex-shrink-0 flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold">
-                            {idx + 1}
-                          </span>
-                          <div className="flex-1 min-w-0">
-                            <p 
-                              className="text-sm font-medium line-clamp-2 leading-tight" 
-                              style={{ color: 'var(--text-primary)' }}
-                              title={q.title?.replace(/<[^>]*>/g, '') || 'Untitled'}
-                            >
-                              {q.title?.replace(/<[^>]*>/g, '') || 'Untitled'}
-                            </p>
-                            <p className="text-xs mt-0.5 font-mono" style={{ color: 'var(--text-secondary)' }}>
-                              ID: {q._id}
-                            </p>
-                            <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
-                              {q.difficulty} • {QUESTION_TYPE_LABELS[q.type] || q.type}
-                            </p>
-                          </div>
-                        </button>
-                        
                         {/* Three-dot menu */}
                         <Menu as="div" style={{ position: 'relative', zIndex: 10000 }}>
                           {({ open }) => (
@@ -1145,6 +1117,34 @@ const TakeClass = () => {
                             </>
                           )}
                         </Menu>
+
+                        <button
+                          onClick={() => {
+                            setSelectedQuestion(q);
+                            setSelectedLanguage(q.languages?.[0] || 'javascript');
+                            setShowQuestionsList(false);
+                          }}
+                          className="flex-1 flex items-start gap-2 text-left"
+                        >
+                          <span className="flex-shrink-0 flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold">
+                            {idx + 1}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p 
+                              className="text-sm font-medium line-clamp-2 leading-tight" 
+                              style={{ color: 'var(--text-primary)' }}
+                              title={q.title?.replace(/<[^>]*>/g, '') || 'Untitled'}
+                            >
+                              {q.title?.replace(/<[^>]*>/g, '') || 'Untitled'}
+                            </p>
+                            <p className="text-xs mt-0.5 font-mono" style={{ color: 'var(--text-secondary)' }}>
+                              ID: {q._id}
+                            </p>
+                            <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                              {q.difficulty} • {QUESTION_TYPE_LABELS[q.type] || q.type}
+                            </p>
+                          </div>
+                        </button>
                       </div>
                     </div>
                   ))}
