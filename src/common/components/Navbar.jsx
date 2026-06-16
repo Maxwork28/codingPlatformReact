@@ -32,17 +32,11 @@ const Navbar = () => {
         <div className="flex items-center justify-between h-16 w-full">
           {/* Left: Logo */}
           <div className="flex items-center gap-3 pl-4">
-            <div className="flex items-center gap-2">
-              <svg 
-                className="h-8 w-8 text-white" 
-                fill="none" 
-                viewBox="0 0 24 24" 
-                stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-              </svg>
-              <h1 className="text-2xl font-bold tracking-tight text-white" style={{ color: '#ffffff' }}>CodeMaster</h1>
-            </div>
+            <img
+              src="/AlgoSutra Header.png"
+              alt="AlgoSutra Logo"
+              className="h-10 w-auto"
+            />
           </div>
 
           {/* Right: Actions */}

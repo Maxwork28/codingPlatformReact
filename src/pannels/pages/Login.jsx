@@ -30,13 +30,20 @@ const Login = () => {
              border: '1px solid var(--card-border)'
            }}>
         {/* Header with Theme Toggle */}
-        <div className="relative mb-8">
-          <div className="absolute right-0 top-0">
+        <div
+          className="relative mb-8 -mx-8 -mt-8 px-8 pt-8 pb-6 rounded-t-xl"
+          style={{ backgroundColor: '#000000' }}
+        >
+          <div className="absolute right-4 top-4">
             <ThemeToggle variant="card" />
           </div>
           <div className="text-center">
-            <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--primary-indigo)' }}>CodeMaster</h1>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Simpler Learning</p>
+            <img
+              src="/AlgoSutra Header.png"
+              alt="AlgoSutra Logo"
+              className="h-10 w-auto mx-auto"
+            />
+            <p className="text-sm mt-2 text-white/70">Simpler Learning</p>
           </div>
         </div>
 

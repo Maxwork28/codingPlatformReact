@@ -30,6 +30,7 @@
     "react-redux": "^9.2.0",
     "react-router-dom": "^7.5.1",
     "slate": "^0.114.0",
+    "slate-dom": "^0.124.1",
     "slate-history": "^0.113.1",
     "slate-react": "^0.114.2",
     "socket.io-client": "^4.8.1"
