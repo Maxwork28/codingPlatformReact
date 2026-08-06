@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Link, useNavigate } from 'react-router-dom';
 import { getClassExams } from '../../../common/services/api';
+import StudentBackNav from '../components/StudentBackNav';
 
 const statusColors = {
   active: 'bg-green-100 text-green-800',
@@ -334,7 +335,8 @@ const StudentExamList = () => {
   }, [examMap, classIds]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6">
+      <StudentBackNav fallbackTo="/student" />
       <header className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <h1 className="text-2xl font-bold text-gray-900">Exams & Assessments</h1>
         <p className="mt-2 text-sm text-gray-600">

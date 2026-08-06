@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSelector } from 'react-redux';
-import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { io } from 'socket.io-client';
 import { getQuestionsByClass, runCode, runCodeWithCustomInput, submitAnswer } from '../../../common/services/api';
 import { API_BASE_URL } from '../../../common/constants';
 import CodeEditor from '../components/CodeEditor';
 import TestCaseResultsList from '../components/TestCaseResultsList';
+import StudentBackNav from '../components/StudentBackNav';
 import { DiJavascript } from "react-icons/di";
 import { FaJava, FaPython, FaDatabase, FaBookOpen } from "react-icons/fa";
 import { GiNotebook } from "react-icons/gi";
@@ -382,6 +382,9 @@ const StudentTakeClass = () => {
   if (!selectedClass) {
     return (
       <div className="p-3 pt-6">
+        <div className="mb-4">
+          <StudentBackNav fallbackTo="/student" />
+        </div>
         <div className="mb-6">
           <h2 className="tracking-tight" style={{ 
             color: 'var(--text-heading)', 
@@ -871,19 +874,12 @@ const StudentTakeClass = () => {
       {/* Top Bar */}
       <div className="border-b px-2 py-1.5 flex-shrink-0" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
         <div className="max-w-full mx-auto flex items-center gap-1.5 min-h-[1.75rem]">
-          <button
-            type="button"
+          <StudentBackNav
+            compact
+            label="Back"
             onClick={handleBackToClassSelection}
-            className="inline-flex items-center gap-0.5 shrink-0 px-1 py-0.5 rounded border transition-colors hover:opacity-80 text-[10px] leading-none"
-            style={{ 
-              backgroundColor: 'var(--card-white)', 
-              borderColor: 'var(--card-border)', 
-              color: 'var(--text-primary)' 
-            }}
-          >
-            <ArrowLeftIcon className="h-3 w-3" />
-            <span>Back</span>
-          </button>
+            fallbackTo="/student/take-class"
+          />
           <span className="shrink-0 text-[10px] leading-none" style={{ color: 'var(--text-secondary)' }} aria-hidden>
             |
           </span>
@@ -984,15 +980,41 @@ const StudentTakeClass = () => {
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {questions.map((q, idx) => (
+                  {questions.map((q, idx) => {
+                    const attemptStatus = q.studentAttemptStatus || 'not_viewed';
+                    const statusColors = {
+                      attempted: {
+                        bg: selectedQuestion?._id === q._id ? '#059669' : '#d1fae5',
+                        border: '#059669',
+                        badge: 'bg-emerald-600 text-white',
+                        label: 'Attempted',
+                        labelColor: '#047857',
+                      },
+                      wrong: {
+                        bg: selectedQuestion?._id === q._id ? '#e11d48' : '#ffe4e6',
+                        border: '#e11d48',
+                        badge: 'bg-rose-600 text-white',
+                        label: 'Wrong',
+                        labelColor: '#be123c',
+                      },
+                      not_viewed: {
+                        bg: selectedQuestion?._id === q._id ? 'var(--accent-indigo)' : 'var(--background-light)',
+                        border: selectedQuestion?._id === q._id ? 'var(--accent-indigo)' : 'var(--card-border)',
+                        badge: 'bg-slate-400 text-white',
+                        label: 'Not viewed',
+                        labelColor: 'var(--text-secondary)',
+                      },
+                    };
+                    const colors = statusColors[attemptStatus] || statusColors.not_viewed;
+                    return (
                     <div
                       key={q._id}
                       className={`rounded-lg transition-all duration-200 hover:z-50 ${
                         selectedQuestion?._id === q._id ? 'shadow-lg z-50' : 'hover:shadow'
                       }`}
                       style={{ 
-                        backgroundColor: selectedQuestion?._id === q._id ? 'var(--accent-indigo)' : 'var(--background-light)',
-                        border: selectedQuestion?._id === q._id ? '2px solid var(--accent-indigo)' : '1px solid var(--card-border)',
+                        backgroundColor: colors.bg,
+                        border: `2px solid ${colors.border}`,
                         position: 'relative'
                       }}
                     >
@@ -1003,30 +1025,25 @@ const StudentTakeClass = () => {
                         }}
                         className="flex-1 flex items-start gap-2 p-3 text-left w-full"
                       >
-                        <span className="flex-shrink-0 flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold">
+                        <span className={`flex-shrink-0 flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${colors.badge}`}>
                           {idx + 1}
                         </span>
                         <div className="flex-1 min-w-0">
                           <p 
                             className="text-sm font-medium line-clamp-2 leading-tight" 
-                            style={{ color: 'var(--text-primary)' }}
+                            style={{ color: selectedQuestion?._id === q._id && (attemptStatus === 'attempted' || attemptStatus === 'wrong') ? '#fff' : 'var(--text-primary)' }}
                             title={q.title?.replace(/<[^>]*>/g, '') || 'Untitled'}
                           >
                             {q.title?.replace(/<[^>]*>/g, '') || 'Untitled'}
                           </p>
-                          <p className="text-xs mt-0.5 font-mono" style={{ color: 'var(--text-secondary)' }}>
-                            ID: {q._id}
-                          </p>
-                          <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
-                            {q.difficulty} • {q.type}
-                            {getClassEntryForQuestion(q, selectedClass._id)?.isDisabled ? (
-                              <span className="ml-1 font-semibold text-amber-700">(answers off)</span>
-                            ) : null}
+                          <p className="text-xs mt-1 font-medium" style={{ color: selectedQuestion?._id === q._id && (attemptStatus === 'attempted' || attemptStatus === 'wrong') ? 'rgba(255,255,255,0.9)' : colors.labelColor }}>
+                            {colors.label}
                           </p>
                         </div>
                       </button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

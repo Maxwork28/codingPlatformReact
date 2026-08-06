@@ -11,6 +11,7 @@ import {
 } from '../../../common/components/redux/questionSlice';
 import CodeEditor from '../components/CodeEditor';
 import TestCaseResultsList, { parseTestCaseResultsList } from '../components/TestCaseResultsList';
+import StudentBackNav from '../components/StudentBackNav';
 
 // Socket.IO initialization
 const socket = io('https://api.algosutra.co.in/', {
@@ -716,8 +717,13 @@ const QuestionSubmission = () => {
   if (status === 'loading') {
     console.log('[QuestionSubmission] Rendering loading state');
     return (
-      <div className="flex justify-center items-center py-16 backdrop-blur-sm rounded-xl shadow-lg" style={{ backgroundColor: 'var(--card-white)' }}>
-        <div className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--text-primary)', borderTopColor: 'transparent' }}></div>
+      <div className="max-w-4xl mx-auto p-6">
+        <div className="mb-4">
+          <StudentBackNav fallbackTo="/student" />
+        </div>
+        <div className="flex justify-center items-center py-16 backdrop-blur-sm rounded-xl shadow-lg" style={{ backgroundColor: 'var(--card-white)' }}>
+          <div className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--text-primary)', borderTopColor: 'transparent' }}></div>
+        </div>
       </div>
     );
   }
@@ -726,6 +732,9 @@ const QuestionSubmission = () => {
     console.log('[QuestionSubmission] Rendering error state:', error);
     return (
       <div className="max-w-4xl mx-auto p-6">
+        <div className="mb-4">
+          <StudentBackNav fallbackTo="/student" />
+        </div>
         <div className="flex items-center p-4 bg-red-50/80 backdrop-blur-sm rounded-xl shadow-sm border border-red-200">
           <svg className="h-6 w-6 text-red-500 mr-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
             <path fillRule="evenodd" d="M10 18a8 0 100-16 8 0 000 16zM8.707 7.293a1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
@@ -743,6 +752,9 @@ const QuestionSubmission = () => {
     console.log('[QuestionSubmission] Rendering question not found');
     return (
       <div className="max-w-4xl mx-auto p-6 text-center">
+        <div className="mb-4 text-left">
+          <StudentBackNav fallbackTo="/student" />
+        </div>
         <svg
           className="mx-auto h-14 w-14 text-gray-400"
           fill="none"
@@ -761,9 +773,22 @@ const QuestionSubmission = () => {
   }
 
   console.log('[QuestionSubmission] Rendering main component with question:', question.title);
+
+  const resolvedClassId =
+    classId?._id || classId || new URLSearchParams(location.search).get('classId') || null;
+  const backFallback = resolvedClassId
+    ? `/student/classes/${resolvedClassId}`
+    : '/student';
   
   return (
     <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: 'var(--background-content)' }}>
+      <div
+        className="flex-shrink-0 flex items-center gap-3 px-4 py-2 border-b"
+        style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
+      >
+        <StudentBackNav fallbackTo={backFallback} compact />
+      </div>
+
       {/* Top Status Bar */}
       {statusMessage && (
         <div className="p-3 bg-green-50/80 backdrop-blur-sm border-b border-green-200 shadow-sm">

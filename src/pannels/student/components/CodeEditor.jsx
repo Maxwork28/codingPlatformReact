@@ -10,11 +10,15 @@ import 'ace-builds/src-noconflict/mode-ruby';
 import 'ace-builds/src-noconflict/mode-php';
 import 'ace-builds/src-noconflict/mode-golang';
 import 'ace-builds/src-noconflict/theme-monokai';
+import 'ace-builds/src-noconflict/theme-github';
+import { useTheme } from '../../../common/context/ThemeContext';
 
 /** Normalize newlines so parent/child string compare matches (fixes echo + unwanted Ace resets). */
 const norm = (s) => (s == null ? '' : String(s)).replace(/\r\n/g, '\n');
 
-const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px', disabled, isFillInTheBlanks = false }) => {
+const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px', disabled, isFillInTheBlanks = false, copyPasteDisabled = true }) => {
+  const { isDark } = useTheme();
+  const aceTheme = isDark ? 'monokai' : 'github';
   const languageModeMap = {
     javascript: 'javascript',
     python: 'python',
@@ -306,13 +310,41 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
   };
 
   const handleCopy = () => {
+    if (copyPasteDisabled) return;
     const text = isFillInTheBlanks ? editorValue : editorRef.current?.editor?.getValue() ?? lastDisplayRef.current;
     navigator.clipboard.writeText(text).catch((err) => {
       console.error('Failed to copy text: ', err);
     });
   };
 
+  const blockClipboard = useCallback((e) => {
+    if (copyPasteDisabled) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, [copyPasteDisabled]);
+
   const handleEditorLoad = (editor) => {
+    if (copyPasteDisabled) {
+      editor.container.addEventListener('copy', blockClipboard, true);
+      editor.container.addEventListener('cut', blockClipboard, true);
+      editor.container.addEventListener('paste', blockClipboard, true);
+      editor.commands.addCommand({
+        name: 'disableCopy',
+        bindKey: { win: 'Ctrl-C|Ctrl-Insert', mac: 'Cmd-C' },
+        exec: () => {},
+      });
+      editor.commands.addCommand({
+        name: 'disableCut',
+        bindKey: { win: 'Ctrl-X|Shift-Delete', mac: 'Cmd-X' },
+        exec: () => {},
+      });
+      editor.commands.addCommand({
+        name: 'disablePaste',
+        bindKey: { win: 'Ctrl-V|Shift-Insert', mac: 'Cmd-V' },
+        exec: () => {},
+      });
+    }
     if (isFillInTheBlanks) {
       applyMarkersToSession(editor, norm(safeValue));
       return;
@@ -361,21 +393,23 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
           >
             Reset
           </button>
-          <button
-            type="button"
-            className="text-sm font-medium text-gray-300 hover:text-white disabled:text-gray-500 disabled:cursor-not-allowed transition-colors duration-200"
-            onClick={handleCopy}
-            disabled={disabled}
-          >
-            Copy
-          </button>
+          {!copyPasteDisabled && (
+            <button
+              type="button"
+              className="text-sm font-medium text-gray-300 hover:text-white disabled:text-gray-500 disabled:cursor-not-allowed transition-colors duration-200"
+              onClick={handleCopy}
+              disabled={disabled}
+            >
+              Copy
+            </button>
+          )}
         </div>
       </div>
       {isFillInTheBlanks ? (
         <AceEditor
           ref={editorRef}
           mode={mode}
-          theme="monokai"
+          theme={aceTheme}
           name="code-editor"
           width="100%"
           height={fillParent ? '100%' : height}
@@ -391,13 +425,15 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
           setOptions={aceSetOptions}
           editorProps={{ $blockScrolling: true }}
           className="rounded-b-xl"
-          onPaste={(e) => e.preventDefault()}
+          onCopy={blockClipboard}
+          onCut={blockClipboard}
+          onPaste={blockClipboard}
         />
       ) : (
         <AceEditor
           ref={editorRef}
           mode={mode}
-          theme="monokai"
+          theme={aceTheme}
           name="code-editor-plain"
           width="100%"
           height={fillParent ? '100%' : height}
@@ -413,6 +449,9 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
           setOptions={aceSetOptions}
           editorProps={{ $blockScrolling: true }}
           className="rounded-b-xl"
+          onCopy={blockClipboard}
+          onCut={blockClipboard}
+          onPaste={blockClipboard}
         />
       )}
       <style jsx global>{`
@@ -458,6 +497,7 @@ CodeEditor.propTypes = {
   height: PropTypes.string,
   disabled: PropTypes.bool,
   isFillInTheBlanks: PropTypes.bool,
+  copyPasteDisabled: PropTypes.bool,
 };
 
 export default CodeEditor;

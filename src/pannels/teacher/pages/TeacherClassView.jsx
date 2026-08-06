@@ -6,17 +6,6 @@ import { useSelector } from 'react-redux';
 import { Tab, Menu, Transition, Dialog, Disclosure, Combobox } from '@headlessui/react';
 import { CheckIcon, ChevronUpDownIcon } from '@heroicons/react/20/solid';
 import { format } from 'date-fns';
-import { Bar, Pie } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-  ArcElement,
-} from 'chart.js';
 import {
   getClassDetails,
   getQuestionsByClass,
@@ -40,9 +29,6 @@ import {
 } from '../../../common/services/api';
 import TeacherQuestionCard from '../components/TeacherQuestionCard';
 
-// Register Chart.js components
-ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
-
 const TeacherClassView = () => {
   const { classId } = useParams();
   const { user } = useSelector((state) => state.auth);
@@ -60,7 +46,7 @@ const TeacherClassView = () => {
   const [submissionViewData, setSubmissionViewData] = useState(null); // { code, language, questionId, classId, isCorrect, status }
   const [questionReport, setQuestionReport] = useState(null);
   const [questionSummary, setQuestionSummary] = useState([]);
-  const [analyticsStudentFilter, setAnalyticsStudentFilter] = useState('all'); // all | correct | incorrect | inactive | active
+  const [analyticsStudentFilter, setAnalyticsStudentFilter] = useState('all'); // all | active | inactive
   const [loading, setLoading] = useState(true);
   const [reportLoading, setReportLoading] = useState(false);
   const [error, setError] = useState('');
@@ -205,17 +191,13 @@ const TeacherClassView = () => {
   );
   const assignmentTotalPages = Math.ceil(filteredAssignments.length / assignmentItemsPerPage);
 
-  // Filter students by analytics filter (correct/incorrect/inactive/active)
+  // Filter students by activity status only
   const studentsByAnalyticsFilter = analyticsStudentFilter === 'all'
     ? leaderboard
     : leaderboard.filter((s) => {
-        const correct = s.correctAttempts || 0;
-        const total = s.totalAttempts || s.totalSubmissions || 0;
         const status = (s.activityStatus || 'inactive').toLowerCase();
-        if (analyticsStudentFilter === 'correct') return correct > 0;
-        if (analyticsStudentFilter === 'incorrect') return total > 0 && correct === 0;
-        if (analyticsStudentFilter === 'inactive') return total === 0 || status === 'inactive';
-        if (analyticsStudentFilter === 'active') return status === 'active';
+        if (analyticsStudentFilter === 'inactive') return status === 'inactive';
+        if (analyticsStudentFilter === 'active') return status === 'active' || status === 'focused';
         return true;
       });
 
@@ -624,17 +606,20 @@ const TeacherClassView = () => {
 
   const handleBlockAllUsers = async (e) => {
     e.preventDefault();
-    if (!confirm(`Are you sure you want to ${blockAll ? 'block' : 'unblock'} all students in this class?`)) {
+    const action = blockAll ? 'block' : 'unblock';
+    if (!confirm(`Are you sure you want to ${action} all inactive students in this class?`)) {
       return;
     }
     try {
-      await blockAllUsers(classId, blockAll);
-      const actionMsg = blockAll ? 'All students blocked successfully' : 'All students unblocked successfully';
+      const response = await blockAllUsers(classId, blockAll, { onlyInactive: true });
+      const updated = response?.data?.updated ?? 0;
+      const actionMsg = blockAll
+        ? `${updated} inactive student(s) blocked successfully`
+        : `${updated} inactive student(s) unblocked successfully`;
       showToast(actionMsg, 'success');
-      // Refresh data without loading spinner or resetting tab
       await fetchData(true);
     } catch (err) {
-      const errorMsg = typeof err === 'string' ? err : (err.error || 'Failed to block/unblock all users');
+      const errorMsg = typeof err === 'string' ? err : (err.error || 'Failed to block/unblock inactive users');
       setError(errorMsg);
       showToast(errorMsg, 'error');
     }
@@ -913,80 +898,6 @@ const TeacherClassView = () => {
     );
   };
 
-  // Component: Stats Graphs
-  const StatsGraphs = () => {
-    if (!leaderboard || leaderboard.length === 0) {
-      return (
-        <div className="text-center py-8">
-          <p className="text-sm text-gray-500">No student data available to generate graphs.</p>
-        </div>
-      );
-    }
-
-    const students = leaderboard.map((l) => l.studentId?.name || 'Unknown');
-    const correctAttempts = leaderboard.map((l) => l.correctAttempts || 0);
-    const totalAttempts = leaderboard.map((l) => l.totalAttempts || 0);
-    const wrongAttempts = leaderboard.map((l) => l.wrongAttempts || 0);
-
-    const chartOptions = {
-      responsive: true,
-      maintainAspectRatio: true,
-      plugins: {
-        legend: {
-          position: 'top',
-          labels: {
-            font: { size: 12 },
-          },
-        },
-        title: {
-          display: false,
-        },
-      },
-      scales: {
-        y: {
-          beginAtZero: true,
-          title: {
-            display: true,
-            text: 'Number of Attempts',
-          },
-        },
-      },
-    };
-
-    const chartData = {
-      labels: students,
-      datasets: [
-        {
-          label: 'Correct Attempts',
-          data: correctAttempts,
-          backgroundColor: 'rgba(75, 192, 192, 0.7)',
-          borderColor: 'rgba(75, 192, 192, 1)',
-          borderWidth: 1,
-        },
-        {
-          label: 'Total Attempts',
-          data: totalAttempts,
-          backgroundColor: 'rgba(54, 162, 235, 0.7)',
-          borderColor: 'rgba(54, 162, 235, 1)',
-          borderWidth: 1,
-        },
-        {
-          label: 'Wrong Attempts',
-          data: wrongAttempts,
-          backgroundColor: 'rgba(255, 99, 132, 0.7)',
-          borderColor: 'rgba(255, 99, 132, 1)',
-          borderWidth: 1,
-        },
-      ],
-    };
-
-    return (
-      <div>
-        <Bar options={chartOptions} data={chartData} />
-      </div>
-    );
-  };
-
   if (!user) {
     return (
       <div className="max-w-4xl mx-auto p-6">
@@ -1142,240 +1053,56 @@ const TeacherClassView = () => {
         <Tab.Panels className="overflow-visible">
           {/* Leaderboard Tab: students, filters, analytics, view code, block/unblock */}
           <Tab.Panel className="overflow-visible">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-              {/* Left: Registered students with filters (correct, incorrect, active, inactive) */}
-              <div className="lg:col-span-1 order-2 lg:order-1">
-                <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-4" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-                  <h3 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-heading)' }}>Registered Students</h3>
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {['all', 'correct', 'incorrect', 'active', 'inactive'].map((f) => (
-                      <button
-                        key={f}
-                        onClick={() => setAnalyticsStudentFilter(f)}
-                        className={`px-3 py-1 rounded text-xs font-medium capitalize ${analyticsStudentFilter === f ? 'bg-indigo-600 text-white' : 'bg-gray-200 hover:bg-gray-300'}`}
-                      >
-                        {f}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {filteredStudents.slice(0, 20).map((s) => {
-                      const info = s.studentId || {};
-                      return (
-                        <div key={info._id} className="flex justify-between items-center py-1.5 border-b border-gray-100 text-sm">
-                          <span className="truncate">{info.name || 'Unknown'}</span>
-                          <span className={`px-1.5 py-0.5 rounded text-xs ${(s.correctAttempts || 0) > 0 ? 'bg-green-100 text-green-700' : (s.totalAttempts || 0) > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100'}`}>
-                            {(s.correctAttempts || 0) > 0 ? 'Correct' : (s.totalAttempts || 0) > 0 ? 'Incorrect' : 'Inactive'}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">Showing {Math.min(filteredStudents.length, 20)} of {filteredStudents.length}</p>
-                </div>
-              </div>
-              {/* Right: Analytics charts */}
-              <div className="lg:col-span-2 order-1 lg:order-2">
-            {/* Statistics Pie Charts */}
-            <div className="mb-6">
-              <h2 className="text-2xl font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>Analytics Overview</h2>
-
-              {(participantStats || runSubmitStats) && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                  {/* Student Activity Status Pie Chart */}
-                  {participantStats && participantStats.activityPercentage && (
-                  <div className="backdrop-blur-sm rounded-2xl shadow-lg p-6 border transition-all duration-300 hover:shadow-2xl" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-                    <h3 className="text-lg font-semibold mb-4 text-center" style={{ color: 'var(--text-heading)' }}>
-                      Student Activity Status
-                    </h3>
-                    <div className="h-64 flex items-center justify-center">
-                      <Pie
-                        data={{
-                          labels: ['Active', 'Focused', 'Inactive'],
-                          datasets: [
-                            {
-                              data: [
-                                parseFloat(participantStats.activityPercentage?.active) || 0,
-                                parseFloat(participantStats.activityPercentage?.focused) || 0,
-                                parseFloat(participantStats.activityPercentage?.inactive) || 0,
-                              ],
-                              backgroundColor: [
-                                'rgba(75, 192, 192, 0.7)',
-                                'rgba(255, 206, 86, 0.7)',
-                                'rgba(156, 163, 175, 0.7)',
-                              ],
-                              borderColor: [
-                                'rgba(75, 192, 192, 1)',
-                                'rgba(255, 206, 86, 1)',
-                                'rgba(156, 163, 175, 1)',
-                              ],
-                              borderWidth: 1,
-                            },
-                          ],
-                        }}
-                        options={{
-                          responsive: true,
-                          maintainAspectRatio: true,
-                          plugins: {
-                            legend: {
-                              position: 'bottom',
-                              labels: {
-                                font: { size: 11 },
-                                padding: 10,
-                              },
-                            },
-                            tooltip: {
-                              callbacks: {
-                                label: (context) => {
-                                  const label = context.label || '';
-                                  const value = context.parsed || 0;
-                                  const count = participantStats.activityStats?.[label.toLowerCase()] || 0;
-                                  return `${label}: ${count} students (${value}%)`;
-                                },
-                              },
-                            },
-                          },
-                        }}
-                      />
-                    </div>
-                  </div>
-                  )}
-
-                  {/* Correct Submission Rate Pie Chart */}
-                  {participantStats && (
-                  <div className="backdrop-blur-sm rounded-2xl shadow-lg p-6 border transition-all duration-300 hover:shadow-2xl" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-                    <h3 className="text-lg font-semibold mb-4 text-center" style={{ color: 'var(--text-heading)' }}>
-                      Submission Accuracy
-                    </h3>
-                    <div className="h-64 flex items-center justify-center">
-                      <Pie
-                        data={{
-                          labels: ['Correct', 'Wrong'],
-                          datasets: [
-                            {
-                              data: [
-                                participantStats.totalCorrectAttempts || 0,
-                                participantStats.totalWrongAttempts || 0,
-                              ],
-                              backgroundColor: ['rgba(34, 197, 94, 0.7)', 'rgba(239, 68, 68, 0.7)'],
-                              borderColor: ['rgba(34, 197, 94, 1)', 'rgba(239, 68, 68, 1)'],
-                              borderWidth: 1,
-                            },
-                          ],
-                        }}
-                        options={{
-                          responsive: true,
-                          maintainAspectRatio: true,
-                          plugins: {
-                            legend: {
-                              position: 'bottom',
-                              labels: {
-                                font: { size: 11 },
-                                padding: 10,
-                              },
-                            },
-                            tooltip: {
-                              callbacks: {
-                                label: (context) => {
-                                  const label = context.label || '';
-                                  const value = context.parsed || 0;
-                                  const total = participantStats.totalCorrectAttempts + participantStats.totalWrongAttempts;
-                                  const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
-                                  return `${label}: ${value} (${percentage}%)`;
-                                },
-                              },
-                            },
-                          },
-                        }}
-                      />
-                    </div>
-                  </div>
-                  )}
-
-                  {/* Runs vs Submits Pie Chart */}
-                  {runSubmitStats && (
-                  <div className="backdrop-blur-sm rounded-2xl shadow-lg p-6 border transition-all duration-300 hover:shadow-2xl" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-                    <h3 className="text-lg font-semibold mb-4 text-center" style={{ color: 'var(--text-heading)' }}>
-                      Runs vs Submissions
-                    </h3>
-                    <div className="h-64 flex items-center justify-center">
-                      <Pie
-                        data={{
-                          labels: ['Runs', 'Submissions'],
-                          datasets: [
-                            {
-                              data: [
-                                runSubmitStats.classTotalRuns || 0,
-                                runSubmitStats.classTotalSubmits || 0,
-                              ],
-                              backgroundColor: ['rgba(59, 130, 246, 0.7)', 'rgba(168, 85, 247, 0.7)'],
-                              borderColor: ['rgba(59, 130, 246, 1)', 'rgba(168, 85, 247, 1)'],
-                              borderWidth: 1,
-                            },
-                          ],
-                        }}
-                        options={{
-                          responsive: true,
-                          maintainAspectRatio: true,
-                          plugins: {
-                            legend: {
-                              position: 'bottom',
-                              labels: {
-                                font: { size: 11 },
-                                padding: 10,
-                              },
-                            },
-                          },
-                        }}
-                      />
-                    </div>
-                  </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Attempt Statistics */}
-            <div className="mb-6">
-              <h2 className="text-2xl font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>Attempt Statistics</h2>
-              <div className="backdrop-blur-sm rounded-2xl shadow-lg p-6 border transition-all duration-300 hover:shadow-2xl" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-                <StatsGraphs />
-              </div>
-            </div>
-              </div>
-            </div>
-
-            {/* Full Student Table with Block/Unblock */}
-            <div className="mt-8">
+            {/* Student Actions */}
+            <div className="mt-2">
               <h2 className="text-xl font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>Student Actions</h2>
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
               <h2 className="text-2xl font-semibold" style={{ color: 'var(--text-heading)' }}>
                 Students ({filteredStudents.length})
               </h2>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={studentSearch}
-                  onChange={(e) => {
-                    setStudentSearch(e.target.value);
-                    setStudentCurrentPage(1);
-                  }}
-                  placeholder="Search students..."
-                  className="pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                />
-                <svg
-                  className="h-5 w-5 text-gray-400 absolute left-3 top-2.5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              <div className="flex flex-wrap items-center gap-2">
+                <form onSubmit={handleBlockAllUsers} className="flex items-center gap-2">
+                  <label className="inline-flex items-center gap-1.5 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    <input
+                      type="checkbox"
+                      checked={blockAll}
+                      onChange={(e) => setBlockAll(e.target.checked)}
+                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                    />
+                    {blockAll ? 'Block' : 'Unblock'} inactive
+                  </label>
+                  <button
+                    type="submit"
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-red-600 hover:bg-red-700"
+                  >
+                    {blockAll ? 'Block all inactive' : 'Unblock all inactive'}
+                  </button>
+                </form>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={studentSearch}
+                    onChange={(e) => {
+                      setStudentSearch(e.target.value);
+                      setStudentCurrentPage(1);
+                    }}
+                    placeholder="Search students..."
+                    className="pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
                   />
-                </svg>
+                  <svg
+                    className="h-5 w-5 text-gray-400 absolute left-3 top-2.5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
+                  </svg>
+                </div>
               </div>
             </div>
 
@@ -1476,13 +1203,6 @@ const TeacherClassView = () => {
                                       </svg>
                                     )}
                                   </div>
-                                  <div
-                                    className={`text-xs ${
-                                      isBlocked ? 'text-gray-300' : 'text-gray-500'
-                                    }`}
-                                  >
-                                    ID: {studentInfo._id || 'N/A'}
-                                  </div>
                                 </div>
                               </div>
                             </td>
@@ -1521,12 +1241,6 @@ const TeacherClassView = () => {
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                               <div className="flex items-center justify-end gap-2">
-                                <button
-                                  onClick={() => openStudentModal(studentData)}
-                                  className="text-indigo-600 hover:text-indigo-900"
-                                >
-                                  View
-                                </button>
                                 <Menu as="div" className="relative inline-block text-left">
                                   <Menu.Button className="inline-flex items-center p-1 text-gray-400 hover:text-gray-600 focus:outline-none">
                                     <svg
@@ -1618,58 +1332,6 @@ const TeacherClassView = () => {
                 )}
               </div>
             )}
-            </div>
-
-            {/* View Submission Code (in Leaderboard so teacher can view success/fail and Edit & Run) */}
-            <div className="mt-8 backdrop-blur-sm rounded-2xl shadow-lg border p-6" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-              <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>View Submission Code</h3>
-              <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>Enter a submission ID to view student code (success/fail, TLE/MLE) and use Edit & Run.</p>
-              <form onSubmit={(e) => { e.preventDefault(); handleViewSubmissionCode(submissionId); }} className="flex gap-3">
-                <input
-                  type="text"
-                  value={submissionId}
-                  onChange={(e) => setSubmissionId(e.target.value)}
-                  placeholder="Enter submission ID"
-                  className="flex-1 rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                />
-                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium">
-                  View Code
-                </button>
-              </form>
-              {submissionCode && (
-                <div className="mt-6">
-                  {submissionViewData && (
-                    <div className={`mb-4 p-4 rounded-lg border ${submissionViewData.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <span className={`text-lg font-semibold ${submissionViewData.isCorrect ? 'text-green-800' : 'text-red-800'}`}>
-                            {submissionViewData.isCorrect ? '✓ Successful' : '✗ Unsuccessful'}
-                          </span>
-                          {submissionViewData.status && ['tle', 'mle'].includes(String(submissionViewData.status).toLowerCase()) && (
-                            <span className="px-2 py-1 rounded text-sm font-medium bg-amber-200 text-amber-900 uppercase">{submissionViewData.status}</span>
-                          )}
-                          <span className="text-sm text-gray-600">
-                            {submissionViewData.passedTestCases}/{submissionViewData.totalTestCases} test cases passed
-                          </span>
-                        </div>
-                        {submissionViewData.questionId && submissionViewData.classId && (
-                          <Link
-                            to={`/teacher/classes/${String(submissionViewData.classId)}/questions/${String(submissionViewData.questionId)}`}
-                            state={{ initialCode: submissionViewData.code, initialLanguage: submissionViewData.language }}
-                            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium whitespace-nowrap"
-                          >
-                            Edit & Run
-                          </Link>
-                        )}
-                      </div>
-                      {submissionViewData.studentName && <p className="mt-2 text-sm text-gray-600">Student: {submissionViewData.studentName}</p>}
-                      {submissionViewData.questionTitle && <p className="text-sm text-gray-600">Question: {submissionViewData.questionTitle}</p>}
-                    </div>
-                  )}
-                  <h4 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-heading)' }}>Code</h4>
-                  <pre className="p-4 bg-gray-50/80 rounded-lg text-sm overflow-x-auto" style={{ color: 'var(--text-primary)' }}>{submissionCode}</pre>
-                </div>
-              )}
             </div>
             <StudentDetailsModal />
           </Tab.Panel>
@@ -2132,139 +1794,6 @@ const TeacherClassView = () => {
               )}
             </Disclosure>
 
-            {/* Search Leaderboard */}
-            <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 mb-8 transition-all duration-300 hover:shadow-2xl" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-              <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>Search Leaderboard</h3>
-
-              <form onSubmit={handleSearchLeaderboard} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Student Name
-                    </label>
-                    <input
-                      type="text"
-                      value={leaderboardFilters.studentName}
-                      onChange={(e) =>
-                        setLeaderboardFilters({ ...leaderboardFilters, studentName: e.target.value })
-                      }
-                      className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Activity Status
-                    </label>
-                    <select
-                      value={leaderboardFilters.activityStatus}
-                      onChange={(e) =>
-                        setLeaderboardFilters({
-                          ...leaderboardFilters,
-                          activityStatus: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    >
-                      <option value="">All</option>
-                      <option value="active">Active</option>
-                      <option value="focused">Focused</option>
-                      <option value="inactive">Inactive</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700"
-                  >
-                    Search
-                  </button>
-                </div>
-              </form>
-            </div>
-
-            {/* Block All Users */}
-            <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 mb-8 transition-all duration-300 hover:shadow-2xl" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-              <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>Block All Users</h3>
-
-              <form onSubmit={handleBlockAllUsers} className="space-y-4">
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={blockAll}
-                    onChange={(e) => setBlockAll(e.target.checked)}
-                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                  />
-                  <label className="ml-2 block text-sm text-gray-700">Block All Students</label>
-                </div>
-                <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700"
-                  >
-                    {blockAll ? 'Block All' : 'Unblock All'}
-                  </button>
-                </div>
-              </form>
-            </div>
-
-            {/* View Submission Code */}
-            <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 mb-8" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-              <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>View Submission Code</h3>
-              <form onSubmit={(e) => { e.preventDefault(); handleViewSubmissionCode(submissionId); }} className="flex gap-3">
-                <input
-                  type="text"
-                  value={submissionId}
-                  onChange={(e) => setSubmissionId(e.target.value)}
-                  placeholder="Enter submission ID"
-                  className="flex-1 rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
-                />
-                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium">
-                  View Code
-                </button>
-              </form>
-            </div>
-            {submissionCode && (
-              <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 transition-all duration-300 hover:shadow-2xl" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-                {/* Success / Unsuccessful banner */}
-                {submissionViewData && (
-                  <div className={`mb-4 p-4 rounded-lg border ${submissionViewData.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <span className={`text-lg font-semibold ${submissionViewData.isCorrect ? 'text-green-800' : 'text-red-800'}`}>
-                          {submissionViewData.isCorrect ? '✓ Successful' : '✗ Unsuccessful'}
-                        </span>
-                        {submissionViewData.status && ['tle', 'mle'].includes(String(submissionViewData.status).toLowerCase()) && (
-                          <span className="px-2 py-1 rounded text-sm font-medium bg-amber-200 text-amber-900 uppercase">{submissionViewData.status}</span>
-                        )}
-                        <span className="text-sm text-gray-600">
-                          {submissionViewData.passedTestCases}/{submissionViewData.totalTestCases} test cases passed
-                        </span>
-                      </div>
-                      {submissionViewData.questionId && submissionViewData.classId && (
-                        <Link
-                          to={`/teacher/classes/${String(submissionViewData.classId)}/questions/${String(submissionViewData.questionId)}`}
-                          state={{ initialCode: submissionViewData.code, initialLanguage: submissionViewData.language }}
-                          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium whitespace-nowrap"
-                        >
-                          Edit & Run
-                        </Link>
-                      )}
-                    </div>
-                    {submissionViewData.studentName && (
-                      <p className="mt-2 text-sm text-gray-600">Student: {submissionViewData.studentName}</p>
-                    )}
-                    {submissionViewData.questionTitle && (
-                      <p className="text-sm text-gray-600">Question: {submissionViewData.questionTitle}</p>
-                    )}
-                  </div>
-                )}
-                <h3 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-heading)' }}>Code</h3>
-                <pre className="p-4 bg-gray-50/80 backdrop-blur-sm rounded-lg text-sm overflow-x-auto" style={{ color: 'var(--text-primary)' }}>
-                  {submissionCode}
-                </pre>
-              </div>
-            )}
           </Tab.Panel>
         </Tab.Panels>
       </Tab.Group>

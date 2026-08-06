@@ -3,16 +3,6 @@ import { useParams, Link } from 'react-router-dom';
 import { useSelector, shallowEqual } from 'react-redux';
 import { format } from 'date-fns';
 import { Menu, Transition, Dialog, Disclosure, Tab, Portal } from '@headlessui/react';
-import { Bar } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-} from 'chart.js';
 import {
   getParticipantStats,
   getRunSubmitStats,
@@ -27,9 +17,6 @@ import {
   getQuestionPerspectiveReport,
 } from '../../../common/services/api';
 import parse from 'html-react-parser';
-
-// Register Chart.js components
-ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
 const ClassDetails = () => {
   const { classId } = useParams();
@@ -351,52 +338,6 @@ const ClassDetails = () => {
     setIsModalOpen(true);
   };
 
-  // Question Report Graph Component
-  const QuestionReportGraph = () => {
-    if (!questionReport || !questionReport.studentData?.length) return null;
-
-    const studentNames = questionReport.studentData.map((s) => s.studentName);
-    const correctAttempts = questionReport.studentData.map((s) => s.correctAttempts || 0);
-    const totalAttempts = questionReport.studentData.map((s) => s.totalAttempts || 0);
-    const highestScores = questionReport.studentData.map((s) => s.highestScore || 0);
-
-    const chartOptions = {
-      responsive: true,
-      plugins: {
-        legend: { position: 'top' },
-        title: { display: true, text: 'Question Performance by Student' },
-      },
-    };
-
-    const chartData = {
-      labels: studentNames,
-      datasets: [
-        {
-          label: 'Correct Attempts',
-          data: correctAttempts,
-          backgroundColor: 'rgba(75, 192, 192, 0.6)',
-        },
-        {
-          label: 'Total Attempts',
-          data: totalAttempts,
-          backgroundColor: 'rgba(54, 162, 235, 0.6)',
-        },
-       
-        {
-          label: 'Highest Score',
-          data: highestScores,
-          backgroundColor: 'rgba(255, 206, 86, 0.6)',
-        },
-      ],
-    };
-
-    return (
-      <div className="mt-6">
-        <Bar options={chartOptions} data={chartData} />
-      </div>
-    );
-  };
-
   if (!user) {
     console.log('[ClassDetails] Rendering: User not logged in');
     return (
@@ -477,7 +418,6 @@ const ClassDetails = () => {
           <div className="flex items-center">
             <div>
               <h3 className={`text-lg font-semibold ${isBlocked ? 'text-white' : 'text-gray-800'}`}>{name}</h3>
-              <p className={`text-sm ${isBlocked ? 'text-gray-300' : 'text-gray-600'}`}>ID: {id}</p>
               <p className={`text-sm ${isBlocked ? 'text-gray-300' : 'text-gray-600'}`}>Email: {email}</p>
             </div>
             {isFocused && (
@@ -593,73 +533,6 @@ const ClassDetails = () => {
             <p className={`text-sm font-medium ${isBlocked ? 'text-gray-300' : 'text-gray-600'}`}>Total Submissions</p>
             <p className={`text-lg font-bold ${isBlocked ? 'text-white' : 'text-indigo-900'}`}>{totalSubmissions ?? 0}</p>
           </div>
-        </div>
-      </div>
-    );
-  };
-
-  // Stats Graphs Component
-  const StatsGraphs = () => {
-    const studentNames = runSubmitStats?.studentStats.map((s) => s.student.name) || [];
-    const correctAttempts = leaderboard.map((l) => l.correctAttempts || 0);
-    const totalAttempts = leaderboard.map((l) => l.totalAttempts || 0);
-    const wrongAttempts = leaderboard.map((l) => (l.totalAttempts || 0) - (l.correctAttempts || 0));
-
-    const chartOptions = {
-      responsive: true,
-      plugins: {
-        legend: { position: 'top' },
-        title: { display: true },
-      },
-    };
-
-    const correctChartData = {
-      labels: studentNames,
-      datasets: [
-        {
-          label: 'Correct Attempts',
-          data: correctAttempts,
-          backgroundColor: 'rgba(75, 192, 192, 0.6)',
-        },
-      ],
-    };
-
-    const totalChartData = {
-      labels: studentNames,
-      datasets: [
-        {
-          label: 'Total Attempts',
-          data: totalAttempts,
-          backgroundColor: 'rgba(54, 162, 235, 0.6)',
-        },
-      ],
-    };
-
-    const wrongChartData = {
-      labels: studentNames,
-      datasets: [
-        {
-          label: 'Wrong Attempts',
-          data: wrongAttempts,
-          backgroundColor: 'rgba(255, 99, 132, 0.6)',
-        },
-      ],
-    };
-
-    return (
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Correct Attempts</h3>
-          <Bar options={{ ...chartOptions, plugins: { ...chartOptions.plugins, title: { text: 'Correct Attempts' } } }} data={correctChartData} />
-        </div>
-        <div>
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Total Attempts</h3>
-          <Bar options={{ ...chartOptions, plugins: { ...chartOptions.plugins, title: { text: 'Total Attempts' } } }} data={totalChartData} />
-        </div>
-        
-        <div>
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Wrong Attempts</h3>
-          <Bar options={{ ...chartOptions, plugins: { ...chartOptions.plugins, title: { text: 'Wrong Attempts' } } }} data={wrongChartData} />
         </div>
       </div>
     );
@@ -872,7 +745,6 @@ const ClassDetails = () => {
               <p className="text-gray-500">No student performance data available</p>
             )}
           </div>
-          {!isStudent && <QuestionReportGraph />}
         </div>
       </div>
     );
@@ -1024,17 +896,6 @@ const ClassDetails = () => {
         </div>
       </section>
 
-      {/* Attempt Graphs */}
-      <section className="mb-12">
-        <h2 className="text-2xl font-semibold text-gray-800 mb-4">Attempt Statistics</h2>
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
-          {runSubmitStats && leaderboard.length > 0 ? (
-            <StatsGraphs />
-          ) : (
-            <p className="text-gray-500">No attempt data available</p>
-          )}
-        </div>
-      </section>
           </Tab.Panel>
 
           {/* Students Tab */}
@@ -1350,155 +1211,6 @@ const ClassDetails = () => {
         </div>
       </section>
 
-      {/* Search Leaderboard */}
-      <section className="mb-12">
-        <h2 className="text-2xl font-semibold text-gray-800 mb-4">Search Leaderboard</h2>
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
-          <form onSubmit={handleSearchLeaderboard} className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-800">Student Name</label>
-              <input
-                type="text"
-                value={leaderboardFilters.studentName}
-                onChange={(e) =>
-                  setLeaderboardFilters({
-                    ...leaderboardFilters,
-                    studentName: e.target.value,
-                  })
-                }
-                className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                placeholder="Enter student name"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-800">Activity Status</label>
-              <select
-                value={leaderboardFilters.activityStatus}
-                onChange={(e) =>
-                  setLeaderboardFilters({
-                    ...leaderboardFilters,
-                    activityStatus: e.target.value,
-                  })
-                }
-                className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-              >
-                <option value="">All</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="focused">Focused</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-800">Min Correct Attempts</label>
-              <input
-                type="number"
-                value={leaderboardFilters.minCorrectAttempts}
-                onChange={(e) =>
-                  setLeaderboardFilters({
-                    ...leaderboardFilters,
-                    minCorrectAttempts: e.target.value,
-                  })
-                }
-                className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                placeholder="Enter minimum correct attempts"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-800">Max Attempts</label>
-              <input
-                type="number"
-                value={leaderboardFilters.maxAttempts}
-                onChange={(e) =>
-                  setLeaderboardFilters({
-                    ...leaderboardFilters,
-                    maxAttempts: e.target.value,
-                  })
-                }
-                className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                placeholder="Enter maximum attempts"
-              />
-            </div>
-            <button
-              type="submit"
-              className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300"
-            >
-              Search
-            </button>
-          </form>
-        </div>
-      </section>
-
-      {/* View Submission Code */}
-      <section className="mb-12">
-        <h2 className="text-2xl font-semibold text-gray-800 mb-4">View Submission Code</h2>
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleViewSubmissionCode(submissionId);
-            }}
-            className="space-y-6"
-          >
-            <div>
-              <label className="block text-sm font-medium text-gray-800">Submission ID</label>
-              <input
-                type="text"
-                value={submissionId}
-                onChange={(e) => setSubmissionId(e.target.value)}
-                className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                placeholder="Enter submission ID"
-                required
-              />
-            </div>
-            <button
-              type="submit"
-              className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300"
-            >
-              View Code
-            </button>
-          </form>
-          {submissionCode && (
-            <div className="mt-6 space-y-4">
-              {submissionViewData && (
-                <div className={`p-4 rounded-lg border ${submissionViewData.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <span className={`text-lg font-semibold ${submissionViewData.isCorrect ? 'text-green-800' : 'text-red-800'}`}>
-                        {submissionViewData.isCorrect ? '✓ Successful' : '✗ Unsuccessful'}
-                      </span>
-                      {submissionViewData.status && ['tle', 'mle'].includes(String(submissionViewData.status).toLowerCase()) && (
-                        <span className="px-2 py-1 rounded text-sm font-medium bg-amber-200 text-amber-900 uppercase">{submissionViewData.status}</span>
-                      )}
-                      <span className="text-sm text-gray-600">
-                        {submissionViewData.passedTestCases}/{submissionViewData.totalTestCases} test cases passed
-                      </span>
-                    </div>
-                    {submissionViewData.questionId && (submissionViewData.classId || classId) && (
-                      <Link
-                        to={`/teacher/classes/${String(submissionViewData.classId || classId)}/questions/${String(submissionViewData.questionId)}`}
-                        state={{ initialCode: submissionViewData.code, initialLanguage: submissionViewData.language }}
-                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium whitespace-nowrap"
-                      >
-                        Edit & Run
-                      </Link>
-                    )}
-                  </div>
-                  {submissionViewData.studentName && (
-                    <p className="mt-2 text-sm text-gray-600">Student: {submissionViewData.studentName}</p>
-                  )}
-                  {submissionViewData.questionTitle && (
-                    <p className="text-sm text-gray-600">Question: {submissionViewData.questionTitle}</p>
-                  )}
-                </div>
-              )}
-              <h3 className="text-lg font-semibold text-gray-800">Code</h3>
-              <pre className="bg-gray-50 p-4 rounded-lg overflow-auto text-sm text-gray-800 font-mono">
-                <code>{submissionCode}</code>
-              </pre>
-            </div>
-          )}
-        </div>
-      </section>
           </Tab.Panel>
         </Tab.Panels>
       </Tab.Group>

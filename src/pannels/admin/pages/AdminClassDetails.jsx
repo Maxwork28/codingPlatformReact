@@ -51,6 +51,7 @@ const AdminClassDetails = () => {
   const [error, setError] = useState('');
   const [classData, setClassData] = useState(null);
   const [toast, setToast] = useState({ show: false, message: '', type: '' });
+  const [descriptionModal, setDescriptionModal] = useState({ show: false, title: '', description: '' });
   
   // Toast notification helper
   const showToast = (message, type = 'info') => {
@@ -1323,7 +1324,36 @@ const AdminClassDetails = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                           {stripHtml(question.title)}
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-500">{stripHtml(question.description)}</td>
+                        <td className="px-6 py-4 text-sm text-gray-500 max-w-xs">
+                          {(() => {
+                            const desc = stripHtml(question.description);
+                            const isLong = desc.length > 60;
+                            return (
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="truncate block min-w-0 flex-1" title={isLong ? undefined : desc}>
+                                  {desc || '—'}
+                                </span>
+                                {isLong && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setDescriptionModal({
+                                        show: true,
+                                        title: stripHtml(question.title),
+                                        description: desc,
+                                      })
+                                    }
+                                    className="flex-shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-600 hover:text-gray-800 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400"
+                                    title="View full description"
+                                    aria-label="View full description"
+                                  >
+                                    <span className="text-xs font-bold leading-none">i</span>
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.type}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.points}</td>
                       </tr>
@@ -2108,6 +2138,43 @@ const AdminClassDetails = () => {
             </Tab.Panel>
           </Tab.Panels>
         </Tab.Group>
+      )}
+
+      {/* Question Description Modal */}
+      {descriptionModal.show && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+          onClick={() => setDescriptionModal({ show: false, title: '', description: '' })}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[80vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-gray-100">
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-gray-900 truncate">
+                  {descriptionModal.title || 'Question Description'}
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">Full description</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDescriptionModal({ show: false, title: '', description: '' })}
+                className="flex-shrink-0 text-gray-400 hover:text-gray-600 focus:outline-none"
+                aria-label="Close"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="px-5 py-4 overflow-y-auto max-h-[60vh]">
+              <p className="text-sm text-gray-700 whitespace-pre-wrap break-words">
+                {descriptionModal.description}
+              </p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

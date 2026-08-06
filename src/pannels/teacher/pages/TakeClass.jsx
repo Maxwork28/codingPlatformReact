@@ -436,13 +436,14 @@ const TakeClass = () => {
     navigateWithClassContext(`/teacher/questions/${questionId}/preview`);
   };
 
-  const handleViewQuestionStatistics = () => {
-    if (!selectedClass?._id || !selectedQuestion?._id) {
+  const handleViewQuestionStatistics = (questionOverrideId) => {
+    const qId = questionOverrideId || selectedQuestion?._id;
+    if (!selectedClass?._id || !qId) {
       alert('Please select a class and question first');
       return;
     }
     navigate(
-      `/teacher/take-class/${selectedClass._id}/questions/${selectedQuestion._id}/statistics`,
+      `/teacher/take-class/${selectedClass._id}/questions/${qId}/statistics`,
       { state: { fromTakeClass: true } }
     );
   };
@@ -982,6 +983,26 @@ const TakeClass = () => {
                                           <button
                                             onClick={(e) => {
                                               e.stopPropagation();
+                                              setSelectedQuestion(q);
+                                              handleViewQuestionStatistics(q._id);
+                                            }}
+                                            className={`${
+                                              active ? 'bg-indigo-50' : ''
+                                            } group flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors`}
+                                            style={{ color: 'var(--text-primary)' }}
+                                          >
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                            </svg>
+                                            Question statistics
+                                          </button>
+                                        )}
+                                      </Menu.Item>
+                                      <Menu.Item>
+                                        {({ active }) => (
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
                                               handleViewSolution(q._id);
                                             }}
                                             className={`${
@@ -1187,13 +1208,6 @@ const TakeClass = () => {
                 />
 
                 <div className="flex flex-wrap items-center gap-2 mb-6">
-                  <button
-                    type="button"
-                    onClick={handleViewQuestionStatistics}
-                    className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    View question statistics
-                  </button>
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
                     selectedQuestion.difficulty === 'easy' ? 'bg-green-100 text-green-700' :
                     selectedQuestion.difficulty === 'medium' ? 'bg-yellow-100 text-yellow-700' :

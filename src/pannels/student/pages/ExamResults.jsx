@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getStudentExamResults } from '../../../common/services/api';
 import parse from 'html-react-parser';
+import StudentBackNav from '../components/StudentBackNav';
 
 const ExamResults = () => {
   const { examId } = useParams();
@@ -61,6 +62,9 @@ const ExamResults = () => {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
         <div className="container mx-auto px-4">
+          <div className="mb-4">
+            <StudentBackNav fallbackTo="/student/exams" label="Back to Exams" />
+          </div>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 text-center">
             <h1 className="text-3xl font-bold mb-2">{exam.title}</h1>
             <p className="text-gray-600 dark:text-gray-400 mb-4">{exam.description}</p>
@@ -70,12 +74,7 @@ const ExamResults = () => {
               </p>
             </div>
             <div className="mt-8">
-              <button
-                onClick={() => navigate('/student')}
-                className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-              >
-                Back to Dashboard
-              </button>
+              <StudentBackNav fallbackTo="/student" label="Back to Dashboard" />
             </div>
           </div>
         </div>
@@ -90,6 +89,9 @@ const ExamResults = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
       <div className="container mx-auto px-4">
+        <div className="mb-4">
+          <StudentBackNav fallbackTo="/student/exams" label="Back to Exams" />
+        </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold mb-2">{exam.title}</h1>
@@ -229,12 +231,7 @@ const ExamResults = () => {
           </div>
 
           <div className="mt-8 text-center">
-            <button
-              onClick={() => navigate('/student')}
-              className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-              Back to Dashboard
-            </button>
+            <StudentBackNav fallbackTo="/student" label="Back to Dashboard" />
           </div>
         </div>
       </div>

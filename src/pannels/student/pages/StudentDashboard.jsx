@@ -3,9 +3,9 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { fetchClasses } from '../../../common/components/redux/classSlice';
-import { listClassExams } from '../../../common/services/api';
+import { listClassExams, getLeaderboard } from '../../../common/services/api';
 import { DiJavascript } from "react-icons/di";
-import { FaJava, FaPython, FaCheckCircle, FaChartLine, FaClock, FaProjectDiagram, FaBookOpen } from "react-icons/fa";
+import { FaJava, FaPython, FaCheckCircle, FaChartLine, FaClock, FaProjectDiagram, FaBookOpen, FaTimesCircle } from "react-icons/fa";
 import { GiNotebook } from "react-icons/gi";
 import { MdOutlineAssignment } from "react-icons/md";
 import { VscCode } from "react-icons/vsc";
@@ -22,13 +22,38 @@ const stripHtml = (html) => {
   }
 };
 
+const formatRelativeTime = (date) => {
+  if (!date) return '';
+  const diffMs = Date.now() - new Date(date).getTime();
+  if (Number.isNaN(diffMs) || diffMs < 0) return new Date(date).toLocaleDateString();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(date).toLocaleDateString();
+};
+
+const getStudentIdFromEntry = (entry) =>
+  entry?.studentId?._id || entry?.studentId?.id || entry?.studentId;
+
 const StudentDashboard = () => {
   const dispatch = useDispatch();
   const { classes, status, error } = useSelector((state) => state.classes);
   const { user } = useSelector((state) => state.auth);
   const [assignments, setAssignments] = useState([]);
   const [upcomingExams, setUpcomingExams] = useState([]);
+  const [activityStats, setActivityStats] = useState({
+    problemsSolved: 0,
+    successRate: 0,
+    totalSubmissions: 0,
+  });
+  const [recentActivities, setRecentActivities] = useState([]);
+  const [activityLoading, setActivityLoading] = useState(false);
   const fetchedClassesRef = useRef('');
+  const fetchedActivityRef = useRef('');
 
   // Create a stable string representation of class IDs
   // Only recalculate when classes array reference changes or length changes
@@ -165,6 +190,116 @@ const StudentDashboard = () => {
     fetchAssignments();
     fetchExams();
   }, [classIdsString, user]);
+
+  // Fetch recent activity + stats from leaderboards across enrolled classes
+  useEffect(() => {
+    if (!user?.id || classes.length === 0) {
+      setActivityStats({ problemsSolved: 0, successRate: 0, totalSubmissions: 0 });
+      setRecentActivities([]);
+      return;
+    }
+
+    const enrolled = classes.filter((cls) =>
+      cls.students?.some((s) => String(s._id || s) === String(user.id))
+    );
+    const activityKey = `${user.id}:${enrolled.map((c) => c._id).sort().join(',')}`;
+    if (!activityKey.endsWith(':') && fetchedActivityRef.current === activityKey) {
+      return;
+    }
+    if (enrolled.length === 0) {
+      fetchedActivityRef.current = activityKey;
+      setActivityStats({ problemsSolved: 0, successRate: 0, totalSubmissions: 0 });
+      setRecentActivities([]);
+      return;
+    }
+
+    fetchedActivityRef.current = activityKey;
+    let cancelled = false;
+
+    const fetchActivity = async () => {
+      setActivityLoading(true);
+      try {
+        const questionTitleMap = {};
+        enrolled.forEach((cls) => {
+          (cls.questions || []).forEach((q) => {
+            if (q?._id) questionTitleMap[String(q._id)] = stripHtml(q.title) || 'Untitled Question';
+          });
+        });
+
+        const solvedQuestions = new Set();
+        let correctSubmits = 0;
+        let totalSubmits = 0;
+        const activities = [];
+
+        await Promise.all(
+          enrolled.map(async (cls) => {
+            try {
+              const response = await getLeaderboard(cls._id);
+              const leaderboard = response.data?.leaderboard || [];
+              const myEntry = leaderboard.find(
+                (entry) => String(getStudentIdFromEntry(entry)) === String(user.id)
+              );
+              if (!myEntry) return;
+
+              (myEntry.highestScores || []).forEach((hs) => {
+                if (hs.isCorrect && hs.questionId) {
+                  solvedQuestions.add(String(hs.questionId));
+                }
+              });
+
+              (myEntry.attempts || []).forEach((attempt) => {
+                if (attempt.isRun) return;
+                totalSubmits += 1;
+                if (attempt.isCorrect) correctSubmits += 1;
+
+                const qId = String(attempt.questionId);
+                activities.push({
+                  id: `${attempt.submissionId || qId}-${attempt.submittedAt}`,
+                  questionId: qId,
+                  questionTitle: questionTitleMap[qId] || 'Question',
+                  classId: cls._id,
+                  className: cls.name,
+                  isCorrect: Boolean(attempt.isCorrect),
+                  submittedAt: attempt.submittedAt,
+                });
+              });
+            } catch (err) {
+              console.error('[StudentDashboard] Failed to fetch leaderboard for activity', {
+                classId: cls._id,
+                error: err,
+              });
+            }
+          })
+        );
+
+        if (cancelled) return;
+
+        activities.sort(
+          (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
+        );
+
+        setActivityStats({
+          problemsSolved: solvedQuestions.size,
+          successRate: totalSubmits > 0 ? Math.round((correctSubmits / totalSubmits) * 100) : 0,
+          totalSubmissions: totalSubmits,
+        });
+        setRecentActivities(activities.slice(0, 8));
+      } catch (err) {
+        console.error('[StudentDashboard] Failed to fetch recent activity', err);
+        if (!cancelled) {
+          setActivityStats({ problemsSolved: 0, successRate: 0, totalSubmissions: 0 });
+          setRecentActivities([]);
+        }
+      } finally {
+        if (!cancelled) setActivityLoading(false);
+      }
+    };
+
+    fetchActivity();
+    return () => {
+      cancelled = true;
+    };
+  }, [classIdsString, user?.id, classes]);
 
   // Filter classes for the current user
   const myClasses = user?.id
@@ -506,11 +641,12 @@ const StudentDashboard = () => {
           
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Activity Stats */}
               <div className="text-center hover:transform hover:scale-105 transition-all duration-200">
                 <div className="flex items-center justify-center mb-2">
                   <FaCheckCircle className="w-6 h-6 text-green-500 mr-2" />
-                  <div className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>12</div>
+                  <div className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    {activityLoading ? '—' : activityStats.problemsSolved}
+                  </div>
                 </div>
                 <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Problems Solved</div>
               </div>
@@ -518,7 +654,9 @@ const StudentDashboard = () => {
               <div className="text-center hover:transform hover:scale-105 transition-all duration-200">
                 <div className="flex items-center justify-center mb-2">
                   <FaChartLine className="w-6 h-6 text-blue-500 mr-2" />
-                  <div className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>85%</div>
+                  <div className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    {activityLoading ? '—' : `${activityStats.successRate}%`}
+                  </div>
                 </div>
                 <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Success Rate</div>
               </div>
@@ -526,14 +664,61 @@ const StudentDashboard = () => {
               <div className="text-center hover:transform hover:scale-105 transition-all duration-200">
                 <div className="flex items-center justify-center mb-2">
                   <FaClock className="w-6 h-6 text-orange-500 mr-2" />
-                  <div className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>24h</div>
+                  <div className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    {activityLoading ? '—' : activityStats.totalSubmissions}
+                  </div>
                 </div>
-                <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Study Time</div>
+                <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Submissions</div>
               </div>
             </div>
             
-            <div className="mt-6 text-center">
-              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>No recent activity to display.</p>
+            <div className="mt-6">
+              {activityLoading ? (
+                <div className="flex justify-center py-4">
+                  <div className="w-8 h-8 border-4 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--text-primary)', borderTopColor: 'transparent' }} />
+                </div>
+              ) : recentActivities.length === 0 ? (
+                <p className="text-sm text-center" style={{ color: 'var(--text-secondary)' }}>
+                  No recent activity to display.
+                </p>
+              ) : (
+                <ul className="divide-y divide-gray-200 border rounded-xl overflow-hidden" style={{ borderColor: 'var(--card-border)' }}>
+                  {recentActivities.map((item) => (
+                    <li key={item.id}>
+                      <Link
+                        to={`/student/questions/${item.questionId}/submit`}
+                        state={{ classId: item.classId }}
+                        className="flex items-start gap-3 px-4 py-3 transition-colors"
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = 'var(--background-light)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                        }}
+                      >
+                        <div className="mt-0.5 flex-shrink-0">
+                          {item.isCorrect ? (
+                            <FaCheckCircle className="w-4 h-4 text-green-500" />
+                          ) : (
+                            <FaTimesCircle className="w-4 h-4 text-red-400" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                            {item.questionTitle}
+                          </p>
+                          <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                            {item.isCorrect ? 'Solved' : 'Attempted'} · {item.className}
+                          </p>
+                        </div>
+                        <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
+                          {formatRelativeTime(item.submittedAt)}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
         </div>

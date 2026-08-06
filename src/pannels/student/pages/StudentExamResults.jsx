@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { getStudentExamResults } from '../../../common/services/api';
+import StudentBackNav from '../components/StudentBackNav';
 
 const StudentExamResults = () => {
   const { examId } = useParams();
@@ -68,7 +69,8 @@ const StudentExamResults = () => {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center" style={{ backgroundColor: 'var(--background-content)' }}>
+      <div className="flex h-screen flex-col items-center justify-center gap-4 p-6" style={{ backgroundColor: 'var(--background-content)' }}>
+        <StudentBackNav fallbackTo="/student/exams" label="Back to Exams" />
         <div className="text-lg" style={{ color: 'var(--text-secondary)' }}>Loading exam results...</div>
       </div>
     );
@@ -80,6 +82,9 @@ const StudentExamResults = () => {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6" style={{ backgroundColor: 'var(--background-content)' }}>
         <div className="w-full max-w-2xl">
+          <div className="mb-4">
+            <StudentBackNav fallbackTo="/student/exams" label="Back to Exams" />
+          </div>
           <div className="rounded-xl border-2 border-yellow-200 bg-gradient-to-br from-yellow-50 to-orange-50 p-8 shadow-xl">
             <div className="flex flex-col items-center text-center space-y-4">
               <div className="w-20 h-20 rounded-full bg-yellow-100 flex items-center justify-center">
@@ -112,15 +117,7 @@ const StudentExamResults = () => {
               </div>
 
               <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto pt-4">
-                <button
-                  onClick={() => navigate('/student/exams')}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 rounded-lg px-6 py-3 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-all shadow-md hover:shadow-lg"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                  </svg>
-                  Back to Exams
-                </button>
+                <StudentBackNav fallbackTo="/student/exams" label="Back to Exams" />
                 {isNotReleased && (
                   <button
                     onClick={() => window.location.reload()}
@@ -153,18 +150,14 @@ const StudentExamResults = () => {
 
   return (
     <div className="space-y-6 p-6" style={{ backgroundColor: 'var(--background-content)', minHeight: '100vh' }}>
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="mb-3">
+            <StudentBackNav fallbackTo="/student/exams" label="Back to Exams" />
+          </div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>{exam?.title}</h1>
           <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>{exam?.description}</p>
         </div>
-        <button
-          onClick={() => navigate('/student/exams')}
-          className="rounded-md px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-          style={{ backgroundColor: 'var(--text-secondary)' }}
-        >
-          Back to Exams
-        </button>
       </div>
 
       {/* Overall Score Summary */}

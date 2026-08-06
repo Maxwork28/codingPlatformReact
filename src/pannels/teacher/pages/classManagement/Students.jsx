@@ -349,9 +349,6 @@ const Students = () => {
                                     </svg>
                                   )}
                                 </div>
-                                <div className="text-xs" style={{ color: isBlocked ? '#d1d5db' : 'var(--text-secondary)' }}>
-                                  ID: {id}
-                                </div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm" style={{ color: isBlocked ? '#d1d5db' : 'var(--text-secondary)' }}>
                                 {email}
@@ -379,12 +376,6 @@ const Students = () => {
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                 <div className="flex items-center justify-end space-x-2">
-                                  <button
-                                    onClick={() => openStudentModal(student)}
-                                    className="text-indigo-600 hover:text-indigo-900"
-                                  >
-                                    View
-                                  </button>
                                   <Menu as="div" className="relative inline-block text-left">
                                     <Menu.Button className="inline-flex items-center p-1 rounded-full hover:bg-gray-100 focus:outline-none transition-colors duration-200">
                                       <svg className="h-5 w-5" style={{ color: 'var(--text-secondary)' }} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
@@ -437,91 +428,6 @@ const Students = () => {
                 ) : (
                   <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>No student data available</p>
                 )}
-              </div>
-
-              {/* Search Leaderboard */}
-              <div className="backdrop-blur-sm rounded-2xl shadow-lg p-6 border mb-8" style={{ backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }}>
-                <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Search Leaderboard</h3>
-                <form onSubmit={handleSearchLeaderboard} className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Student Name</label>
-                      <input
-                        type="text"
-                        value={leaderboardFilters.studentName}
-                        onChange={(e) => setLeaderboardFilters({ ...leaderboardFilters, studentName: e.target.value })}
-                        placeholder="Enter student name"
-                        className="w-full rounded-lg border shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                        style={{ 
-                          borderColor: 'var(--card-border)', 
-                          backgroundColor: 'var(--background-light)', 
-                          color: 'var(--text-primary)',
-                          padding: '8px 12px'
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Activity Status</label>
-                      <select
-                        value={leaderboardFilters.activityStatus}
-                        onChange={(e) => setLeaderboardFilters({ ...leaderboardFilters, activityStatus: e.target.value })}
-                        className="w-full rounded-lg border shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                        style={{ 
-                          borderColor: 'var(--card-border)', 
-                          backgroundColor: 'var(--background-light)', 
-                          color: 'var(--text-primary)',
-                          padding: '8px 12px'
-                        }}
-                      >
-                        <option value="">All</option>
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                        <option value="focused">Focused</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Min Correct Attempts</label>
-                      <input
-                        type="number"
-                        value={leaderboardFilters.minCorrectAttempts}
-                        onChange={(e) => setLeaderboardFilters({ ...leaderboardFilters, minCorrectAttempts: e.target.value })}
-                        placeholder="Enter minimum correct attempts"
-                        className="w-full rounded-lg border shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                        style={{ 
-                          borderColor: 'var(--card-border)', 
-                          backgroundColor: 'var(--background-light)', 
-                          color: 'var(--text-primary)',
-                          padding: '8px 12px'
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Max Attempts</label>
-                      <input
-                        type="number"
-                        value={leaderboardFilters.maxAttempts}
-                        onChange={(e) => setLeaderboardFilters({ ...leaderboardFilters, maxAttempts: e.target.value })}
-                        placeholder="Enter maximum attempts"
-                        className="w-full rounded-lg border shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                        style={{ 
-                          borderColor: 'var(--card-border)', 
-                          backgroundColor: 'var(--background-light)', 
-                          color: 'var(--text-primary)',
-                          padding: '8px 12px'
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex justify-end">
-                    <button
-                      type="submit"
-                      className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-300"
-                      style={{ backgroundColor: 'var(--primary-navy)' }}
-                    >
-                      Search
-                    </button>
-                  </div>
-                </form>
               </div>
 
               {/* Block User */}

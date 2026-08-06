@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import CodeEditor from '../components/CodeEditor';
+import StudentBackNav from '../components/StudentBackNav';
 import { 
   startExam, 
   getExamAttempt, 
@@ -573,6 +574,9 @@ const ExamTaking = () => {
 
       {/* Header with Timers */}
       <div className="bg-white dark:bg-gray-800 shadow-md p-4 sticky top-0 z-40">
+        <div className="mb-3">
+          <StudentBackNav fallbackTo="/student/exams" label="Back to Exams" />
+        </div>
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold">{exam.title}</h1>

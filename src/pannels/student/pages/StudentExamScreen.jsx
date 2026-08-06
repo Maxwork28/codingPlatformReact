@@ -13,6 +13,7 @@ import {
   runCode,
   runCodeWithCustomInput
 } from '../../../common/services/api';
+import StudentBackNav from '../components/StudentBackNav';
 import ExamPrompt from '../../../common/components/ExamPrompt';
 import QuestionWorkspace from '../components/QuestionWorkspace';
 
@@ -1022,8 +1023,9 @@ const StudentExamScreen = () => {
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
-        Preparing your exam...
+      <div className="rounded-xl border border-gray-200 bg-white p-6 space-y-4">
+        <StudentBackNav fallbackTo="/student/exams" label="Back to Exams" />
+        <p className="text-center text-sm text-gray-500">Preparing your exam...</p>
       </div>
     );
   }
@@ -1033,7 +1035,8 @@ const StudentExamScreen = () => {
     const isExamNotStarted = error.toLowerCase().includes('not started') || error.toLowerCase().includes('has not started');
     
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 p-4 sm:p-6">
+        <StudentBackNav fallbackTo="/student/exams" label="Back to Exams" />
         <div className={`rounded-xl border p-6 ${
           isExamEnded ? 'border-yellow-200 bg-yellow-50 text-yellow-700' :
           isExamNotStarted ? 'border-blue-200 bg-blue-50 text-blue-700' :
@@ -1069,14 +1072,16 @@ const StudentExamScreen = () => {
   if (!exam || !attempt) {
     if (loading) {
       return (
-        <div className="rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
-          Preparing your exam...
+        <div className="rounded-xl border border-gray-200 bg-white p-6 space-y-4">
+          <StudentBackNav fallbackTo="/student/exams" label="Back to Exams" />
+          <p className="text-center text-sm text-gray-500">Preparing your exam...</p>
         </div>
       );
     }
     if (error) {
       return (
-        <div className="space-y-4">
+        <div className="space-y-4 p-4 sm:p-6">
+          <StudentBackNav fallbackTo="/student/exams" label="Back to Exams" />
           <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">
             {error}
           </div>
@@ -1102,12 +1107,14 @@ const StudentExamScreen = () => {
   const questionTimerLabel = formatSeconds(questionTimer?.remainingSeconds);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 sm:p-6">
       {offline && (
         <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
           Connection lost. Changes will sync once your internet is restored.
         </div>
       )}
+
+      <StudentBackNav fallbackTo="/student/exams" label="Back to Exams" />
 
       <header className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">

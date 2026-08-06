@@ -41,6 +41,24 @@ export const login = async (email, password) => {
   }
 };
 
+/**
+ * Upload student profile picture
+ * @param {File} file - Image file
+ * @returns {Promise} Axios response with profilePicture path
+ */
+export const uploadProfilePicture = async (file) => {
+  const formData = new FormData();
+  formData.append('profilePicture', file);
+  try {
+    const response = await api.post('/auth/profile-picture', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response;
+  } catch (err) {
+    throw err.response?.data?.error || 'Failed to upload profile picture';
+  }
+};
+
 // Admin Routes
 /**
  * Uploads an Excel file with user data
@@ -490,12 +508,13 @@ export const focusStudent = async (classId, studentId, needsFocus) => {
  * Blocks or unblocks all users in a class
  * @param {string} classId - Class ID
  * @param {boolean} isBlocked - Block status
+ * @param {Object} [options={}] - Optional filters: onlyInactive, studentIds
  * @returns {Promise} Axios response
  */
-export const blockAllUsers = async (classId, isBlocked) => {
-  console.log('blockAllUsers called', { classId, isBlocked });
+export const blockAllUsers = async (classId, isBlocked, options = {}) => {
+  console.log('blockAllUsers called', { classId, isBlocked, options });
   try {
-    const response = await api.put(`/admin/classes/${classId}/block-all`, { isBlocked });
+    const response = await api.put(`/admin/classes/${classId}/block-all`, { isBlocked, ...options });
     console.log('blockAllUsers success', { classId, isBlocked, response: response.data });
     return response;
   } catch (err) {

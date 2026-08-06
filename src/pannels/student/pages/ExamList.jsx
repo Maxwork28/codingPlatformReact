@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { listClassExams, startExam } from '../../../common/services/api';
+import StudentBackNav from '../components/StudentBackNav';
 
 const ExamList = () => {
   const { classId } = useParams();
@@ -89,13 +90,10 @@ const ExamList = () => {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
       <div className="container mx-auto px-4">
         <div className="mb-6">
+          <div className="mb-3">
+            <StudentBackNav fallbackTo={classId ? `/student/classes/${classId}` : '/student'} />
+          </div>
           <h1 className="text-3xl font-bold mb-2">Exams</h1>
-          <button
-            onClick={() => navigate(-1)}
-            className="text-blue-500 hover:underline"
-          >
-            ← Back
-          </button>
         </div>
 
         {exams.length === 0 ? (

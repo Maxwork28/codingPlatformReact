@@ -17,28 +17,46 @@ export const validateToken = createAsyncThunk('auth/validateToken', async (_, { 
       ...response.data,
       id: decodedToken.id || response.data.id,
       role: decodedToken.role || response.data.role,
+      profilePicture: response.data.profilePicture || null,
       token,
     };
   } catch (error) {
     console.error('authSlice: Validate token error', error.response?.data || error);
-    localStorage.removeItem('token');
+    // Only clear session on auth failures, not on transient network errors
+    const status = error.response?.status;
+    if (status === 401 || status === 403 || !error.response) {
+      localStorage.removeItem('token');
+    }
     return rejectWithValue(error.response?.data?.error || 'Invalid token');
   }
 });
 
 export const login = createAsyncThunk('auth/login', async ({ email, password }, { rejectWithValue }) => {
   try {
-    console.log('authSlice: Initiating login request', { email });
-    const response = await axios.post(`${API_BASE_URL}/auth/login`, { email, password });
+    const normalizedEmail = (email || '').trim().toLowerCase();
+    const normalizedPassword = typeof password === 'string' ? password : String(password || '');
+    console.log('authSlice: Initiating login request', { email: normalizedEmail });
+    const response = await axios.post(`${API_BASE_URL}/auth/login`, {
+      email: normalizedEmail,
+      password: normalizedPassword,
+    });
     console.log('authSlice: Login response', response.data);
 
     const decodedToken = jwtDecode(response.data.token);
     console.log('authSlice: Decoded token', decodedToken);
 
+    const role = decodedToken.role || response.data.role;
+    const id = decodedToken.id || response.data.id;
+
+    if (!role || !id) {
+      return rejectWithValue('Login succeeded but user role/id is missing');
+    }
+
     return {
       ...response.data,
-      id: decodedToken.id || response.data.id,
-      role: decodedToken.role || response.data.role,
+      id,
+      role,
+      profilePicture: response.data.profilePicture || null,
     };
   } catch (error) {
     console.error('authSlice: Login error', error.response?.data || error);
@@ -82,6 +100,11 @@ const authSlice = createSlice({
       state.error = null;
       localStorage.removeItem('token');
     },
+    setProfilePicture: (state, action) => {
+      if (state.user) {
+        state.user.profilePicture = action.payload;
+      }
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -99,6 +122,7 @@ const authSlice = createSlice({
           name: action.payload.name,
           email: action.payload.email,
           role: action.payload.role,
+          profilePicture: action.payload.profilePicture || null,
         };
         state.error = null;
         if (!action.payload.id) {
@@ -126,6 +150,7 @@ const authSlice = createSlice({
           name: action.payload.name,
           email: action.payload.email,
           role: action.payload.role,
+          profilePicture: action.payload.profilePicture || null,
         };
         state.error = null;
       })
@@ -141,5 +166,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { logout } = authSlice.actions;
+export const { logout, setProfilePicture } = authSlice.actions;
 export default authSlice.reducer;
