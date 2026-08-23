@@ -1,5 +1,7 @@
 import React, { useMemo } from 'react';
 import CodeEditor from './CodeEditor';
+import TestCaseResultsList from './TestCaseResultsList';
+import { CUSTOM_STDIN_PLACEHOLDER, CUSTOM_STDOUT_PLACEHOLDER } from '../../../common/constants';
 
 const QuestionWorkspace = ({
   question,
@@ -17,6 +19,7 @@ const QuestionWorkspace = ({
   sectionTimerLabel,
   totalTimerLabel,
   statusMessage,
+  testResults,
   isSubmitting,
   isRunning,
   isRunningCustom,
@@ -81,7 +84,7 @@ const QuestionWorkspace = ({
               value={customInput}
               onChange={(e) => setCustomInput(e.target.value)}
               disabled={!isQuestionActive || questionLocked}
-              placeholder="Enter custom input to test your solution"
+              placeholder={CUSTOM_STDIN_PLACEHOLDER}
               className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
               rows={3}
             />
@@ -94,7 +97,7 @@ const QuestionWorkspace = ({
               value={expectedOutput}
               onChange={(e) => setExpectedOutput(e.target.value)}
               disabled={!isQuestionActive || questionLocked}
-              placeholder="Enter expected output for custom runs"
+              placeholder={CUSTOM_STDOUT_PLACEHOLDER}
               className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
               rows={2}
             />
@@ -185,6 +188,15 @@ const QuestionWorkspace = ({
         </div>
       )}
 
+      {testResults && (
+        <div className="border-b border-gray-200 bg-white px-4 py-3">
+          <TestCaseResultsList
+            results={Array.isArray(testResults) ? testResults : [testResults]}
+            className="rounded-lg border border-gray-100 bg-gray-50 p-3"
+          />
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto bg-white">
         <div className="border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white px-6 py-5">
           <h2 className="text-2xl font-bold text-gray-900" dangerouslySetInnerHTML={{ __html: question.title }} />
@@ -194,7 +206,9 @@ const QuestionWorkspace = ({
           )}
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-500">
             <span>Difficulty: <strong className="text-indigo-600">{question.difficulty}</strong></span>
-            <span>Points: <strong>{question.points}</strong></span>
+            {question.points != null && question.points !== '' && (
+              <span>Points: <strong>{question.points}</strong></span>
+            )}
             {question.tags?.map((tag, idx) => (
               <span key={idx} className="rounded-full bg-gray-200 px-3 py-1 text-xs text-gray-700">{tag}</span>
             ))}

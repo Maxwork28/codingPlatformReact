@@ -73,7 +73,9 @@ const QuestionView = () => {
           <div className="flex flex-wrap gap-2 mt-2">
             <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">{question.type}</span>
             <span className="px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-700">{question.difficulty}</span>
-            <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">{question.points} pts</span>
+            {question.points != null && question.points !== '' && (
+              <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">{question.points} pts</span>
+            )}
             {question.timeLimit && (
               <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">{question.timeLimit}s</span>
             )}

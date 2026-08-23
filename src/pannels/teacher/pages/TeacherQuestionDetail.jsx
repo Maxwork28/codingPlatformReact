@@ -3,6 +3,7 @@ import { useParams, Link, useLocation } from 'react-router-dom';
 import { getQuestion, getQuestionPerspectiveReport, teacherTestQuestion } from '../../../common/services/api';
 import CodeEditor from '../../student/components/CodeEditor';
 import parse from 'html-react-parser';
+import RunMetricsBadges from '../../../common/components/RunMetricsBadges';
 
 const TeacherQuestionDetail = () => {
   const { classId, questionId } = useParams();
@@ -148,7 +149,9 @@ const TeacherQuestionDetail = () => {
           <div className="flex gap-2 mt-2">
             <span className="px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-700">{question.type}</span>
             <span className="px-2 py-0.5 rounded text-xs bg-indigo-100 text-indigo-700">{question.difficulty}</span>
-            <span className="px-2 py-0.5 rounded text-xs bg-green-100 text-green-700">{question.points} pts</span>
+            {question.points != null && question.points !== '' && (
+              <span className="px-2 py-0.5 rounded text-xs bg-green-100 text-green-700">{question.points} pts</span>
+            )}
           </div>
           {question.description && (
             <div className="mt-4 prose prose-sm max-w-none text-gray-700">{parse(question.description)}</div>
@@ -244,9 +247,14 @@ const TeacherQuestionDetail = () => {
                 <div className="mt-4 space-y-2">
                   {testResults.testResults.map((tr, i) => (
                     <div key={i} className={`p-3 rounded text-sm ${tr.passed ? 'bg-green-50' : 'bg-red-50'}`}>
-                      <span className="font-medium">{tr.passed ? '✓' : '✗'} Test {i + 1}</span>
-                      {tr.isTLE && <span className="ml-2 px-1.5 py-0.5 bg-amber-200 text-amber-900 rounded text-xs">TLE</span>}
-                      {tr.isMLE && <span className="ml-2 px-1.5 py-0.5 bg-amber-200 text-amber-900 rounded text-xs">MLE</span>}
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-medium">{tr.passed ? '✓' : '✗'} Test {i + 1}</span>
+                        <div className="flex items-center gap-2">
+                          <RunMetricsBadges result={tr} />
+                          {tr.isTLE && <span className="px-1.5 py-0.5 bg-amber-200 text-amber-900 rounded text-xs">TLE</span>}
+                          {tr.isMLE && <span className="px-1.5 py-0.5 bg-amber-200 text-amber-900 rounded text-xs">MLE</span>}
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>

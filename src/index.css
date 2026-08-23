@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
-/* Import Google Fonts */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+/* App theme uses data-theme on <html>, not prefers-color-scheme */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 /* Light Mode Color Palette */
 :root {
@@ -36,7 +36,10 @@
   --accent-blue: #1d4ed8;
   --primary-blue: #3b82f6;
   --primary-indigo: #6366f1;
+  --accent-indigo: #6366f1;
   --text-heading: #1e293b;
+  --row-hover: #f1f5f9;
+  --tw-ring-offset-color: #ffffff;
 }
 
 /* Dark Mode Color Palette */
@@ -72,7 +75,26 @@
   --accent-blue: #3b82f6;
   --primary-blue: #60a5fa;
   --primary-indigo: #818cf8;
+  --accent-indigo: #818cf8;
   --text-heading: #f1f5f9;
+  --row-hover: #334155;
+  --tw-ring-offset-color: #0f172a;
+  color-scheme: dark;
+}
+
+html {
+  color-scheme: light;
+  background-color: var(--background-content);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+html[data-theme="dark"],
+html[data-theme="dark"] body {
+  background-color: var(--background-content);
+  color: var(--text-primary);
 }
 
 /* Apply Inter font family globally */
@@ -158,42 +180,253 @@ input:focus {
   background-color: #6b7280; /* gray-500 hover */
 }
 
-/* Ensure all text is visible in dark mode */
 [data-theme="dark"] {
   color: var(--text-primary);
 }
 
-/* Ensure icons are visible in dark mode */
-[data-theme="dark"] svg {
-  color: inherit;
+/* -------------------------------------------------------------------------
+ * Light-mode Tailwind utilities remapped for data-theme="dark".
+ * Many screens only use light classes (tables, menus, icons, cards).
+ * ------------------------------------------------------------------------- */
+
+/* Surfaces */
+[data-theme="dark"] .bg-white,
+[data-theme="dark"] .bg-white\/90,
+[data-theme="dark"] .bg-white\/80,
+[data-theme="dark"] .bg-white\/70,
+[data-theme="dark"] .bg-white\/60 {
+  background-color: var(--card-white) !important;
 }
 
-/* Ensure proper contrast for gray text in dark mode */
-[data-theme="dark"] .text-gray-400,
-[data-theme="dark"] .text-gray-500,
-[data-theme="dark"] .text-gray-600 {
-  color: var(--text-secondary) !important;
-}
-
-/* Ensure proper contrast for gray backgrounds in dark mode */
 [data-theme="dark"] .bg-gray-50,
-[data-theme="dark"] .bg-gray-100 {
+[data-theme="dark"] .bg-gray-50\/80,
+[data-theme="dark"] .bg-gray-50\/90,
+[data-theme="dark"] .bg-gray-100,
+[data-theme="dark"] .bg-slate-50,
+[data-theme="dark"] .bg-slate-100 {
   background-color: var(--background-light) !important;
 }
 
-/* Hard overrides so light utility classes render correctly in dark theme */
-[data-theme="dark"] .bg-white { background-color: var(--background-content) !important; }
-[data-theme="dark"] .text-gray-900 { color: var(--text-primary) !important; }
-[data-theme="dark"] .text-gray-800 { color: var(--text-primary) !important; }
-[data-theme="dark"] .text-gray-700 { color: var(--text-secondary) !important; }
-[data-theme="dark"] .border-gray-200 { border-color: var(--card-border) !important; }
-[data-theme="dark"] .border-gray-300 { border-color: var(--card-border) !important; }
+[data-theme="dark"] .bg-gray-200 {
+  background-color: #334155 !important;
+}
+
+[data-theme="dark"] .bg-gray-300 {
+  background-color: #475569 !important;
+}
+
 [data-theme="dark"] .bg-gray-900 { background-color: #0f172a !important; }
 [data-theme="dark"] .bg-gray-800 { background-color: #1f2937 !important; }
 [data-theme="dark"] .bg-gray-700 { background-color: #374151 !important; }
 
-/* Ensure code/editor side containers get dark text contrast */
-[data-theme="dark"] pre, [data-theme="dark"] code { color: #e5e7eb; }
+[data-theme="dark"] .from-gray-50 {
+  --tw-gradient-from: var(--background-light) !important;
+  --tw-gradient-from-position: 0%;
+}
+[data-theme="dark"] .to-white {
+  --tw-gradient-to: var(--card-white) !important;
+  --tw-gradient-to-position: 100%;
+}
+
+/* Text */
+[data-theme="dark"] .text-black,
+[data-theme="dark"] .text-gray-900,
+[data-theme="dark"] .text-gray-800,
+[data-theme="dark"] .text-slate-900,
+[data-theme="dark"] .text-slate-800 {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .text-gray-700,
+[data-theme="dark"] .text-gray-600,
+[data-theme="dark"] .text-gray-500,
+[data-theme="dark"] .text-gray-400,
+[data-theme="dark"] .text-slate-700,
+[data-theme="dark"] .text-slate-600,
+[data-theme="dark"] .text-slate-500,
+[data-theme="dark"] .text-slate-400 {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] .text-gray-300 {
+  color: #cbd5e1 !important;
+}
+
+/* Dark-on-pastel text → readable on dark surfaces */
+[data-theme="dark"] .text-indigo-800,
+[data-theme="dark"] .text-indigo-900 { color: #c7d2fe !important; }
+[data-theme="dark"] .text-blue-700,
+[data-theme="dark"] .text-blue-800,
+[data-theme="dark"] .text-blue-900 { color: #93c5fd !important; }
+[data-theme="dark"] .text-green-700,
+[data-theme="dark"] .text-green-800,
+[data-theme="dark"] .text-green-900,
+[data-theme="dark"] .text-emerald-700,
+[data-theme="dark"] .text-emerald-800,
+[data-theme="dark"] .text-emerald-900 { color: #6ee7b7 !important; }
+[data-theme="dark"] .text-red-700,
+[data-theme="dark"] .text-red-800,
+[data-theme="dark"] .text-red-900,
+[data-theme="dark"] .text-rose-700,
+[data-theme="dark"] .text-rose-800,
+[data-theme="dark"] .text-rose-900 { color: #fda4af !important; }
+[data-theme="dark"] .text-yellow-700,
+[data-theme="dark"] .text-yellow-800,
+[data-theme="dark"] .text-yellow-900,
+[data-theme="dark"] .text-amber-700,
+[data-theme="dark"] .text-amber-800,
+[data-theme="dark"] .text-amber-900 { color: #fcd34d !important; }
+[data-theme="dark"] .text-purple-700,
+[data-theme="dark"] .text-purple-800,
+[data-theme="dark"] .text-purple-900 { color: #d8b4fe !important; }
+
+/* Borders / dividers */
+[data-theme="dark"] .border-gray-100,
+[data-theme="dark"] .border-gray-200,
+[data-theme="dark"] .border-gray-300,
+[data-theme="dark"] .border-slate-200,
+[data-theme="dark"] .border-slate-300,
+[data-theme="dark"] .divide-gray-100,
+[data-theme="dark"] .divide-gray-200,
+[data-theme="dark"] .divide-gray-300,
+[data-theme="dark"] .divide-slate-200 {
+  border-color: var(--card-border) !important;
+}
+
+[data-theme="dark"] .divide-gray-100 > :not(:last-child),
+[data-theme="dark"] .divide-gray-200 > :not(:last-child),
+[data-theme="dark"] .divide-gray-300 > :not(:last-child) {
+  border-color: var(--card-border) !important;
+}
+
+/* Hover / focus surfaces used by table rows, menus, icon buttons */
+[data-theme="dark"] .hover\:bg-gray-50:hover,
+[data-theme="dark"] .hover\:bg-gray-100:hover,
+[data-theme="dark"] .hover\:bg-gray-200:hover,
+[data-theme="dark"] .hover\:bg-white:hover,
+[data-theme="dark"] .hover\:bg-white\/90:hover {
+  background-color: var(--row-hover) !important;
+}
+
+[data-theme="dark"] .hover\:text-gray-500:hover,
+[data-theme="dark"] .hover\:text-gray-600:hover,
+[data-theme="dark"] .hover\:text-gray-700:hover,
+[data-theme="dark"] .hover\:text-gray-800:hover,
+[data-theme="dark"] .hover\:text-gray-900:hover {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .hover\:text-indigo-800:hover,
+[data-theme="dark"] .hover\:text-indigo-900:hover {
+  color: #a5b4fc !important;
+}
+
+[data-theme="dark"] .hover\:text-red-800:hover,
+[data-theme="dark"] .hover\:text-red-900:hover {
+  color: #fca5a5 !important;
+}
+
+/* Tables that still use light-mode gray utilities */
+[data-theme="dark"] table {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] thead.bg-gray-50,
+[data-theme="dark"] thead.bg-gray-100 {
+  background-color: var(--background-light) !important;
+}
+
+[data-theme="dark"] thead.bg-gray-50 th,
+[data-theme="dark"] thead.bg-gray-100 th,
+[data-theme="dark"] thead th.text-gray-500,
+[data-theme="dark"] thead th.text-gray-400,
+[data-theme="dark"] thead th.text-gray-600 {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] tbody.bg-white {
+  background-color: var(--card-white) !important;
+}
+
+[data-theme="dark"] tbody tr:hover {
+  background-color: var(--row-hover);
+}
+
+[data-theme="dark"] table .text-gray-400,
+[data-theme="dark"] table button.text-gray-400 {
+  color: var(--text-secondary) !important;
+}
+
+/* Colored status pills: keep hue, drop light-mode pastel wash */
+[data-theme="dark"] .bg-indigo-50,
+[data-theme="dark"] .bg-indigo-50\/80,
+[data-theme="dark"] .bg-indigo-50\/90,
+[data-theme="dark"] .bg-indigo-100 {
+  background-color: rgb(49 46 129 / 0.4) !important;
+}
+[data-theme="dark"] .bg-blue-50,
+[data-theme="dark"] .bg-blue-50\/80,
+[data-theme="dark"] .bg-blue-50\/90,
+[data-theme="dark"] .bg-blue-50\/95,
+[data-theme="dark"] .bg-blue-100 {
+  background-color: rgb(30 58 138 / 0.4) !important;
+}
+[data-theme="dark"] .bg-green-50,
+[data-theme="dark"] .bg-green-100,
+[data-theme="dark"] .bg-emerald-50,
+[data-theme="dark"] .bg-emerald-100,
+[data-theme="dark"] .bg-emerald-200 {
+  background-color: rgb(6 78 59 / 0.45) !important;
+}
+[data-theme="dark"] .bg-red-50,
+[data-theme="dark"] .bg-red-50\/80,
+[data-theme="dark"] .bg-red-100,
+[data-theme="dark"] .bg-rose-50,
+[data-theme="dark"] .bg-rose-100,
+[data-theme="dark"] .bg-rose-200 {
+  background-color: rgb(127 29 29 / 0.45) !important;
+}
+[data-theme="dark"] .bg-yellow-50,
+[data-theme="dark"] .bg-yellow-100,
+[data-theme="dark"] .bg-amber-50,
+[data-theme="dark"] .bg-amber-50\/90,
+[data-theme="dark"] .bg-amber-100,
+[data-theme="dark"] .bg-amber-200 {
+  background-color: rgb(120 53 15 / 0.45) !important;
+}
+[data-theme="dark"] .bg-purple-50,
+[data-theme="dark"] .bg-purple-100 {
+  background-color: rgb(88 28 135 / 0.4) !important;
+}
+[data-theme="dark"] .bg-blue-200 { background-color: rgb(30 64 175 / 0.5) !important; }
+
+[data-theme="dark"] .border-blue-200 { border-color: #1e40af !important; }
+[data-theme="dark"] .border-emerald-200 { border-color: #065f46 !important; }
+[data-theme="dark"] .border-rose-200 { border-color: #9f1239 !important; }
+[data-theme="dark"] .border-red-200 { border-color: #991b1b !important; }
+[data-theme="dark"] .border-indigo-200 { border-color: #3730a3 !important; }
+
+/* Menus / dialogs / listboxes that stay light without dark: variants */
+[data-theme="dark"] [data-headlessui-state] .bg-white,
+[data-theme="dark"] [role="menu"],
+[data-theme="dark"] [role="listbox"],
+[data-theme="dark"] [role="dialog"] {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .prose {
+  color: var(--text-primary);
+}
+[data-theme="dark"] .prose :where(p, li, strong, em, h1, h2, h3, h4, code) {
+  color: inherit;
+}
+
+/* Don't restyle Ace token colors */
+[data-theme="dark"] .ace_editor pre,
+[data-theme="dark"] .ace_editor code,
+[data-theme="dark"] .ace_editor {
+  color: unset;
+}
 
 /* Dark mode scrollbar styling */
 [data-theme="dark"] {

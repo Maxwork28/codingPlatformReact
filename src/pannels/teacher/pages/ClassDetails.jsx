@@ -157,8 +157,8 @@ const ClassDetails = () => {
     const errors = {};
     if (!newAssignment.questionId.trim()) errors.questionId = 'Question ID is required';
     if (!newAssignment.dueDate) errors.dueDate = 'Due date is required';
-    if (!newAssignment.maxPoints || isNaN(newAssignment.maxPoints) || newAssignment.maxPoints <= 0) {
-      errors.maxPoints = 'Valid max points is required';
+    if (newAssignment.maxPoints !== '' && newAssignment.maxPoints != null && (isNaN(newAssignment.maxPoints) || Number(newAssignment.maxPoints) < 0)) {
+      errors.maxPoints = 'Max points must be a non-negative number when provided';
     }
     return errors;
   };
@@ -178,7 +178,7 @@ const ClassDetails = () => {
       const response = await createAssignment(classId, {
         questionId: newAssignment.questionId,
         dueDate: new Date(newAssignment.dueDate).toISOString(),
-        maxPoints: parseInt(newAssignment.maxPoints),
+        maxPoints: newAssignment.maxPoints === '' ? null : Number(newAssignment.maxPoints),
       });
       console.log('[ClassDetails] createAssignment response:', response.data);
       setAssignments([...assignments, response.data]);
@@ -1028,7 +1028,7 @@ const ClassDetails = () => {
               )}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-800">Max Points</label>
+              <label className="block text-sm font-medium text-gray-800">Max Points (optional)</label>
               <input
                 type="number"
                 value={newAssignment.maxPoints}
@@ -1036,8 +1036,8 @@ const ClassDetails = () => {
                   setNewAssignment({ ...newAssignment, maxPoints: e.target.value })
                 }
                 className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                placeholder="Enter max points"
-                required
+                placeholder="Leave blank if not scored"
+                min="0"
               />
               {formErrors.maxPoints && (
                 <p className="mt-1 text-sm text-red-600">{formErrors.maxPoints}</p>

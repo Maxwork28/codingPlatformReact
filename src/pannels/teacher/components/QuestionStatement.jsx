@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useLocation } from 'react-router-dom';
 import { getQuestion, submitAnswer } from '../../../common/services/api';
 import CodeEditor from '../../student/components/CodeEditor';
+import TestCaseResultsList from '../../student/components/TestCaseResultsList';
 import parse from 'html-react-parser';
 
 const QUESTION_TYPE_LABELS = {
@@ -124,6 +125,7 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion }) => {
         isCorrect: response.data.submission.isCorrect,
         score: response.data.submission.score,
         output: response.data.submission.output,
+        testResults: response.data.testResults,
       });
       resetAnswerStateForQuestion(question);
     } catch (err) {
@@ -379,9 +381,11 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion }) => {
         <span className="px-3 py-1.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 capitalize">
           {question.difficulty || 'unknown'}
         </span>
-        <span className="px-3 py-1.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">
-          {question.points || 0} pts
-        </span>
+        {question.points != null && question.points !== '' && (
+          <span className="px-3 py-1.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+            {question.points} pts
+          </span>
+        )}
         {question.status === 'draft' || question.isDraft ? (
           <span className="px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-900">Draft</span>
         ) : (
@@ -523,24 +527,13 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion }) => {
           <p className={`text-sm font-semibold ${submissionFeedback.isCorrect ? 'text-green-700' : 'text-red-700'}`}>
             {submissionFeedback.isCorrect ? 'Correct!' : 'Incorrect'}
           </p>
-          <p className="text-sm text-gray-700">Score: {submissionFeedback.score}/{question.points}</p>
+          <p className="text-sm text-gray-700">Score: {submissionFeedback.score}/{question.points ?? 0}</p>
           {submissionFeedback.output && RUNNABLE_CODING_TYPES.includes(question.type) && (
             <div className="mt-3">
               <p className="text-sm font-semibold text-gray-700">Test results</p>
-              {(() => {
-                try {
-                  return JSON.parse(submissionFeedback.output).map((result, index) => (
-                    <div key={index} className="mt-2 text-sm text-gray-700 border-t border-gray-200 pt-2">
-                      <p>Test {index + 1}: {result.passed ? 'Passed' : 'Failed'}</p>
-                      <p>Input: {result.input}</p>
-                      <p>Output: {result.output}</p>
-                      <p>Expected: {result.expected}</p>
-                    </div>
-                  ));
-                } catch (e) {
-                  return <p className="text-sm text-red-700">Could not parse test results</p>;
-                }
-              })()}
+              <div className="mt-2">
+                <TestCaseResultsList results={submissionFeedback.testResults ?? submissionFeedback.output} />
+              </div>
             </div>
           )}
         </div>

@@ -61,7 +61,9 @@ const StudentExamScreen = () => {
     showHints: false,
     showSolution: false,
     selectedLanguage: 'javascript',
-    statusMessage: ''
+    statusMessage: '',
+    testResults: null,
+    isCustomTest: false,
   });
   const [workspaceBusyState, setWorkspaceBusyState] = useState({
     isSubmitting: false,
@@ -866,7 +868,9 @@ const StudentExamScreen = () => {
         const total = response.data.submission?.totalTestCases ?? response.data.totalTestCases ?? 0;
         setWorkspaceState((prev) => ({
           ...prev,
-          statusMessage: `Submission completed: ${passed}/${total} test cases passed`
+          statusMessage: `Submission completed: ${passed}/${total} test cases passed`,
+          testResults: response.data.testResults || null,
+          isCustomTest: false
         }));
       } else {
         setWorkspaceState((prev) => ({
@@ -903,7 +907,9 @@ const StudentExamScreen = () => {
       const total = publicResults.length;
       setWorkspaceState((prev) => ({
         ...prev,
-        statusMessage: `Run completed: ${passed}/${total} public test cases passed`
+        statusMessage: `Run completed: ${passed}/${total} public test cases passed`,
+        testResults: publicResults,
+        isCustomTest: false
       }));
     } catch (err) {
       const message = err.response?.data?.error || err.message || 'Failed to run code';
@@ -928,8 +934,14 @@ const StudentExamScreen = () => {
         workspaceState.expectedOutput,
         examContext
       );
+      const customRow = response.data.testResult || response.data.testResults;
       const message = response.data?.resultMessage || 'Custom input run completed';
-      setWorkspaceState((prev) => ({ ...prev, statusMessage: message }));
+      setWorkspaceState((prev) => ({
+        ...prev,
+        statusMessage: message,
+        testResults: customRow ? [customRow] : null,
+        isCustomTest: true
+      }));
     } catch (err) {
       const message = err.response?.data?.error || err.message || 'Failed to run code with custom input';
       setWorkspaceState((prev) => ({ ...prev, statusMessage: `Custom run failed: ${message}` }));
@@ -982,7 +994,9 @@ const StudentExamScreen = () => {
         showHints: false,
         showSolution: false,
         selectedLanguage: 'javascript',
-        statusMessage: ''
+        statusMessage: '',
+        testResults: null,
+        isCustomTest: false
       };
     }
     const defaultLanguage = questionDetail.languages?.[0] || 'javascript';
@@ -993,7 +1007,9 @@ const StudentExamScreen = () => {
       showHints: false,
       showSolution: false,
       selectedLanguage: defaultLanguage,
-      statusMessage: ''
+      statusMessage: '',
+      testResults: null,
+      isCustomTest: false
     };
   }, [getInitialAnswer]);
 
@@ -1225,7 +1241,9 @@ const StudentExamScreen = () => {
                 >
                   <div className="flex items-center justify-between">
                     <div className="text-sm font-semibold text-gray-700" dangerouslySetInnerHTML={{ __html: title }} />
-                    <div className="text-xs text-gray-500">{displayPoints} pts</div>
+                    {displayPoints != null && displayPoints !== '' && (
+                      <div className="text-xs text-gray-500">{displayPoints} pts</div>
+                    )}
                   </div>
                   <div className="mt-2 text-xs text-gray-500">
                     Time left: {formatSeconds(timer?.remainingSeconds)}
@@ -1267,6 +1285,8 @@ const StudentExamScreen = () => {
             sectionTimerLabel={sectionTimerLabel}
             totalTimerLabel={totalTimerLabel}
             statusMessage={workspaceState.statusMessage}
+            testResults={workspaceState.testResults}
+            isCustomTest={workspaceState.isCustomTest}
             isSubmitting={workspaceBusyState.isSubmitting}
             isRunning={workspaceBusyState.isRunning}
             isRunningCustom={workspaceBusyState.isRunningCustom}

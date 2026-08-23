@@ -121,7 +121,7 @@ const EditExam = () => {
     }
     const questionMeta = {
       questionId: question._id,
-      points: question.points || 10,
+      points: question.points ?? '',
       order: selectedQuestions.length,
       sectionId: sectionId || formData.sections[0]?.sectionId || 'section-1',
       timeLimitSeconds: null
@@ -465,7 +465,7 @@ const EditExam = () => {
                               >
                                 <div className="font-semibold">{q.title}</div>
                                 <div className="text-sm text-gray-600 dark:text-gray-400">
-                                  {q.type} • {q.points} points
+                                  {q.type}{q.points != null && q.points !== '' ? ` • ${q.points} points` : ''}
                                 </div>
                               </div>
                               {formData.sections.length > 0 && (
@@ -565,18 +565,17 @@ const EditExam = () => {
                           </div>
                           <div className="space-y-2">
                             <div>
-                              <label className="text-xs">Points:</label>
+                              <label className="text-xs">Points (optional):</label>
                               <input
                                 type="number"
-                                value={q.points}
+                                value={q.points ?? ''}
                                 onChange={(e) => {
-                                  const value = parseInt(e.target.value);
-                                  if (value > 0) {
-                                    handleQuestionChange(q.questionId, 'points', value);
-                                  }
+                                  const raw = e.target.value;
+                                  handleQuestionChange(q.questionId, 'points', raw === '' ? '' : Number(raw));
                                 }}
                                 className="w-full p-1 border rounded text-sm"
-                                min={1}
+                                min={0}
+                                placeholder="Optional"
                               />
                             </div>
                             <div>

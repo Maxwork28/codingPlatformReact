@@ -64,7 +64,7 @@ const AdminQuestionEdit = () => {
           type: question.type || 'singleCorrectMcq',
           title: question.title || '',
           description: question.description || '',
-          points: question.points || 10,
+          points: question.points ?? '',
           difficulty: question.difficulty || 'easy',
           tags: Array.isArray(question.tags) ? question.tags.join(', ') : (typeof question.tags === 'string' ? question.tags : ''),
           constraints: question.constraints || '',

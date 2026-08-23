@@ -302,7 +302,7 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate, summary }) =
             {question.type}
           </span>
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">
-            {question.points || 10} points
+            {question.points != null ? `${question.points} points` : 'No points'}
           </span>
           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
             isPublished ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'

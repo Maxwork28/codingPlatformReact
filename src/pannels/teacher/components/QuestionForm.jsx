@@ -6,6 +6,11 @@ import isHotkey from 'is-hotkey';
 import { ChevronDownIcon, ChevronUpIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
 import CodeEditor from '../../student/components/CodeEditor';
 import { teacherTestQuestion } from '../../../common/services/api';
+import BulkIoPairsEditor, { QuestionFormStepper } from '../../../common/components/BulkIoPairsEditor';
+import PasteFullQuestion from '../../../common/components/PasteFullQuestion';
+import RunMetricsBadges from '../../../common/components/RunMetricsBadges';
+import { parseOptionalPoints, pointsFieldValue } from '../../../common/utils/optionalPoints';
+import { plainTextToSlate, STARTER_STUBS } from '../../../common/utils/parsePastedQuestion';
 
 // Custom Slate editor with formatting and multi-line paste
 const withFormatting = editor => {
@@ -437,7 +442,7 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
   const [description, setDescription] = useState(deserializeFromHTML(initialData?.description || ''));
   const [inputFormat, setInputFormat] = useState(deserializeFromHTML(initialData?.inputFormat || ''));
   const [outputFormat, setOutputFormat] = useState(deserializeFromHTML(initialData?.outputFormat || ''));
-  const [points, setPoints] = useState(initialData?.points || 10);
+  const [points, setPoints] = useState(pointsFieldValue(initialData?.points));
   const [difficulty, setDifficulty] = useState(initialData?.difficulty || 'easy');
   const [tags, setTags] = useState(
     typeof initialData?.tags === 'string' 
@@ -513,8 +518,25 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
   const activeSolutionCode = solutionCodes.find((s) => s.language === solutionLanguage)?.code ?? '';
   const [isTestingSolution, setIsTestingSolution] = useState(false);
   const [testResults, setTestResults] = useState(null);
-  // Use initialData ID or timestamp to force editor remount only when question changes
-  const editorResetKey = useMemo(() => initialData?._id || initialData?.id || Date.now(), [initialData?._id, initialData?.id]);
+  const [editorPasteKey, setEditorPasteKey] = useState(0);
+  const editorResetKey = `${initialData?._id || initialData?.id || 'new'}-${editorPasteKey}`;
+  const [formStep, setFormStep] = useState(1);
+  const isCodingType = type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver';
+  const formSteps = isCodingType
+    ? [
+        { id: 1, label: 'Basics' },
+        { id: 2, label: 'I/O & tests' },
+        { id: 3, label: 'Code' },
+      ]
+    : [
+        { id: 1, label: 'Basics' },
+        { id: 2, label: 'Answers' },
+      ];
+  const totalFormSteps = formSteps.length;
+
+  useEffect(() => {
+    setFormStep((s) => Math.min(s, totalFormSteps));
+  }, [totalFormSteps]);
 
   // Update state when initialData changes (for edit mode)
   useEffect(() => {
@@ -524,7 +546,7 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
       setDescription(deserializeFromHTML(initialData.description || ''));
       setInputFormat(deserializeFromHTML(initialData.inputFormat || ''));
       setOutputFormat(deserializeFromHTML(initialData.outputFormat || ''));
-      setPoints(initialData.points || 10);
+      setPoints(pointsFieldValue(initialData.points));
       setDifficulty(initialData.difficulty || 'easy');
       setTags(
         typeof initialData.tags === 'string' 
@@ -638,15 +660,7 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
     }
   }, [languages, type]);
 
-  // Validate test case input for C/C++
-  const validateTestCaseInput = (input, lang) => {
-    if (lang === 'c' || lang === 'cpp') {
-      const normalizedInput = input.trim();
-      const numbers = normalizedInput.split(/\s+/);
-      return numbers.every(num => /^\d+$/.test(num)) ? '' : 'Input must be space-separated integers (e.g., "1 2 5")';
-    }
-    return '';
-  };
+  const validateTestCaseInput = () => '';
 
   // Update input errors when test cases or languages change
   useEffect(() => {
@@ -753,6 +767,39 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
     setSolutionCodes((prev) =>
       prev.map((s) => (s.language === solutionLanguage ? { ...s, code } : s))
     );
+  };
+
+  const applyPastedQuestion = (parsed) => {
+    const langs = parsed.languages?.length ? parsed.languages : ['python'];
+    setType('coding');
+    setTitle(plainTextToSlate(parsed.title));
+    setDescription(plainTextToSlate(parsed.description));
+    setInputFormat(plainTextToSlate(parsed.inputFormat));
+    setOutputFormat(plainTextToSlate(parsed.outputFormat));
+    setConstraints(plainTextToSlate(parsed.constraints));
+    setExplanation(plainTextToSlate(parsed.explanation));
+    setDifficulty(parsed.difficulty || 'easy');
+    if (parsed.points !== '' && parsed.points != null) setPoints(parsed.points);
+    setSampleIo(parsed.sampleIo?.length ? parsed.sampleIo : [{ input: '', output: '' }]);
+    setTestCases(
+      parsed.testCases?.length
+        ? parsed.testCases
+        : [{ input: '', expectedOutput: '', isPublic: true, isLargeTestCase: false }]
+    );
+    setLanguages(langs);
+    setStarterCode(
+      parsed.starterCode?.length
+        ? parsed.starterCode
+        : langs.map((language) => ({ language, code: STARTER_STUBS[language] || '// Write your code here' }))
+    );
+    setSolutionCodes(
+      parsed.solutionCodes?.length
+        ? parsed.solutionCodes
+        : langs.map((language) => ({ language, code: '' }))
+    );
+    setSolutionLanguage(parsed.solutionLanguage || langs[0]);
+    setFormStep(1);
+    setEditorPasteKey((k) => k + 1);
   };
 
   // Test solution against test cases
@@ -912,7 +959,7 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
       type,
       title: serializeToHTML(title),
       description: serializeToHTML(description),
-      points: Number(points),
+      points: parseOptionalPoints(points),
       difficulty,
       tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag),
       constraints: serializeToHTML(constraints),
@@ -1000,6 +1047,11 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
 
   return (
     <form onSubmit={handleFormSubmit} className="space-y-6">
+      <PasteFullQuestion onApply={applyPastedQuestion} />
+      <QuestionFormStepper step={formStep} steps={formSteps} onStepChange={setFormStep} />
+
+      {formStep === 1 && (
+      <>
       {/* Basic Information */}
       <CollapsibleSection title="Basic Information">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1020,14 +1072,14 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
             </select>
           </div>
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Points</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Points (optional)</label>
             <input
               type="number"
               value={points}
               onChange={(e) => setPoints(e.target.value)}
               className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
-              required
-              min="1"
+              min="0"
+              placeholder="Leave blank if not scored"
             />
           </div>
         </div>
@@ -1073,10 +1125,6 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
               placeholder="Enter question title"
               className="w-full"
             />
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-600 mb-2">Preview</h3>
-              <div className="text-lg font-semibold text-gray-900" dangerouslySetInnerHTML={{ __html: serializeToHTML(title) || 'No content' }} />
-            </div>
           </div>
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Description</label>
@@ -1087,10 +1135,6 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
               placeholder="Provide detailed question description"
               className="w-full"
             />
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-600 mb-2">Preview</h3>
-              <div className="text-gray-800 prose max-w-none" dangerouslySetInnerHTML={{ __html: serializeToHTML(description) || 'No content' }} />
-            </div>
           </div>
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Explanation</label>
@@ -1101,10 +1145,6 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
               placeholder="Provide explanation for the correct answer"
               className="w-full"
             />
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-600 mb-2">Preview</h3>
-              <div className="text-gray-800 prose max-w-none" dangerouslySetInnerHTML={{ __html: serializeToHTML(explanation) || 'No content' }} />
-            </div>
           </div>
         </div>
       </CollapsibleSection>
@@ -1133,21 +1173,14 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
               className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
               placeholder="e.g., array, sorting, algorithm"
             />
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-600 mb-2">Preview</h3>
-              <div className="flex flex-wrap gap-2">
-                {tags.split(',').map(tag => tag.trim()).filter(tag => tag).map((tag, idx) => (
-                  <span key={idx} className="inline-block bg-indigo-100 text-indigo-800 text-xs font-semibold px-2.5 py-1 rounded-full">
-                    {tag}
-                  </span>
-                ))}
-                {!tags && <span className="text-gray-500 text-sm">No tags</span>}
-              </div>
-            </div>
           </div>
         </div>
       </CollapsibleSection>
+      </>
+      )}
 
+      {formStep === 2 && (
+      <>
       {/* MCQ Options */}
       {(type === 'singleCorrectMcq' || type === 'multipleCorrectMcq') && (
         <CollapsibleSection title="Multiple Choice Options">
@@ -1199,20 +1232,6 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                 ))}
               </div>
             </div>
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-600 mb-2">Preview Options</h3>
-              {options.map((opt, idx) => (
-                <div key={idx} className="flex items-center mb-2">
-                  <input
-                    type={type === 'singleCorrectMcq' ? 'radio' : 'checkbox'}
-                    checked={type === 'singleCorrectMcq' ? correctOption === idx : correctOptions.includes(idx)}
-                    disabled
-                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
-                  />
-                  <span className="ml-2 text-gray-800" dangerouslySetInnerHTML={{ __html: serializeToHTML(opt) || 'No content' }} />
-                </div>
-              ))}
-            </div>
           </div>
         </CollapsibleSection>
       )}
@@ -1230,10 +1249,6 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                 placeholder="Correct answer"
                 className="w-full"
               />
-              <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-600 mb-2">Preview</h3>
-                <div className="text-gray-800" dangerouslySetInnerHTML={{ __html: serializeToHTML(correctAnswer) || 'No content' }} />
-              </div>
             </div>
           </div>
         </CollapsibleSection>
@@ -1242,68 +1257,27 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
       {/* Fill in the Blanks (Coding) or Coding Problem */}
       {(type === 'fillInTheBlanksCoding' || type === 'coding' || type === 'codingWithDriver') && (
         <>
-          <CollapsibleSection title="Languages and Starter Code" defaultOpen={false}>
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Supported Languages</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  {supportedLanguages.map(lang => (
-                    <div key={lang} className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={languages.includes(lang)}
-                        onChange={() => handleLanguageToggle(lang)}
-                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                        id={`lang-${lang}`}
-                      />
-                      <label htmlFor={`lang-${lang}`} className="ml-2 text-sm text-gray-700 capitalize">{lang}</label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Starter Code</label>
-                {starterCode.map((sc, idx) => (
-                  <CollapsibleSection key={sc.language} title={`Starter Code for ${sc.language}`} defaultOpen={false}>
-                    <textarea
-                      value={sc.code}
-                      onChange={(e) => handleStarterCodeChange(idx, e.target.value)}
-                      className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
-                      rows={10}
-                      placeholder={`Starter code for ${sc.language}`}
+          <CollapsibleSection title="Languages">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Supported Languages</label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {supportedLanguages.map(lang => (
+                  <div key={lang} className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={languages.includes(lang)}
+                      onChange={() => handleLanguageToggle(lang)}
+                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                      id={`lang-${lang}`}
                     />
-                    <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <h3 className="text-sm font-semibold text-gray-600 mb-2">Preview</h3>
-                      <pre className="bg-gray-900 text-white p-4 rounded-lg font-mono text-sm">{sc.code || 'No content'}</pre>
-                    </div>
-                  </CollapsibleSection>
+                    <label htmlFor={`lang-${lang}`} className="ml-2 text-sm text-gray-700 capitalize">{lang}</label>
+                  </div>
                 ))}
               </div>
             </div>
           </CollapsibleSection>
 
-          {type === 'codingWithDriver' && (
-            <CollapsibleSection title="Driver Code (LeetCode-style - handles input/output)" defaultOpen={false}>
-              <div className="space-y-4">
-                <p className="text-sm text-gray-600">
-                  Driver code reads test input, calls the student&apos;s function, and prints the result. Include <code className="bg-gray-100 px-1 rounded">{'{{USER_CODE}}'}</code>, <code className="bg-gray-100 px-1 rounded">// USER_CODE_HERE</code>, or <code className="bg-gray-100 px-1 rounded"># USER_CODE_HERE</code> where student code is injected.
-                </p>
-                {driverCode.map((dc, idx) => (
-                  <CollapsibleSection key={dc.language} title={`Driver for ${dc.language}`} defaultOpen={false}>
-                    <textarea
-                      value={dc.code}
-                      onChange={(e) => handleDriverCodeChange(idx, e.target.value)}
-                      className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
-                      rows={12}
-                      placeholder={`Driver code for ${dc.language}`}
-                    />
-                  </CollapsibleSection>
-                ))}
-              </div>
-            </CollapsibleSection>
-          )}
-
-          <CollapsibleSection title="I/O format & sample cases" defaultOpen={false}>
+          <CollapsibleSection title="I/O format & sample cases" defaultOpen>
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Input format (optional)</label>
@@ -1315,10 +1289,6 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                   placeholder="e.g. First line: n. Second line: n space-separated integers."
                   className="w-full"
                 />
-                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                  <h3 className="text-sm font-semibold text-gray-600 mb-2">Preview</h3>
-                  <div className="text-gray-800 prose max-w-none" dangerouslySetInnerHTML={{ __html: serializeToHTML(inputFormat) || 'No content' }} />
-                </div>
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Output format (optional)</label>
@@ -1330,58 +1300,19 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                   placeholder="e.g. Print a single integer on one line."
                   className="w-full"
                 />
-                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                  <h3 className="text-sm font-semibold text-gray-600 mb-2">Preview</h3>
-                  <div className="text-gray-800 prose max-w-none" dangerouslySetInnerHTML={{ __html: serializeToHTML(outputFormat) || 'No content' }} />
-                </div>
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Sample input / output</label>
-                <p className="text-xs text-gray-500 mb-2">Optional plain-text samples shown to students (separate from official test cases).</p>
-                {sampleIo.map((pair, idx) => (
-                  <div key={idx} className="mb-4 p-4 border border-gray-200 rounded-lg space-y-3 bg-white">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm font-semibold text-gray-700">Sample {idx + 1}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveSampleIo(idx)}
-                        className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600 disabled:bg-red-300 transition-colors"
-                        disabled={sampleIo.length <= 1}
-                        aria-label="Remove sample"
-                      >
-                        <TrashIcon className="h-5 w-5" />
-                      </button>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-600 mb-1">Sample input</label>
-                      <textarea
-                        value={pair.input}
-                        onChange={(e) => handleSampleIoChange(idx, 'input', e.target.value)}
-                        className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
-                        rows={4}
-                        placeholder="stdin / example input"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-600 mb-1">Sample output</label>
-                      <textarea
-                        value={pair.output}
-                        onChange={(e) => handleSampleIoChange(idx, 'output', e.target.value)}
-                        className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
-                        rows={4}
-                        placeholder="expected stdout"
-                      />
-                    </div>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={handleAddSampleIo}
-                  className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-                >
-                  <PlusIcon className="h-5 w-5 mr-2" />
-                  Add sample
-                </button>
+                <p className="text-xs text-gray-500 mb-2">Shown to students. Paste many pairs at once, or edit the compact table.</p>
+                <BulkIoPairsEditor
+                  items={sampleIo}
+                  onChange={setSampleIo}
+                  emptyItem={{ input: '', output: '' }}
+                  inputKey="input"
+                  outputKey="output"
+                  minItems={1}
+                  addLabel="Add sample"
+                />
               </div>
             </div>
           </CollapsibleSection>
@@ -1397,85 +1328,23 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                   placeholder="e.g., 1 <= n <= 10^5"
                   className="w-full"
                 />
-                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                  <h3 className="text-sm font-semibold text-gray-600 mb-2">Preview</h3>
-                  <div className="text-gray-800 prose max-w-none" dangerouslySetInnerHTML={{ __html: serializeToHTML(constraints) || 'No content' }} />
-                </div>
               </div>
             </div>
           </CollapsibleSection>
 
           <CollapsibleSection title="Test Cases">
-            <div className="space-y-4">
-              {testCases.map((tc, idx) => (
-                <CollapsibleSection key={idx} title={`Test Case ${idx + 1}`} defaultOpen={idx === 0}>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">Input</label>
-                      <textarea
-                        value={tc.input}
-                        onChange={(e) => handleTestCaseChange(idx, 'input', e.target.value)}
-                        className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
-                        rows={3}
-                        placeholder="e.g., 1 2 5"
-                      />
-                      {inputErrors[idx] && (
-                        <p className="mt-1 text-sm text-red-600">{inputErrors[idx]}</p>
-                      )}
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">Expected Output</label>
-                      <textarea
-                        value={tc.expectedOutput}
-                        onChange={(e) => handleTestCaseChange(idx, 'expectedOutput', e.target.value)}
-                        className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
-                        rows={3}
-                        placeholder="e.g., 8"
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-4">
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={tc.isPublic}
-                        onChange={(e) => handleTestCaseChange(idx, 'isPublic', e.target.checked)}
-                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                        id={`public-${idx}`}
-                      />
-                      <label htmlFor={`public-${idx}`} className="ml-2 text-sm text-gray-700">Public</label>
-                    </div>
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={tc.isLargeTestCase}
-                        onChange={(e) => handleTestCaseChange(idx, 'isLargeTestCase', e.target.checked)}
-                        className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
-                        id={`large-${idx}`}
-                      />
-                      <label htmlFor={`large-${idx}`} className="ml-2 text-sm text-gray-700">Large (TLE/MLE stress)</label>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveTestCase(idx)}
-                    className="mt-4 inline-flex items-center px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:bg-red-300 transition-colors"
-                    disabled={testCases.length <= 1}
-                  >
-                    <TrashIcon className="h-5 w-5 mr-2" />
-                    Remove Test Case
-                  </button>
-                </CollapsibleSection>
-              ))}
-              <button
-                type="button"
-                onClick={handleAddTestCase}
-                className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-              >
-                <PlusIcon className="h-5 w-5 mr-2" />
-                Add Test Case
-              </button>
-            </div>
+            <p className="text-xs text-gray-500 mb-3">Paste many cases at once, or edit rows. Public cases are shown to students.</p>
+            <BulkIoPairsEditor
+              items={testCases}
+              onChange={setTestCases}
+              emptyItem={{ input: '', expectedOutput: '', isPublic: true, isLargeTestCase: false }}
+              inputKey="input"
+              outputKey="expectedOutput"
+              showFlags
+              minItems={1}
+              addLabel="Add test case"
+              errors={inputErrors}
+            />
           </CollapsibleSection>
 
           <CollapsibleSection title="Limits">
@@ -1506,6 +1375,52 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
               </div>
             </div>
           </CollapsibleSection>
+        </>
+      )}
+      </>
+      )}
+
+      {formStep === 3 && isCodingType && (
+        <>
+          <CollapsibleSection title="Starter Code">
+            <div className="space-y-4">
+              {starterCode.map((sc, idx) => (
+                <CollapsibleSection key={sc.language} title={`Starter Code for ${sc.language}`} defaultOpen={false}>
+                  <textarea
+                    value={sc.code}
+                    onChange={(e) => handleStarterCodeChange(idx, e.target.value)}
+                    className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                    rows={10}
+                    placeholder={`Starter code for ${sc.language}`}
+                  />
+                </CollapsibleSection>
+              ))}
+              {starterCode.length === 0 && (
+                <p className="text-sm text-gray-500">Select languages in the previous step first.</p>
+              )}
+            </div>
+          </CollapsibleSection>
+
+          {type === 'codingWithDriver' && (
+            <CollapsibleSection title="Driver Code (LeetCode-style - handles input/output)" defaultOpen={false}>
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Driver code reads test input, calls the student&apos;s function, and prints the result. Include <code className="bg-gray-100 px-1 rounded">{'{{USER_CODE}}'}</code>, <code className="bg-gray-100 px-1 rounded">// USER_CODE_HERE</code>, or <code className="bg-gray-100 px-1 rounded"># USER_CODE_HERE</code> where student code is injected.
+                </p>
+                {driverCode.map((dc, idx) => (
+                  <CollapsibleSection key={dc.language} title={`Driver for ${dc.language}`} defaultOpen={false}>
+                    <textarea
+                      value={dc.code}
+                      onChange={(e) => handleDriverCodeChange(idx, e.target.value)}
+                      className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                      rows={12}
+                      placeholder={`Driver code for ${dc.language}`}
+                    />
+                  </CollapsibleSection>
+                ))}
+              </div>
+            </CollapsibleSection>
+          )}
 
           <CollapsibleSection title="Solution Code (Optional)">
             <div className="space-y-4">
@@ -1591,15 +1506,18 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                               : 'bg-red-50 border-red-200'
                           }`}
                         >
-                          <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center justify-between mb-2 gap-2">
                             <span className="text-xs font-semibold text-gray-700">
                               Test Case {idx + 1}
                             </span>
-                            <span className={`text-xs font-bold ${
-                              result.passed ? 'text-green-700' : 'text-red-700'
-                            }`}>
-                              {result.passed ? '✓ PASSED' : '✗ FAILED'}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <RunMetricsBadges result={result} />
+                              <span className={`text-xs font-bold ${
+                                result.passed ? 'text-green-700' : 'text-red-700'
+                              }`}>
+                                {result.passed ? '✓ PASSED' : '✗ FAILED'}
+                              </span>
+                            </div>
                           </div>
                           <div className="text-xs text-gray-600 space-y-1">
                             <div><strong>Input:</strong> <code className="bg-gray-100 px-1 rounded">{result.input}</code></div>
@@ -1625,16 +1543,36 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
         </>
       )}
 
-      {/* Submit Button */}
-      <div className="flex justify-end pt-6">
+      {/* Step nav + save */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
         <button
-          type="submit"
-          className="inline-flex items-center px-6 py-3 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all"
+          type="button"
+          onClick={() => setFormStep((s) => Math.max(1, s - 1))}
+          disabled={formStep === 1}
+          className="px-4 py-2 rounded-lg text-sm font-semibold border disabled:opacity-40"
+          style={{ color: 'var(--text-primary)', borderColor: 'var(--card-border)', backgroundColor: 'var(--background-light)' }}
         >
-          {initialData?._id
-            ? (initialData?.isDraft ? 'Update Draft' : 'Update Question')
-            : 'Save as Draft'}
+          Back
         </button>
+        <div className="flex gap-3">
+          {formStep < totalFormSteps && (
+            <button
+              type="button"
+              onClick={() => setFormStep((s) => Math.min(totalFormSteps, s + 1))}
+              className="px-4 py-2 rounded-lg text-sm font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200"
+            >
+              Next
+            </button>
+          )}
+          <button
+            type="submit"
+            className="inline-flex items-center px-6 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+          >
+            {initialData?._id
+              ? (initialData?.isDraft ? 'Update Draft' : 'Update Question')
+              : 'Save as Draft'}
+          </button>
+        </div>
       </div>
     </form>
   );

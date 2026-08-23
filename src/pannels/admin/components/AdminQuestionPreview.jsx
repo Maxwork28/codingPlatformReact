@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { adminSearchQuestionsById, getDraftQuestion, teacherTestQuestion } from '../../../common/services/api';
 import QuestionStatement from '../../teacher/components/QuestionStatement';
 import CodeEditor from '../../student/components/CodeEditor';
+import RunMetricsBadges from '../../../common/components/RunMetricsBadges';
 
 const DEFAULT_BACK = '/admin/questions';
 
@@ -543,15 +544,18 @@ const AdminQuestionPreview = () => {
                               : 'bg-red-50 border-red-200'
                           }`}
                         >
-                          <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center justify-between mb-2 gap-2">
                             <span className="text-xs font-semibold text-gray-700">
                               Test Case {idx + 1}
                             </span>
-                            <span className={`text-xs font-bold ${
-                              result.passed ? 'text-green-700' : 'text-red-700'
-                            }`}>
-                              {result.passed ? '✓ PASSED' : '✗ FAILED'}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <RunMetricsBadges result={result} />
+                              <span className={`text-xs font-bold ${
+                                result.passed ? 'text-green-700' : 'text-red-700'
+                              }`}>
+                                {result.passed ? '✓ PASSED' : '✗ FAILED'}
+                              </span>
+                            </div>
                           </div>
                           <div className="text-xs text-gray-600 space-y-1">
                             <div><strong>Input:</strong> <code className="bg-gray-100 px-1 rounded">{result.input}</code></div>

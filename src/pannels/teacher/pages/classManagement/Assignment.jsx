@@ -237,7 +237,7 @@ const Assignment = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Max Points</label>
+                  <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Max Points (optional)</label>
                   <input
                     type="number"
                     value={assignmentForm.maxPoints}
@@ -251,7 +251,8 @@ const Assignment = () => {
                       color: 'var(--text-primary)',
                       padding: '8px 12px'
                     }}
-                    required
+                    min="0"
+                    placeholder="Leave blank if not scored"
                   />
                 </div>
                 <div>

@@ -11,7 +11,9 @@ import {
 } from '../../../common/components/redux/questionSlice';
 import CodeEditor from '../components/CodeEditor';
 import TestCaseResultsList, { parseTestCaseResultsList } from '../components/TestCaseResultsList';
+import RunMetricsBadges from '../../../common/components/RunMetricsBadges';
 import StudentBackNav from '../components/StudentBackNav';
+import { API_BASE_URL, CUSTOM_STDIN_PLACEHOLDER, CUSTOM_STDOUT_PLACEHOLDER } from '../../../common/constants';
 
 // Socket.IO initialization
 const socket = io('https://api.algosutra.co.in/', {
@@ -542,12 +544,7 @@ const QuestionSubmission = () => {
     }
     if (!customInput.trim()) {
       console.log('[QuestionSubmission] Custom input run blocked: No custom input provided');
-      setStatusMessage('Please provide a valid custom input');
-      return;
-    }
-    if (!customInput.match(/^\[\s*-?\d+(\s*,\s*-?\d+)*\s*\]$/)) {
-      console.log('[QuestionSubmission] Custom input run blocked: Invalid array format');
-      setStatusMessage('Custom input must be a valid array (e.g., [1, 2, 3])');
+      setStatusMessage('Please provide custom input (any stdin: numbers, strings, arrays, or multiple lines)');
       return;
     }
     if (expectedOutput && typeof expectedOutput !== 'string') {
@@ -692,6 +689,7 @@ const QuestionSubmission = () => {
           <p className={`text-sm font-medium ${result.passed ? 'text-green-700' : 'text-red-700'}`}>
             {result.passed ? 'success' : 'failed'}
           </p>
+          <RunMetricsBadges result={result} />
         </div>
       );
     }
@@ -1079,7 +1077,7 @@ const QuestionSubmission = () => {
                             onChange={(e) => setCustomInput(e.target.value)}
                             rows={2}
                             className="block w-full mt-1 rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-xs disabled:bg-gray-100 disabled:cursor-not-allowed"
-                            placeholder="e.g., [1, 5, 3, 9, 2]"
+                            placeholder={CUSTOM_STDIN_PLACEHOLDER}
                             disabled={!answersUnlocked}
                           />
                         </div>
@@ -1093,7 +1091,7 @@ const QuestionSubmission = () => {
                             onChange={(e) => setExpectedOutput(e.target.value)}
                             rows={2}
                             className="block w-full mt-1 rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-xs disabled:bg-gray-100 disabled:cursor-not-allowed"
-                            placeholder="e.g., 9"
+                            placeholder={CUSTOM_STDOUT_PLACEHOLDER}
                             disabled={!answersUnlocked}
                           />
                         </div>

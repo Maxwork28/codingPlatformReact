@@ -27,10 +27,10 @@ export const ThemeProvider = ({ children }) => {
   });
 
   useEffect(() => {
-    // Update document data attribute
-    document.documentElement.setAttribute('data-theme', theme);
-    
-    // Save to localStorage
+    const root = document.documentElement;
+    root.setAttribute('data-theme', theme);
+    root.classList.toggle('dark', theme === 'dark');
+    root.style.colorScheme = theme;
     localStorage.setItem('theme', theme);
   }, [theme]);
 

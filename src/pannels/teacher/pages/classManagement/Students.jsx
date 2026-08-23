@@ -10,6 +10,7 @@ import {
   blockAllUsers, 
   searchLeaderboard 
 } from '../../../../common/services/api';
+import { getStudentQuestionProgress } from '../../../../common/utils/studentQuestionProgress';
 
 const Students = () => {
   const { user } = useSelector((state) => state.auth);
@@ -231,6 +232,8 @@ const Students = () => {
   const myClasses = classes.filter(
     (cls) => cls.teachers?.some((t) => t._id === user?.id) || cls.createdBy?._id === user?.id
   );
+  const selectedClass = myClasses.find((cls) => String(cls._id) === String(selectedClassId));
+  const totalQuestions = Array.isArray(selectedClass?.questions) ? selectedClass.questions.length : 0;
 
   if (!user) {
     return (
@@ -309,19 +312,25 @@ const Students = () => {
                       <thead style={{ backgroundColor: 'var(--background-content)' }}>
                         <tr>
                           <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
-                            Student
+                            Name
                           </th>
                           <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
-                            Email
+                            Mail ID
                           </th>
                           <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
                             Status
                           </th>
                           <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
-                            Total Runs
+                            Total Questions
                           </th>
                           <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
-                            Total Submissions
+                            Correct
+                          </th>
+                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
+                            Incorrect
+                          </th>
+                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
+                            Unattempted
                           </th>
                           <th scope="col" className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
                             Actions
@@ -331,10 +340,10 @@ const Students = () => {
                       <tbody className="divide-y" style={{ borderColor: 'var(--card-border)' }}>
                         {runSubmitStats.studentStats.map((student, index) => {
                           const { name, id, email } = student.student;
-                          const { totalRuns, totalSubmissions } = student;
                           const studentData = Array.isArray(leaderboard) ? leaderboard.find(l => l.studentId?._id === id) : null;
                           const isFocused = studentData?.activityStatus === 'focused';
                           const isBlocked = studentData?.isBlocked || false;
+                          const progress = getStudentQuestionProgress(studentData, totalQuestions);
 
                           return (
                             <tr key={student.student.id || index} className={isBlocked ? 'bg-gray-800' : ''}>
@@ -369,10 +378,16 @@ const Students = () => {
                                 )}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm" style={{ color: isBlocked ? '#ffffff' : 'var(--text-primary)' }}>
-                                {totalRuns ?? 0}
+                                {progress.totalQuestions}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm" style={{ color: isBlocked ? '#ffffff' : 'var(--text-primary)' }}>
-                                {totalSubmissions ?? 0}
+                                {progress.correct}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm" style={{ color: isBlocked ? '#ffffff' : 'var(--text-primary)' }}>
+                                {progress.incorrect}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm" style={{ color: isBlocked ? '#ffffff' : 'var(--text-primary)' }}>
+                                {progress.unattempted}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                 <div className="flex items-center justify-end space-x-2">

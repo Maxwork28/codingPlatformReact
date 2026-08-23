@@ -2,10 +2,11 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useSelector } from 'react-redux';
 import { io } from 'socket.io-client';
 import { getQuestionsByClass, runCode, runCodeWithCustomInput, submitAnswer } from '../../../common/services/api';
-import { API_BASE_URL } from '../../../common/constants';
+import { API_BASE_URL, CUSTOM_STDIN_PLACEHOLDER, CUSTOM_STDOUT_PLACEHOLDER } from '../../../common/constants';
 import CodeEditor from '../components/CodeEditor';
 import TestCaseResultsList from '../components/TestCaseResultsList';
 import StudentBackNav from '../components/StudentBackNav';
+import RunMetricsBadges from '../../../common/components/RunMetricsBadges';
 import { DiJavascript } from "react-icons/di";
 import { FaJava, FaPython, FaDatabase, FaBookOpen } from "react-icons/fa";
 import { GiNotebook } from "react-icons/gi";
@@ -521,6 +522,7 @@ const StudentTakeClass = () => {
               </div>
             </div>
           )}
+          <RunMetricsBadges result={testResults} className="pt-1" />
         </div>
       );
     }
@@ -725,13 +727,16 @@ const StudentTakeClass = () => {
         customOutput
       );
 
+      const customRow = response.data.testResult || response.data.testResults;
       setTestResults({
         message: response.data.message,
-        testResult: response.data.testResult,
-        customInput: response.data.customInput,
+        testResult: customRow,
+        customInput: response.data.customInput ?? customInput,
         expectedOutput: response.data.expectedOutput,
-        actualOutput: response.data.actualOutput,
-        passed: response.data.passed,
+        actualOutput: response.data.actualOutput ?? customRow?.output,
+        passed: response.data.passed ?? customRow?.passed,
+        timeMs: response.data.timeMs ?? customRow?.timeMs,
+        memoryKb: response.data.memoryKb ?? customRow?.memoryKb,
         isCustomTest: true,
         explanation: response.data.explanation,
       });
@@ -1092,7 +1097,7 @@ const StudentTakeClass = () => {
                     {selectedQuestion.difficulty}
                   </span>
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">
-                    {selectedQuestion.maxPoints || 10} points
+                    {selectedQuestion.maxPoints != null && selectedQuestion.maxPoints !== '' ? `${selectedQuestion.maxPoints} points` : 'No points'}
                   </span>
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
                     {selectedQuestion.type}
@@ -1520,7 +1525,7 @@ const StudentTakeClass = () => {
                           backgroundColor: 'var(--card-white)', 
                           color: 'var(--text-primary)' 
                         }}
-                        placeholder="e.g., [1, 5, 3, 9, 2]"
+                        placeholder={CUSTOM_STDIN_PLACEHOLDER}
                       />
                     </div>
                     <div>
@@ -1538,7 +1543,7 @@ const StudentTakeClass = () => {
                           backgroundColor: 'var(--card-white)', 
                           color: 'var(--text-primary)' 
                         }}
-                        placeholder="e.g., 9"
+                        placeholder={CUSTOM_STDOUT_PLACEHOLDER}
                       />
                     </div>
                   </div>

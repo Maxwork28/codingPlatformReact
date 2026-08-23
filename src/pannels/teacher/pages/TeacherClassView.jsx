@@ -28,6 +28,7 @@ import {
   getQuestionSummary,
 } from '../../../common/services/api';
 import TeacherQuestionCard from '../components/TeacherQuestionCard';
+import { getStudentQuestionProgress } from '../../../common/utils/studentQuestionProgress';
 
 const TeacherClassView = () => {
   const { classId } = useParams();
@@ -445,7 +446,7 @@ const TeacherClassView = () => {
     try {
       await createAssignment(classId, {
         questionId: assignmentForm.questionId,
-        maxPoints: assignmentForm.maxPoints,
+        maxPoints: assignmentForm.maxPoints === '' ? null : Number(assignmentForm.maxPoints),
         dueDate: assignmentForm.dueDate,
       });
       const successMsg = 'Assignment created successfully!';
@@ -1119,22 +1120,25 @@ const TeacherClassView = () => {
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Student
+                          Name
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Email
+                          Mail ID
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Status
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Total Runs
+                          Total Questions
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Total Submissions
+                          Correct
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Correct Attempts
+                          Incorrect
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Unattempted
                         </th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Actions
@@ -1146,6 +1150,7 @@ const TeacherClassView = () => {
                         const studentInfo = studentData.studentId || {};
                         const isFocused = studentData.activityStatus === 'focused';
                         const isBlocked = studentData.isBlocked || false;
+                        const progress = getStudentQuestionProgress(studentData, questions.length);
                         
                         // Debug logging for rendering
                         if (idx === 0) {
@@ -1231,13 +1236,16 @@ const TeacherClassView = () => {
                               </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {studentData.totalRuns || 0}
+                              {progress.totalQuestions}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {studentData.totalSubmissions || 0}
+                              {progress.correct}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {studentData.correctAttempts || 0}
+                              {progress.incorrect}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {progress.unattempted}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                               <div className="flex items-center justify-end gap-2">
@@ -1426,7 +1434,7 @@ const TeacherClassView = () => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Max Points
+                      Max Points (optional)
                     </label>
                     <input
                       type="number"
@@ -1435,7 +1443,8 @@ const TeacherClassView = () => {
                         setAssignmentForm({ ...assignmentForm, maxPoints: e.target.value })
                       }
                       className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                      required
+                      min="0"
+                      placeholder="Leave blank if not scored"
                     />
                   </div>
                   <div>

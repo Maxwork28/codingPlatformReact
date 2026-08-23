@@ -6,9 +6,10 @@ import { Menu, Transition, Portal } from '@headlessui/react';
 import parse from 'html-react-parser';
 import { io } from 'socket.io-client';
 import { getQuestionsByClass, teacherTestQuestion, teacherTestWithCustomInput, publishQuestion, unpublishQuestion, disableQuestion, enableQuestion } from '../../../common/services/api';
-import { API_BASE_URL } from '../../../common/constants';
+import { API_BASE_URL, CUSTOM_STDIN_PLACEHOLDER, CUSTOM_STDOUT_PLACEHOLDER } from '../../../common/constants';
 import CodeEditor from '../../student/components/CodeEditor';
 import TestCaseResultsList from '../../student/components/TestCaseResultsList';
+import RunMetricsBadges from '../../../common/components/RunMetricsBadges';
 import { DiJavascript } from "react-icons/di";
 import { FaJava,  FaPython, FaDatabase, FaBookOpen } from "react-icons/fa";
 import { GiNotebook } from "react-icons/gi";
@@ -287,6 +288,8 @@ const TakeClass = () => {
         expectedOutput: response.data.expectedOutput,
         actualOutput: response.data.actualOutput,
         passed: response.data.passed,
+        timeMs: response.data.timeMs ?? response.data.testResult?.timeMs,
+        memoryKb: response.data.memoryKb ?? response.data.testResult?.memoryKb,
         isCustomTest: true,
         explanation: response.data.explanation
       });
@@ -355,6 +358,7 @@ const TakeClass = () => {
               </div>
             </div>
           )}
+          <RunMetricsBadges result={testResults} className="pt-1" />
         </div>
       );
     }
@@ -1216,7 +1220,7 @@ const TakeClass = () => {
                     {selectedQuestion.difficulty}
                   </span>
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">
-                    {selectedQuestion.maxPoints || 10} points
+                    {selectedQuestion.maxPoints != null && selectedQuestion.maxPoints !== '' ? `${selectedQuestion.maxPoints} points` : 'No points'}
                   </span>
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800">
                     {QUESTION_TYPE_LABELS[selectedQuestion.type] || selectedQuestion.type}
@@ -1679,7 +1683,7 @@ const TakeClass = () => {
                           backgroundColor: 'var(--card-white)', 
                           color: 'var(--text-primary)' 
                         }}
-                        placeholder="e.g., [1, 5, 3, 9, 2]"
+                        placeholder={CUSTOM_STDIN_PLACEHOLDER}
                       />
                     </div>
                     <div>
@@ -1696,7 +1700,7 @@ const TakeClass = () => {
                           backgroundColor: 'var(--card-white)', 
                           color: 'var(--text-primary)' 
                         }}
-                        placeholder="e.g., 9"
+                        placeholder={CUSTOM_STDOUT_PLACEHOLDER}
                       />
                     </div>
                   </div>

@@ -1124,7 +1124,7 @@ const AdminClassDetails = () => {
                   </Combobox>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Max Points</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Max Points (optional)</label>
                   <input
                     type="number"
                     value={assignmentForm.maxPoints}
@@ -1132,7 +1132,8 @@ const AdminClassDetails = () => {
                       setAssignmentForm({ ...assignmentForm, maxPoints: e.target.value })
                     }
                     className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    required
+                    min="0"
+                    placeholder="Leave blank if not scored"
                   />
                 </div>
                 <div>

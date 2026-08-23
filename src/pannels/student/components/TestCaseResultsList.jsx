@@ -1,4 +1,5 @@
 import React from 'react';
+import RunMetricsBadges from '../../../common/components/RunMetricsBadges';
 
 export const parseTestCaseResultsList = (raw) => {
   if (raw == null) return [];
@@ -50,14 +51,17 @@ const TestCaseResultsList = ({ results, className = '', showPublicIo = true, sho
 
         return (
           <div key={`tc-${caseNum}-${index}`} className="space-y-2">
-            <p
-              className={`text-sm font-medium ${result.passed ? 'text-green-700' : 'text-red-700'}`}
-            >
-              Test case {caseNum} {statusLabel}
-              {showHiddenDetails && !isPublic && (
-                <span className="ml-1.5 text-xs font-normal text-gray-500">(hidden)</span>
-              )}
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p
+                className={`text-sm font-medium ${result.passed ? 'text-green-700' : 'text-red-700'}`}
+              >
+                Test case {caseNum} {statusLabel}
+                {showHiddenDetails && !isPublic && (
+                  <span className="ml-1.5 text-xs font-normal text-gray-500">(hidden)</span>
+                )}
+              </p>
+              <RunMetricsBadges result={result} />
+            </div>
 
             {showIo && (
               <>
