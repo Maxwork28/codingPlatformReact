@@ -1,15 +1,15 @@
-import React, { useState, useEffect, Fragment } from 'react';
+import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { Menu, Transition, Portal } from '@headlessui/react';
 import parse from 'html-react-parser';
 import { io } from 'socket.io-client';
-import { getQuestionsByClass, teacherTestQuestion, teacherTestWithCustomInput, publishQuestion, unpublishQuestion, disableQuestion, enableQuestion } from '../../../common/services/api';
+import { getQuestionsByClass, teacherTestQuestion, teacherTestWithCustomInput, publishQuestion, unpublishQuestion, disableQuestion, enableQuestion, viewSolution } from '../../../common/services/api';
 import { API_BASE_URL, CUSTOM_STDIN_PLACEHOLDER, CUSTOM_STDOUT_PLACEHOLDER } from '../../../common/constants';
 import CodeEditor from '../../student/components/CodeEditor';
 import TestCaseResultsList from '../../student/components/TestCaseResultsList';
-import RunMetricsBadges from '../../../common/components/RunMetricsBadges';
+import RunMetricsBadges, { summarizeRunMetrics } from '../../../common/components/RunMetricsBadges';
 import { DiJavascript } from "react-icons/di";
 import { FaJava,  FaPython, FaDatabase, FaBookOpen } from "react-icons/fa";
 import { GiNotebook } from "react-icons/gi";
@@ -33,13 +33,26 @@ function stripHtml(html) {
   return doc.body.textContent || '';
 }
 
-function getCodeTemplateForLanguage(question, lang) {
-  if (!question || !lang) return '';
-  const fromTemplate = question.templateCode?.find((tc) => tc.language === lang);
-  if (fromTemplate?.code) return fromTemplate.code;
-  const fromStarter = question.starterCode?.find((sc) => sc.language === lang);
-  if (fromStarter?.code) return fromStarter.code;
+function getSolutionCodeForLanguage(question, lang) {
+  if (!question) return '';
+  const fromList = question.solutionCodes?.find((sc) => sc.language === lang && sc.code);
+  if (fromList?.code) return fromList.code;
+  if (question.solutionCode && (question.solutionLanguage === lang || !question.solutionLanguage)) {
+    return question.solutionCode;
+  }
   return '';
+}
+
+function pickSolutionForQuestion(question, preferredLang) {
+  if (!question) return { code: '', language: preferredLang };
+  const preferred = getSolutionCodeForLanguage(question, preferredLang);
+  if (preferred) return { code: preferred, language: preferredLang };
+  const firstSaved = question.solutionCodes?.find((sc) => sc.code);
+  if (firstSaved?.code) return { code: firstSaved.code, language: firstSaved.language || preferredLang };
+  if (question.solutionCode) {
+    return { code: question.solutionCode, language: question.solutionLanguage || preferredLang };
+  }
+  return { code: '', language: preferredLang };
 }
 
 const TakeClass = () => {
@@ -72,6 +85,8 @@ const TakeClass = () => {
   const [testResults, setTestResults] = useState(null);
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [resultsModalKind, setResultsModalKind] = useState(null); // 'run'
+  const [presentMsg, setPresentMsg] = useState('');
+  const skipEditorResetRef = useRef(false);
 
   // Filter classes taught by the current teacher
   const myClasses = classes.filter(
@@ -201,12 +216,12 @@ const TakeClass = () => {
         selectedQuestion._id,
         answerPayload,
         selectedClass._id,
-        selectedLanguage
+        selectedLanguage,
+        { publicOnly: true }
       );
 
       console.log('Test results received:', response.data);
       
-      // Set results with detailed information
       setTestResults({
         message: response.data.message,
         testResults: response.data.testResults,
@@ -215,7 +230,6 @@ const TakeClass = () => {
         publicTestCases: response.data.publicTestCases,
         hiddenTestCases: response.data.hiddenTestCases,
         isCorrect: response.data.isCorrect,
-        explanation: response.data.explanation
       });
       openResultsModal('run');
 
@@ -226,6 +240,59 @@ const TakeClass = () => {
         message: typeof err === 'string' ? err : 'Failed to execute code. Please try again.'
       });
       openResultsModal('run');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmitCode = async () => {
+    if (!selectedQuestion) {
+      alert('Please select a question first');
+      return;
+    }
+
+    if (!RUNNABLE_CODING_TYPES.includes(selectedQuestion.type)) {
+      alert('Submit is only available for coding and fill-in-the-blanks (code) questions.');
+      return;
+    }
+
+    const answerPayload = getTeacherTestAnswer();
+    if (!answerPayload || answerPayload.trim() === '') {
+      alert(
+        selectedQuestion.type === 'fillInTheBlanksCoding'
+          ? 'Enter the line of code for the blank'
+          : 'Please write some code to submit'
+      );
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setTestResults(null);
+      const response = await teacherTestQuestion(
+        selectedQuestion._id,
+        answerPayload,
+        selectedClass._id,
+        selectedLanguage,
+        { publicOnly: false }
+      );
+      setTestResults({
+        message: response.data.message,
+        testResults: response.data.testResults,
+        passedTestCases: response.data.passedTestCases,
+        totalTestCases: response.data.totalTestCases,
+        publicTestCases: response.data.publicTestCases,
+        hiddenTestCases: response.data.hiddenTestCases,
+        isCorrect: response.data.isCorrect,
+      });
+      openResultsModal('submit');
+    } catch (err) {
+      console.error('Failed to submit code:', err);
+      setTestResults({
+        error: true,
+        message: typeof err === 'string' ? err : 'Failed to submit code. Please try again.'
+      });
+      openResultsModal('submit');
     } finally {
       setLoading(false);
     }
@@ -291,7 +358,6 @@ const TakeClass = () => {
         timeMs: response.data.timeMs ?? response.data.testResult?.timeMs,
         memoryKb: response.data.memoryKb ?? response.data.testResult?.memoryKb,
         isCustomTest: true,
-        explanation: response.data.explanation
       });
       openResultsModal('run');
 
@@ -308,8 +374,59 @@ const TakeClass = () => {
   };
 
   const handlePresentSolution = async () => {
-    console.log('Presenting solution...', { questionId: selectedQuestion?._id, code });
-    alert('Present Solution - Coming soon!\nThis will broadcast the solution to students in real-time via Socket.IO.');
+    if (!selectedQuestion) {
+      setPresentMsg('Select a question first.');
+      return;
+    }
+
+    const q = selectedQuestion;
+    try {
+      setLoading(true);
+      let source = q;
+      const initial = pickSolutionForQuestion(source, selectedLanguage);
+      const fillInHint = stripHtml(source.correctAnswer || '');
+      if (
+        !initial.code &&
+        !(q.type === 'fillInTheBlanksCoding' && fillInHint) &&
+        q._id
+      ) {
+        try {
+          const response = await viewSolution(q._id);
+          source = { ...source, ...(response.data?.solution || {}) };
+        } catch {
+          /* use fields already on the question */
+        }
+      }
+
+      if (q.type === 'fillInTheBlanksCoding') {
+        const blankSolution =
+          stripHtml(source.correctAnswer || '') ||
+          pickSolutionForQuestion(source, selectedLanguage).code;
+        if (!blankSolution?.trim()) {
+          setPresentMsg('No solution saved for this question.');
+          return;
+        }
+        setFillInBlankLine(blankSolution);
+        setPresentMsg('Solution loaded.');
+        return;
+      }
+
+      const picked = pickSolutionForQuestion(source, selectedLanguage);
+      if (!picked.code?.trim()) {
+        setPresentMsg('No solution code saved for this question.');
+        return;
+      }
+      if (picked.language && picked.language !== selectedLanguage) {
+        skipEditorResetRef.current = true;
+        setSelectedLanguage(picked.language);
+      }
+      setCode(picked.code);
+      setPresentMsg('Solution loaded in the editor.');
+    } catch (err) {
+      setPresentMsg(typeof err === 'string' ? err : 'Failed to load solution.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const openResultsModal = (kind) => {
@@ -369,15 +486,12 @@ const TakeClass = () => {
           results={testResults.testResults}
           className="p-2 bg-white rounded border"
         />
-        {testResults.explanation && (
-          <div className="mt-3 p-3 bg-blue-50 rounded border" style={{ borderColor: 'var(--card-border)' }}>
-            <div className="text-xs font-semibold mb-1" style={{ color: 'var(--text-heading)' }}>
-              Explanation:
-            </div>
-            <div className="text-xs" style={{ color: 'var(--text-primary)' }}>
-              {stripHtml(testResults.explanation)}
-            </div>
-          </div>
+        {testResults.testResults && (
+          <RunMetricsBadges
+            timeMs={summarizeRunMetrics(testResults.testResults).maxTimeMs}
+            memoryKb={summarizeRunMetrics(testResults.testResults).maxMemoryKb}
+            className="pt-1"
+          />
         )}
       </div>
     );
@@ -395,7 +509,7 @@ const TakeClass = () => {
       >
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-sm font-semibold" style={{ color: 'var(--text-heading)' }}>
-            {testResults.error ? 'Error' : testResults.isCustomTest ? 'Custom Test Results' : 'Test Results'}
+            {testResults.error ? 'Error' : testResults.isCustomTest ? 'Custom Test Results' : resultsModalKind === 'submit' ? 'Submit Results' : 'Test Results'}
           </h4>
           {!testResults.error && !testResults.isCustomTest && (
             <span
@@ -412,7 +526,8 @@ const TakeClass = () => {
     );
   };
 
-  const getClassNavigationState = () => (selectedClass?._id ? { classId: selectedClass._id } : undefined);
+  const getClassNavigationState = () =>
+    selectedClass?._id ? { classId: selectedClass._id, fromTakeClass: true, questionId: selectedQuestion?._id } : undefined;
 
   const navigateWithClassContext = (path) => {
     const state = getClassNavigationState();
@@ -709,6 +824,10 @@ const TakeClass = () => {
   // Sync editor payload when question or language changes (type-aware)
   useEffect(() => {
     if (!selectedQuestion) return;
+    if (skipEditorResetRef.current) {
+      skipEditorResetRef.current = false;
+      return;
+    }
     const q = selectedQuestion;
     if (FULL_CODE_EDITOR_TYPES.includes(q.type)) {
       setCode(getCodeTemplateForLanguage(q, selectedLanguage));
@@ -725,6 +844,12 @@ const TakeClass = () => {
       setIsFullscreen(false);
     }
   }, [selectedQuestion, isFullscreen]);
+
+  useEffect(() => {
+    if (!presentMsg) return undefined;
+    const t = setTimeout(() => setPresentMsg(''), 3500);
+    return () => clearTimeout(t);
+  }, [presentMsg]);
 
   // If no class is selected, show class selection screen
   if (!selectedClass) {
@@ -1730,6 +1855,16 @@ const TakeClass = () => {
                         </button>
                         <button
                           type="button"
+                          onClick={handleSubmitCode}
+                          disabled={loading}
+                          className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-all duration-200 ${
+                            loading ? 'bg-emerald-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'
+                          }`}
+                        >
+                          Submit
+                        </button>
+                        <button
+                          type="button"
                           onClick={handleRunWithCustomInput}
                           disabled={!customInput.trim() || loading}
                           className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-200 ${
@@ -1818,16 +1953,30 @@ const TakeClass = () => {
               <button
                 type="button"
                 onClick={handleRunCode}
-                className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                disabled={loading}
+                className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
               >
                 {isFillInBlanksCoding ? 'Run tests' : 'Run Code'}
               </button>
               <button
                 type="button"
-                onClick={handlePresentSolution}
-                className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                onClick={handleSubmitCode}
+                disabled={loading}
+                className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 ${
+                  loading ? 'bg-emerald-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
               >
-                Present
+                Submit
+              </button>
+              <button
+                type="button"
+                onClick={handlePresentSolution}
+                disabled={loading}
+                className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
+                  loading ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+                }`}
+              >
+                {loading ? 'Loading…' : 'Present Solution'}
               </button>
               <button
                 type="button"
@@ -1889,6 +2038,12 @@ const TakeClass = () => {
         </div>
       )}
 
+      {presentMsg && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[80] max-w-md px-4 py-2 rounded-lg shadow-lg text-sm font-medium text-white bg-indigo-700">
+          {presentMsg}
+        </div>
+      )}
+
       {showResultsModal && testResults && (
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center p-4"
@@ -1912,7 +2067,9 @@ const TakeClass = () => {
                   ? 'Error'
                   : testResults?.isCustomTest
                     ? 'Custom Test Results'
-                    : 'Test Results'}
+                    : resultsModalKind === 'submit'
+                      ? 'Submit Results'
+                      : 'Test Results'}
               </h2>
               <button
                 type="button"

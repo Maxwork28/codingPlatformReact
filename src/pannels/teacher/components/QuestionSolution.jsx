@@ -1,7 +1,47 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { getQuestion } from '../../../common/services/api';
 import parse from 'html-react-parser';
+
+const stripHtml = (html) => {
+  if (!html) return '';
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  return doc.body.textContent || '';
+};
+
+const langLabel = (lang) =>
+  lang ? String(lang).charAt(0).toUpperCase() + String(lang).slice(1) : 'Solution';
+
+const collectCodingSolutions = (question) => {
+  const byLang = new Map();
+  (question.solutionCodes || []).forEach((entry) => {
+    const code = (entry.code || '').trim();
+    if (!entry.language || !code) return;
+    byLang.set(entry.language, entry.code);
+  });
+  const legacy = (question.solutionCode || '').trim();
+  if (legacy) {
+    const lang = question.solutionLanguage || 'solution';
+    if (!byLang.has(lang)) byLang.set(lang, question.solutionCode);
+  }
+  return [...byLang.entries()].map(([language, code]) => ({ language, code }));
+};
+
+const SolutionCodeBlock = ({ language, code }) => (
+  <div>
+    {language ? (
+      <p className="text-sm font-semibold mb-2" style={{ color: 'var(--text-heading)' }}>
+        {langLabel(language)}
+      </p>
+    ) : null}
+    <pre
+      className="p-4 rounded-lg text-sm font-mono whitespace-pre-wrap overflow-x-auto"
+      style={{ backgroundColor: '#0f172a', color: '#e2e8f0' }}
+    >
+      {code}
+    </pre>
+  </div>
+);
 
 const QuestionSolution = () => {
   const { questionId } = useParams();
@@ -10,39 +50,16 @@ const QuestionSolution = () => {
   const [question, setQuestion] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [classId, setClassId] = useState(location.state?.classId || '');
-
-  const resolveClassId = (questionData) => {
-    if (!questionData) return '';
-    const classEntry = questionData.classes?.[0];
-    if (classEntry?.classId?._id) return classEntry.classId._id;
-    if (classEntry?.classId) return classEntry.classId;
-    if (Array.isArray(questionData.classIds) && questionData.classIds.length > 0) return questionData.classIds[0];
-    return '';
-  };
-
-  // Strip HTML tags for code fields
-  const stripHtml = (html) => {
-    if (!html) return '';
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    return doc.body.textContent || '';
-  };
+  const navClassId = location.state?.classId || '';
 
   useEffect(() => {
     const fetchQuestion = async () => {
       try {
         setIsLoading(true);
         const response = await getQuestion(questionId);
-        console.log('[QuestionSolution] Question fetched:', response.data.question);
-        const fetchedQuestion = response.data.question;
-        setQuestion(fetchedQuestion);
-        const derivedClassId = resolveClassId(fetchedQuestion);
-        if (!classId && derivedClassId) {
-          setClassId(derivedClassId);
-        }
+        setQuestion(response.data.question);
       } catch (err) {
-        console.error('[QuestionSolution] Fetch error:', err.message, err.response?.data);
-        setError(err.response?.data?.error || 'Failed to load question solution');
+        setError(err.response?.data?.error || err?.error || 'Failed to load question solution');
       } finally {
         setIsLoading(false);
       }
@@ -50,79 +67,114 @@ const QuestionSolution = () => {
     fetchQuestion();
   }, [questionId]);
 
+  const codingSolutions = useMemo(
+    () => (question ? collectCodingSolutions(question) : []),
+    [question]
+  );
+
+  const handleBack = () => {
+    if (location.state?.fromTakeClass && navClassId) {
+      navigate('/teacher/take-class', {
+        state: { classId: navClassId, questionId },
+      });
+      return;
+    }
+    if (navClassId) {
+      navigate(`/teacher/classes/${navClassId}`, { state: { classId: navClassId } });
+      return;
+    }
+    navigate('/teacher/questions');
+  };
+
   if (isLoading) {
     return (
-      <div className="fixed inset-0 bg-gray-600 bg-opacity-60 flex items-center justify-center z-50">
-        <div className="bg-white/90 backdrop-blur-sm p-8 rounded-2xl shadow-xl max-w-sm w-full">
-          <div className="flex items-center justify-center">
-            <svg
-              className="animate-spin h-10 w-10 text-indigo-600"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              ></circle>
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-            <span className="ml-4 text-lg font-semibold text-gray-800">Loading...</span>
-          </div>
-        </div>
+      <div className="flex justify-center items-center min-h-[50vh]">
+        <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   if (error || !question) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6 p-4 rounded-xl bg-red-50/80 backdrop-blur-sm border border-red-200 shadow-sm">
-          <div className="flex items-center">
-            <svg
-              className="h-6 w-6 text-red-500"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <p className="ml-3 text-sm font-semibold text-red-800">{error || 'Question not found'}</p>
-          </div>
-        </div>
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <p className="text-red-600 mb-4">{error || 'Question not found'}</p>
+        <button type="button" onClick={handleBack} className="text-indigo-600 font-medium hover:underline">
+          Go back
+        </button>
       </div>
     );
   }
 
-  const fallbackClassId = classId || resolveClassId(question);
-  const backHref = fallbackClassId ? `/teacher/classes/${fallbackClassId}` : '/teacher/questions';
-  const backState = fallbackClassId ? { classId: fallbackClassId } : undefined;
+  const type = question.type;
+  const isCoding = ['coding', 'codingWithDriver', 'fillInTheBlanksCoding'].includes(type);
+
+  let body = null;
+
+  if (type === 'singleCorrectMcq') {
+    const opt = question.options?.[question.correctOption];
+    body = opt ? (
+      <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
+        {question.correctOption + 1}. {parse(opt)}
+      </p>
+    ) : (
+      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>No solution saved.</p>
+    );
+  } else if (type === 'multipleCorrectMcq') {
+    const indexes = question.correctOptions || [];
+    body = indexes.length ? (
+      <ul className="space-y-2 text-sm" style={{ color: 'var(--text-primary)' }}>
+        {indexes.map((idx) => (
+          <li key={idx}>
+            {idx + 1}. {parse(question.options?.[idx] || '')}
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>No solution saved.</p>
+    );
+  } else if (type === 'fillInTheBlanks') {
+    body = question.correctAnswer ? (
+      <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
+        {parse(question.correctAnswer)}
+      </p>
+    ) : (
+      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>No solution saved.</p>
+    );
+  } else if (isCoding) {
+    const fillAnswer = type === 'fillInTheBlanksCoding' ? stripHtml(question.correctAnswer || '').trim() : '';
+    body = (
+      <div className="space-y-6">
+        {fillAnswer ? <SolutionCodeBlock code={fillAnswer} /> : null}
+        {codingSolutions.length > 0 ? (
+          codingSolutions.map((sol) => (
+            <SolutionCodeBlock key={sol.language} language={sol.language} code={sol.code} />
+          ))
+        ) : !fillAnswer ? (
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+            No solution saved for any language.
+          </p>
+        ) : null}
+      </div>
+    );
+  } else {
+    body = (
+      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+        No solution available for this question type.
+      </p>
+    );
+  }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="flex items-center mb-8">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="flex items-center gap-3 mb-6">
         <button
-          onClick={() => navigate(backHref, backState ? { state: backState } : undefined)}
-          className="mr-4 p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200"
+          type="button"
+          onClick={handleBack}
+          className="p-2 rounded-full border hover:opacity-80"
+          style={{ borderColor: 'var(--card-border)', color: 'var(--text-primary)' }}
+          aria-label="Back"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-5 w-5 text-gray-600"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-          >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
             <path
               fillRule="evenodd"
               d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
@@ -130,117 +182,16 @@ const QuestionSolution = () => {
             />
           </svg>
         </button>
-        <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight">
-          {parse(question.title || 'Untitled')} - Solution
+        <h2 className="text-xl font-bold truncate" style={{ color: 'var(--text-heading)' }}>
+          Solution
         </h2>
       </div>
 
-      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
-        <div className="space-y-8">
-          <div className="flex flex-wrap gap-3">
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
-              Type: {question.type || 'Unknown'}
-            </span>
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
-              Points: {question.points || 0}
-            </span>
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-800">
-              Difficulty: {question.difficulty || 'Unknown'}
-            </span>
-          </div>
-
-          {['fillInTheBlanksCoding', 'coding', 'codingWithDriver'].includes(question.type) &&
-            (question.inputFormat || question.outputFormat) && (
-            <div className="space-y-4 border-b border-gray-100 pb-6">
-              {question.inputFormat && (
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2">Input format</h3>
-                  <div className="text-sm text-gray-700 prose prose-sm max-w-none">{parse(question.inputFormat)}</div>
-                </div>
-              )}
-              {question.outputFormat && (
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2">Output format</h3>
-                  <div className="text-sm text-gray-700 prose prose-sm max-w-none">{parse(question.outputFormat)}</div>
-                </div>
-              )}
-              {question.explanation && (
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2">Explanation</h3>
-                  <div className="text-sm text-gray-700 prose prose-sm max-w-none">{parse(question.explanation)}</div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {['fillInTheBlanksCoding', 'coding', 'codingWithDriver'].includes(question.type) &&
-            question.sampleIo?.some((p) => (p.input || '').trim() || (p.output || '').trim()) && (
-              <div className="space-y-4 border-b border-gray-100 pb-6">
-                <h3 className="text-lg font-semibold text-gray-800 mb-2">Sample input / output</h3>
-                <div className="space-y-3">
-                  {question.sampleIo
-                    .filter((p) => (p.input || '').trim() || (p.output || '').trim())
-                    .map((pair, i) => (
-                      <div key={i} className="rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm space-y-2">
-                        <div>
-                          <span className="text-xs font-semibold text-gray-500 uppercase">Input</span>
-                          <pre className="mt-1 font-mono text-gray-800 whitespace-pre-wrap break-all">{pair.input || '—'}</pre>
-                        </div>
-                        <div>
-                          <span className="text-xs font-semibold text-gray-500 uppercase">Output</span>
-                          <pre className="mt-1 font-mono text-gray-800 whitespace-pre-wrap break-all">{pair.output || '—'}</pre>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-3">Solution</h3>
-            {question.type === 'mcq' && question.options?.length > 0 && (
-              <div className="mt-2">
-                <p className="text-sm text-gray-700">
-                  Correct Option: {question.correctOption + 1}. {parse(question.options[question.correctOption] || '')}
-                </p>
-              </div>
-            )}
-            {question.type === 'fillInTheBlanks' && question.correctAnswer && (
-              <div className="mt-2">
-                <p className="text-sm text-gray-700">Correct Answer: {parse(question.correctAnswer)}</p>
-                {question.codeSnippet && (
-                  <pre className="mt-3 p-4 bg-gray-50 rounded-lg text-sm text-gray-700 font-mono whitespace-pre-wrap">
-                    {stripHtml(question.codeSnippet)}
-                  </pre>
-                )}
-              </div>
-            )}
-            {question.type === 'coding' && question.templateCode?.length > 0 && (
-              <div className="mt-2">
-                <p className="text-sm text-gray-700 mb-3">Reference Solutions:</p>
-                {question.templateCode.map((tc, idx) => (
-                  <div key={idx} className="mt-3">
-                    <p className="text-sm font-semibold text-gray-700 mb-2">{tc.language}</p>
-                    <pre className="mt-1 p-4 bg-gray-50 rounded-lg text-sm text-gray-700 font-mono whitespace-pre-wrap">
-                      {tc.code}
-                    </pre>
-                  </div>
-                ))}
-                {question.functionSignature && (
-                  <div className="mt-3">
-                    <p className="text-sm text-gray-700 mb-2">Function Signature:</p>
-                    <pre className="mt-1 p-4 bg-gray-50 rounded-lg text-sm text-gray-700 font-mono">
-                      {parse(question.functionSignature)}
-                    </pre>
-                  </div>
-                )}
-              </div>
-            )}
-            {!(question.type === 'mcq' || question.type === 'fillInTheBlanks' || question.type === 'coding') && (
-              <p className="mt-2 text-sm text-gray-700">No solution available for this question type.</p>
-            )}
-          </div>
-        </div>
+      <div
+        className="rounded-2xl border p-6"
+        style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
+      >
+        {body}
       </div>
     </div>
   );

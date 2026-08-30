@@ -13,7 +13,6 @@ import CodeEditor from '../components/CodeEditor';
 import TestCaseResultsList, { parseTestCaseResultsList } from '../components/TestCaseResultsList';
 import RunMetricsBadges from '../../../common/components/RunMetricsBadges';
 import StudentBackNav from '../components/StudentBackNav';
-import { API_BASE_URL, CUSTOM_STDIN_PLACEHOLDER, CUSTOM_STDOUT_PLACEHOLDER } from '../../../common/constants';
 
 // Socket.IO initialization
 const socket = io('https://api.algosutra.co.in/', {
@@ -1077,7 +1076,6 @@ const QuestionSubmission = () => {
                             onChange={(e) => setCustomInput(e.target.value)}
                             rows={2}
                             className="block w-full mt-1 rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-xs disabled:bg-gray-100 disabled:cursor-not-allowed"
-                            placeholder={CUSTOM_STDIN_PLACEHOLDER}
                             disabled={!answersUnlocked}
                           />
                         </div>
@@ -1091,7 +1089,6 @@ const QuestionSubmission = () => {
                             onChange={(e) => setExpectedOutput(e.target.value)}
                             rows={2}
                             className="block w-full mt-1 rounded-lg border border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-xs disabled:bg-gray-100 disabled:cursor-not-allowed"
-                            placeholder={CUSTOM_STDOUT_PLACEHOLDER}
                             disabled={!answersUnlocked}
                           />
                         </div>

@@ -27,16 +27,26 @@ export const pickRunMetrics = (source) => {
   };
 };
 
-const RunMetricsBadges = ({ timeMs, memoryKb, result, className = '' }) => {
+export const summarizeRunMetrics = (results) => {
+  const rows = Array.isArray(results) ? results : [];
+  const times = rows.map((r) => Number(r?.timeMs)).filter((n) => Number.isFinite(n) && n >= 0);
+  const mems = rows.map((r) => Number(r?.memoryKb)).filter((n) => Number.isFinite(n) && n > 0);
+  return {
+    maxTimeMs: times.length ? Math.max(...times) : null,
+    maxMemoryKb: mems.length ? Math.max(...mems) : null,
+  };
+};
+
+const RunMetricsBadges = ({ timeMs, memoryKb, result, className = '', alwaysShow = true }) => {
   const metrics = result ? pickRunMetrics(result) : { timeMs, memoryKb };
   const timeLabel = formatTimeMs(metrics.timeMs);
   const memoryLabel = formatMemoryKb(metrics.memoryKb);
-  if (!timeLabel && !memoryLabel) return null;
+  if (!alwaysShow && !timeLabel && !memoryLabel) return null;
 
   return (
-    <span className={`inline-flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs font-medium text-gray-600 ${className}`}>
-      {timeLabel && <span>Time: {timeLabel}</span>}
-      {memoryLabel && <span>Memory: {memoryLabel}</span>}
+    <span className={`inline-flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs font-semibold tabular-nums ${className}`} style={{ color: 'var(--text-secondary, #4b5563)' }}>
+      <span>Time: {timeLabel || '—'}</span>
+      <span>Memory: {memoryLabel || '—'}</span>
     </span>
   );
 };

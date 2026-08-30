@@ -8,9 +8,16 @@ import CodeEditor from '../../student/components/CodeEditor';
 import { teacherTestQuestion } from '../../../common/services/api';
 import BulkIoPairsEditor, { QuestionFormStepper } from '../../../common/components/BulkIoPairsEditor';
 import PasteFullQuestion from '../../../common/components/PasteFullQuestion';
-import RunMetricsBadges from '../../../common/components/RunMetricsBadges';
+import TestSolutionResults from '../../../common/components/TestSolutionResults';
 import { parseOptionalPoints, pointsFieldValue } from '../../../common/utils/optionalPoints';
 import { plainTextToSlate, STARTER_STUBS } from '../../../common/utils/parsePastedQuestion';
+import {
+  withQuestionImages,
+  serializeImageHtml,
+  deserializeImgNode,
+} from '../../../common/utils/questionRichTextImages';
+import QuestionImageElement from '../../../common/components/QuestionImageElement';
+import InsertQuestionImageButton from '../../../common/components/InsertQuestionImageButton';
 
 // Custom Slate editor with formatting and multi-line paste
 const withFormatting = editor => {
@@ -101,12 +108,18 @@ const serializeToHTML = nodes => {
       return text;
     }
 
+    if (node.type === 'image') {
+      return serializeImageHtml(node);
+    }
+
     if (!node.children || !Array.isArray(node.children)) {
       return '';
     }
 
     const children = serializeToHTML(node.children);
     switch (node.type) {
+      case 'image':
+        return serializeImageHtml(node);
       case 'paragraph':
         return `<p>${children}</p>`;
       case 'code-block':
@@ -146,6 +159,8 @@ const deserializeFromHTML = (html) => {
       const validChildren = children.length ? children : [{ text: '' }];
       
       switch (node.tagName.toLowerCase()) {
+        case 'img':
+          return deserializeImgNode(node);
         case 'p':
           return [{ type: 'paragraph', children: validChildren }];
         case 'pre':
@@ -209,6 +224,8 @@ const Leaf = ({ attributes, children, leaf }) => {
 // Element component for rendering block elements
 const Element = ({ attributes, children, element }) => {
   switch (element.type) {
+    case 'image':
+      return <QuestionImageElement attributes={attributes} children={children} element={element} />;
     case 'code-block':
       return <pre className="bg-gray-900 text-white p-4 rounded-lg font-mono text-sm" {...attributes}>{children}</pre>;
     case 'bulleted-list':
@@ -223,7 +240,7 @@ const Element = ({ attributes, children, element }) => {
 };
 
 // Toolbar component for formatting buttons
-const Toolbar = () => {
+const Toolbar = ({ allowImages = false }) => {
   const editor = useSlate();
   const marks = Editor.marks(editor) || {};
   const toggleMark = (mark) => {
@@ -304,6 +321,7 @@ const Toolbar = () => {
       >
         Numbers
       </button>
+      {allowImages && <InsertQuestionImageButton />}
     </div>
   );
 };
@@ -343,9 +361,12 @@ const validateSlateValue = (value) => {
 };
 
 // Slate editor component
-const RichTextEditor = ({ value, onChange, placeholder, className }) => {
+const RichTextEditor = ({ value, onChange, placeholder, className, allowImages = false }) => {
   // Create new editor instance only once
-  const editor = useMemo(() => withHistory(withFormatting(withReact(createEditor()))), []);
+  const editor = useMemo(
+    () => withHistory((allowImages ? withQuestionImages : (e) => e)(withFormatting(withReact(createEditor())))),
+    [allowImages]
+  );
   
   // Ensure value is always valid for Slate
   const safeValue = useMemo(() => validateSlateValue(value), [value]);
@@ -396,7 +417,7 @@ const RichTextEditor = ({ value, onChange, placeholder, className }) => {
   return (
     <div className={`border border-gray-200 rounded-lg bg-white ${className}`}>
       <Slate editor={editor} initialValue={safeValue} onChange={handleChange}>
-        <Toolbar />
+        <Toolbar allowImages={allowImages} />
         <Editable
           renderElement={renderElement}
           renderLeaf={renderLeaf}
@@ -1127,13 +1148,19 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
             />
           </div>
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Description</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Description
+              <span className="ml-2 font-normal text-gray-500">
+                (use Image in the toolbar, or paste a screenshot)
+              </span>
+            </label>
             <RichTextEditor
               key={`description-${editorResetKey}`}
               value={description}
               onChange={setDescription}
               placeholder="Provide detailed question description"
               className="w-full"
+              allowImages
             />
           </div>
           <div>
@@ -1474,70 +1501,7 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                   )}
                 </button>
               </div>
-              {testResults && (
-                <div className={`mt-4 p-4 rounded-lg border ${
-                  testResults.error 
-                    ? 'bg-red-50 border-red-200' 
-                    : testResults.isCorrect 
-                      ? 'bg-green-50 border-green-200' 
-                      : 'bg-yellow-50 border-yellow-200'
-                }`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-semibold text-gray-800">
-                      {testResults.error ? 'Error' : 'Test Results'}
-                    </h4>
-                    {!testResults.error && (
-                      <span className={`text-xs font-semibold ${
-                        testResults.isCorrect ? 'text-green-700' : 'text-yellow-700'
-                      }`}>
-                        {testResults.passedTestCases}/{testResults.totalTestCases} Passed
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm text-gray-700 mb-3">{testResults.message}</p>
-                  {testResults.results && testResults.results.length > 0 && (
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
-                      {testResults.results.map((result, idx) => (
-                        <div 
-                          key={idx} 
-                          className={`p-3 rounded border ${
-                            result.passed 
-                              ? 'bg-green-50 border-green-200' 
-                              : 'bg-red-50 border-red-200'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-2 gap-2">
-                            <span className="text-xs font-semibold text-gray-700">
-                              Test Case {idx + 1}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              <RunMetricsBadges result={result} />
-                              <span className={`text-xs font-bold ${
-                                result.passed ? 'text-green-700' : 'text-red-700'
-                              }`}>
-                                {result.passed ? '✓ PASSED' : '✗ FAILED'}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="text-xs text-gray-600 space-y-1">
-                            <div><strong>Input:</strong> <code className="bg-gray-100 px-1 rounded">{result.input}</code></div>
-                            <div><strong>Expected:</strong> <code className="bg-gray-100 px-1 rounded">{result.expected || result.expectedOutput}</code></div>
-                            <div><strong>Output:</strong> <code className="bg-gray-100 px-1 rounded">{result.output || 'N/A'}</code></div>
-                            {result.error && (
-                              <div className="mt-1 text-red-600"><strong>Error:</strong> {result.error}</div>
-                            )}
-                            {!result.isPublic && (
-                              <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded">
-                                Hidden Test Case
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              {testResults && <TestSolutionResults testResults={testResults} />}
             </div>
           </CollapsibleSection>
         </>

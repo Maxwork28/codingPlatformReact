@@ -28,6 +28,8 @@ import {
   getQuestionSummary,
 } from '../../../common/services/api';
 import TeacherQuestionCard from '../components/TeacherQuestionCard';
+import TestCaseResultsList from '../../student/components/TestCaseResultsList';
+import RunMetricsBadges, { summarizeRunMetrics } from '../../../common/components/RunMetricsBadges';
 import { getStudentQuestionProgress } from '../../../common/utils/studentQuestionProgress';
 
 const TeacherClassView = () => {
@@ -876,6 +878,18 @@ const TeacherClassView = () => {
                       <p className="text-sm text-gray-600">Question: {studentModalSubmissionData.questionTitle || '–'}</p>
                       <p className="text-xs text-gray-500 font-mono">Code</p>
                       <pre className="p-3 bg-white border rounded text-sm overflow-x-auto max-h-64 overflow-y-auto">{studentModalSubmissionData.code || 'No code'}</pre>
+                      {studentModalSubmissionData.testResults?.length > 0 && (
+                        <div className="pt-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                            <p className="text-xs font-semibold text-gray-600">Test cases</p>
+                            <RunMetricsBadges
+                              timeMs={summarizeRunMetrics(studentModalSubmissionData.testResults).maxTimeMs}
+                              memoryKb={summarizeRunMetrics(studentModalSubmissionData.testResults).maxMemoryKb}
+                            />
+                          </div>
+                          <TestCaseResultsList results={studentModalSubmissionData.testResults} showHiddenDetails />
+                        </div>
+                      )}
                     </div>
                   )}
                   {studentModalSubmissionData?.error && (
@@ -1132,13 +1146,13 @@ const TeacherClassView = () => {
                           Total Questions
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Correct
+                          Total Correct Questions
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Incorrect
+                          Total Incorrect Questions
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Unattempted
+                          Unattempted Questions
                         </th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Actions

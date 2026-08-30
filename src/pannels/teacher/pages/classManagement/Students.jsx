@@ -324,13 +324,13 @@ const Students = () => {
                             Total Questions
                           </th>
                           <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
-                            Correct
+                            Total Correct Questions
                           </th>
                           <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
-                            Incorrect
+                            Total Incorrect Questions
                           </th>
                           <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
-                            Unattempted
+                            Unattempted Questions
                           </th>
                           <th scope="col" className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
                             Actions

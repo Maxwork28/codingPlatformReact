@@ -3,7 +3,7 @@ import { useParams, Link, useLocation } from 'react-router-dom';
 import { getQuestion, getQuestionPerspectiveReport, teacherTestQuestion } from '../../../common/services/api';
 import CodeEditor from '../../student/components/CodeEditor';
 import parse from 'html-react-parser';
-import RunMetricsBadges from '../../../common/components/RunMetricsBadges';
+import TestSolutionResults from '../../../common/components/TestSolutionResults';
 
 const TeacherQuestionDetail = () => {
   const { classId, questionId } = useParams();
@@ -232,38 +232,7 @@ const TeacherQuestionDetail = () => {
         )}
       </div>
 
-      {/* Test Results */}
-      {testResults && (
-        <div className={`rounded-xl border p-6 ${testResults.error ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200'}`}>
-          <h3 className="text-lg font-semibold mb-3">{testResults.error ? 'Error' : 'Test Results'}</h3>
-          {testResults.error ? (
-            <p className="text-red-700">{testResults.message}</p>
-          ) : (
-            <>
-              <p className={`font-medium ${testResults.isCorrect ? 'text-green-700' : 'text-amber-700'}`}>
-                {testResults.isCorrect ? `All ${testResults.totalTestCases} test cases passed` : `${testResults.passedTestCases}/${testResults.totalTestCases} test cases passed`}
-              </p>
-              {testResults.testResults?.length > 0 && (
-                <div className="mt-4 space-y-2">
-                  {testResults.testResults.map((tr, i) => (
-                    <div key={i} className={`p-3 rounded text-sm ${tr.passed ? 'bg-green-50' : 'bg-red-50'}`}>
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="font-medium">{tr.passed ? '✓' : '✗'} Test {i + 1}</span>
-                        <div className="flex items-center gap-2">
-                          <RunMetricsBadges result={tr} />
-                          {tr.isTLE && <span className="px-1.5 py-0.5 bg-amber-200 text-amber-900 rounded text-xs">TLE</span>}
-                          {tr.isMLE && <span className="px-1.5 py-0.5 bg-amber-200 text-amber-900 rounded text-xs">MLE</span>}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {testResults.explanation && <div className="mt-4 p-3 bg-gray-50 rounded prose prose-sm">{parse(testResults.explanation)}</div>}
-            </>
-          )}
-        </div>
-      )}
+      {testResults && <TestSolutionResults testResults={testResults} />}
     </div>
   );
 };

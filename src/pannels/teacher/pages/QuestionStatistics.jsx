@@ -1,19 +1,53 @@
-import React, { useCallback, useEffect, useMemo, useState, Fragment } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { ArrowLeftIcon } from '@heroicons/react/24/outline';
-import { Menu, Transition } from '@headlessui/react';
-import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement } from 'chart.js';
-import { Doughnut, Bar } from 'react-chartjs-2';
+import { ArrowLeftIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
+import { Doughnut } from 'react-chartjs-2';
 import { format } from 'date-fns';
 import { getQuestionPerspectiveReport, blockUser, blockAllUsers } from '../../../common/services/api';
 
-ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement);
+ChartJS.register(ArcElement, Tooltip, Legend);
 
 const stripHtml = (html) => {
   if (!html) return '';
   const tmp = document.createElement('div');
   tmp.innerHTML = html;
   return (tmp.textContent || tmp.innerText || '').trim();
+};
+
+const formatAnswer = (answer) => {
+  if (answer == null || answer === '') return '';
+  if (typeof answer === 'string') return answer;
+  if (Array.isArray(answer)) return answer.join('\n');
+  try {
+    return JSON.stringify(answer, null, 2);
+  } catch {
+    return String(answer);
+  }
+};
+
+const doughnutPercentPlugin = {
+  id: 'doughnutPercentLabels',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    const meta = chart.getDatasetMeta(0);
+    const values = chart.data.datasets[0]?.data || [];
+    const total = values.reduce((sum, n) => sum + Number(n || 0), 0);
+    if (!total) return;
+    meta.data.forEach((arc, i) => {
+      const value = Number(values[i] || 0);
+      if (!value) return;
+      const pct = Math.round((value / total) * 100);
+      const pos = arc.tooltipPosition();
+      ctx.save();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 13px ui-sans-serif, system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${pct}%`, pos.x, pos.y);
+      ctx.restore();
+    });
+  },
 };
 
 const STATUS_STYLES = {
@@ -30,7 +64,7 @@ const STATUS_STYLES = {
     bg: 'bg-rose-500',
     border: 'border-rose-600',
     ring: 'ring-rose-300',
-    label: 'Incorrect',
+    label: 'Wrong',
     text: 'text-rose-900',
     light: 'bg-rose-50',
     color: '#f43f5e',
@@ -39,7 +73,7 @@ const STATUS_STYLES = {
     bg: 'bg-slate-400',
     border: 'border-slate-500',
     ring: 'ring-slate-300',
-    label: 'Not attempted',
+    label: 'Inactive',
     text: 'text-slate-700',
     light: 'bg-slate-100',
     color: '#94a3b8',
@@ -49,8 +83,8 @@ const STATUS_STYLES = {
 const FILTER_OPTIONS = [
   { value: 'all', label: 'All' },
   { value: 'correct', label: 'Correct' },
-  { value: 'incorrect', label: 'Incorrect' },
-  { value: 'not_attempted', label: 'Not attempted' },
+  { value: 'incorrect', label: 'Wrong' },
+  { value: 'not_attempted', label: 'Inactive' },
 ];
 
 const QuestionStatistics = () => {
@@ -63,9 +97,10 @@ const QuestionStatistics = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionMsg, setActionMsg] = useState('');
-  const [selectedStudentId, setSelectedStudentId] = useState(backState.selectedStudentId || null);
   const [statusFilter, setStatusFilter] = useState('all');
   const [blocking, setBlocking] = useState(false);
+  const [blockedSearch, setBlockedSearch] = useState('');
+  const [codeStudent, setCodeStudent] = useState(null);
 
   const loadReport = useCallback(async ({ silent = false } = {}) => {
     if (!classId || !questionId) return;
@@ -85,12 +120,6 @@ const QuestionStatistics = () => {
     loadReport();
   }, [loadReport]);
 
-  useEffect(() => {
-    if (backState.selectedStudentId) {
-      setSelectedStudentId(backState.selectedStudentId);
-    }
-  }, [backState.selectedStudentId]);
-
   const handleBack = () => {
     if (backState.fromTakeClass) {
       navigate('/teacher/take-class', {
@@ -107,21 +136,18 @@ const QuestionStatistics = () => {
     return list.filter((s) => s.status === statusFilter);
   }, [report?.studentData, statusFilter]);
 
-  const selectedStudent = useMemo(
-    () =>
-      (report?.studentData ?? []).find(
-        (s) => String(s.studentId) === String(selectedStudentId)
-      ),
-    [report?.studentData, selectedStudentId]
-  );
-
-  useEffect(() => {
-    if (!selectedStudentId) return;
-    const stillVisible = filteredStudents.some(
-      (s) => String(s.studentId) === String(selectedStudentId)
+  const blockedOrInactive = useMemo(() => {
+    const list = (report?.studentData ?? []).filter(
+      (s) => s.isBlocked || s.status === 'not_attempted'
     );
-    if (!stillVisible) setSelectedStudentId(null);
-  }, [statusFilter, filteredStudents, selectedStudentId]);
+    const q = blockedSearch.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter(
+      (s) =>
+        (s.studentName || '').toLowerCase().includes(q) ||
+        (s.studentEmail || '').toLowerCase().includes(q)
+    );
+  }, [report?.studentData, blockedSearch]);
 
   const summary = report
     ? {
@@ -134,28 +160,19 @@ const QuestionStatistics = () => {
 
   const chartData = useMemo(() => {
     if (!summary) return null;
+    const total = summary.enrolled || 1;
+    const pct = (n) => Math.round((n / total) * 100);
     return {
-      labels: ['Correct', 'Incorrect', 'Not attempted'],
+      labels: [
+        `Correct ${pct(summary.correct)}%`,
+        `Wrong ${pct(summary.incorrect)}%`,
+        `Inactive ${pct(summary.notAttempted)}%`,
+      ],
       datasets: [
         {
           data: [summary.correct, summary.incorrect, summary.notAttempted],
           backgroundColor: ['#10b981', '#f43f5e', '#94a3b8'],
           borderWidth: 0,
-        },
-      ],
-    };
-  }, [summary]);
-
-  const barData = useMemo(() => {
-    if (!summary) return null;
-    return {
-      labels: ['Correct', 'Incorrect', 'Not attempted'],
-      datasets: [
-        {
-          label: 'Students',
-          data: [summary.correct, summary.incorrect, summary.notAttempted],
-          backgroundColor: ['#10b981', '#f43f5e', '#94a3b8'],
-          borderRadius: 6,
         },
       ],
     };
@@ -181,10 +198,10 @@ const QuestionStatistics = () => {
       .filter((s) => s.status === 'not_attempted')
       .map((s) => s.studentId);
     if (ids.length === 0) {
-      setActionMsg('No not-attempted students to block');
+      setActionMsg('No inactive students to block');
       return;
     }
-    if (!confirm(`Block ${ids.length} not-attempted student(s)?`)) return;
+    if (!confirm(`Block ${ids.length} inactive student(s)?`)) return;
     setBlocking(true);
     setActionMsg('');
     try {
@@ -193,7 +210,7 @@ const QuestionStatistics = () => {
       setStatusFilter('not_attempted');
       await loadReport({ silent: true });
     } catch (err) {
-      setError(typeof err === 'string' ? err : err?.error || 'Failed to block not-attempted students');
+      setError(typeof err === 'string' ? err : err?.error || 'Failed to block inactive students');
     } finally {
       setBlocking(false);
     }
@@ -217,6 +234,8 @@ const QuestionStatistics = () => {
       </div>
     );
   }
+
+  const lastCodeText = codeStudent ? formatAnswer(codeStudent.lastSubmittedAnswer) : '';
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--background-content)' }}>
@@ -253,63 +272,41 @@ const QuestionStatistics = () => {
           </div>
         )}
 
-        {summary && chartData && barData && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div
-              className="rounded-xl border p-4 flex flex-col items-center justify-center"
-              style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
-            >
-              <h2 className="text-sm font-semibold mb-3 self-start" style={{ color: 'var(--text-heading)' }}>
-                Status distribution
-              </h2>
-              <div className="w-full max-w-[240px]">
-                <Doughnut
-                  data={chartData}
-                  options={{
-                    plugins: {
-                      legend: { position: 'bottom' },
+        {summary && chartData && (
+          <div
+            className="rounded-xl border p-4 flex flex-col items-center justify-center max-w-xl mx-auto w-full"
+            style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
+          >
+            <h2 className="text-sm font-semibold mb-3 self-start" style={{ color: 'var(--text-heading)' }}>
+              Status distribution
+            </h2>
+            <div className="w-full max-w-[280px]">
+              <Doughnut
+                data={chartData}
+                plugins={[doughnutPercentPlugin]}
+                options={{
+                  plugins: {
+                    legend: {
+                      position: 'bottom',
+                      labels: { boxWidth: 12, padding: 16, font: { size: 13, weight: '600' } },
                     },
-                    cutout: '58%',
-                    onClick: (_evt, elements) => {
-                      if (!elements?.length) return;
-                      const idx = elements[0].index;
-                      const map = ['correct', 'incorrect', 'not_attempted'];
-                      setStatusFilter(map[idx] || 'all');
+                    tooltip: {
+                      callbacks: {
+                        label(ctx) {
+                          const value = Number(ctx.raw || 0);
+                          const total = summary.enrolled || 1;
+                          return ` ${value} students (${Math.round((value / total) * 100)}%)`;
+                        },
+                      },
                     },
-                  }}
-                />
-              </div>
-              <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>
-                Enrolled: {summary.enrolled} · click a segment to filter
-              </p>
+                  },
+                  cutout: '52%',
+                }}
+              />
             </div>
-            <div
-              className="rounded-xl border p-4"
-              style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
-            >
-              <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-heading)' }}>
-                Students by status
-              </h2>
-              <div className="h-56">
-                <Bar
-                  data={barData}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                      y: { beginAtZero: true, ticks: { precision: 0 } },
-                    },
-                    onClick: (_evt, elements) => {
-                      if (!elements?.length) return;
-                      const idx = elements[0].index;
-                      const map = ['correct', 'incorrect', 'not_attempted'];
-                      setStatusFilter(map[idx] || 'all');
-                    },
-                  }}
-                />
-              </div>
-            </div>
+            <p className="text-xs mt-3" style={{ color: 'var(--text-secondary)' }}>
+              Enrolled: {summary.enrolled} · Correct {summary.correct} · Wrong {summary.incorrect} · Inactive {summary.notAttempted}
+            </p>
           </div>
         )}
 
@@ -356,177 +353,175 @@ const QuestionStatistics = () => {
               onClick={handleBlockNotAttempted}
               className="ml-auto inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
             >
-              Block all not attempted
+              Block all inactive
             </button>
           )}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-heading)' }}>
-              Students ({filteredStudents.length}
-              {statusFilter !== 'all' ? ` of ${report?.studentData?.length ?? 0}` : ''})
-            </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {filteredStudents.map((student) => {
-                const style = STATUS_STYLES[student.status] || STATUS_STYLES.not_attempted;
-                const isSelected = String(student.studentId) === String(selectedStudentId);
-                const isBlocked = Boolean(student.isBlocked);
-                return (
-                  <div
-                    key={student.studentId}
-                    className={`relative min-h-[88px] rounded-lg border-2 transition-all hover:scale-[1.02] ${style.bg} ${style.border} ${
-                      isSelected ? `ring-2 ring-offset-2 ${style.ring}` : ''
-                    } ${isBlocked ? 'opacity-75' : ''}`}
-                  >
+        <div>
+          <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-heading)' }}>
+            Students ({filteredStudents.length}
+            {statusFilter !== 'all' ? ` of ${report?.studentData?.length ?? 0}` : ''})
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            {filteredStudents.map((student) => {
+              const style = STATUS_STYLES[student.status] || STATUS_STYLES.not_attempted;
+              const isBlocked = Boolean(student.isBlocked);
+              const hasCode = Boolean(formatAnswer(student.lastSubmittedAnswer));
+              return (
+                <div
+                  key={student.studentId}
+                  className={`rounded-lg border-2 p-3 ${style.bg} ${style.border} ${isBlocked ? 'opacity-80' : ''}`}
+                >
+                  <p className="text-sm font-semibold text-white drop-shadow-sm truncate">{student.studentName}</p>
+                  <p className="text-xs text-white/90 mt-0.5 truncate">{student.studentEmail || 'No email'}</p>
+                  <p className="text-xs text-white/85 mt-1">
+                    {isBlocked ? 'Blocked · ' : ''}
+                    {style.label}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={() => setSelectedStudentId(student.studentId)}
-                      className="w-full h-full p-3 pr-8 text-left focus:outline-none"
+                      disabled={blocking}
+                      onClick={() => handleBlockStudent(student, !isBlocked)}
+                      className="px-2.5 py-1 rounded-md text-xs font-semibold bg-black/25 text-white hover:bg-black/40 disabled:opacity-50"
                     >
-                      <p className="text-sm font-semibold text-white line-clamp-2 drop-shadow-sm">
-                        {student.studentName}
-                      </p>
-                      <p className="text-xs text-white/90 mt-1 truncate">
-                        {isBlocked ? 'Blocked · ' : ''}
-                        {style.label}
-                      </p>
-                      {student.totalSubmits > 0 && (
-                        <p className="text-xs text-white/80 mt-0.5">
-                          {student.correctAttempts}/{student.totalSubmits} correct submits
-                        </p>
-                      )}
+                      {isBlocked ? 'Unblock' : 'Block'}
                     </button>
-                    <Menu as="div" className="absolute top-1 right-1">
-                      <Menu.Button
-                        className="p-1 rounded text-white/90 hover:bg-black/20 focus:outline-none"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                          <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-                        </svg>
-                      </Menu.Button>
-                      <Transition
-                        as={Fragment}
-                        enter="transition ease-out duration-100"
-                        enterFrom="transform opacity-0 scale-95"
-                        enterTo="transform opacity-100 scale-100"
-                        leave="transition ease-in duration-75"
-                        leaveFrom="transform opacity-100 scale-100"
-                        leaveTo="transform opacity-0 scale-95"
-                      >
-                        <Menu.Items className="absolute right-0 mt-1 w-36 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-20">
-                          <div className="py-1">
-                            <Menu.Item>
-                              {({ active }) => (
-                                <button
-                                  type="button"
-                                  disabled={blocking}
-                                  onClick={() => handleBlockStudent(student, !isBlocked)}
-                                  className={`${
-                                    active ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
-                                  } block w-full px-4 py-2 text-sm text-left disabled:opacity-50`}
-                                >
-                                  {isBlocked ? 'Unblock' : 'Block'}
-                                </button>
-                              )}
-                            </Menu.Item>
-                          </div>
-                        </Menu.Items>
-                      </Transition>
-                    </Menu>
+                    <button
+                      type="button"
+                      disabled={!hasCode}
+                      onClick={() => setCodeStudent(student)}
+                      className="px-2.5 py-1 rounded-md text-xs font-semibold bg-white/90 text-slate-800 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Last submitted code
+                    </button>
                   </div>
-                );
-              })}
-            </div>
-            {filteredStudents.length === 0 && (
-              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                {report?.studentData?.length === 0
-                  ? 'No students enrolled in this class.'
-                  : 'No students match this filter.'}
-              </p>
-            )}
-          </div>
-
-          <div
-            className="rounded-xl border p-4 lg:sticky lg:top-4 max-h-[calc(100vh-8rem)] overflow-y-auto"
-            style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
-          >
-            <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-heading)' }}>
-              Attempt history
-            </h2>
-            {!selectedStudent && (
-              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                Click a student name card to see their attempt history.
-              </p>
-            )}
-            {selectedStudent && (
-              <div className="space-y-3">
-                <div className={`rounded-lg p-3 ${STATUS_STYLES[selectedStudent.status]?.light || 'bg-gray-50'}`}>
-                  <p className="font-semibold" style={{ color: 'var(--text-heading)' }}>
-                    {selectedStudent.studentName}
-                  </p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
-                    {selectedStudent.studentEmail}
-                  </p>
-                  <p className={`text-sm font-medium mt-2 ${STATUS_STYLES[selectedStudent.status]?.text}`}>
-                    {STATUS_STYLES[selectedStudent.status]?.label}
-                  </p>
                 </div>
+              );
+            })}
+          </div>
+          {filteredStudents.length === 0 && (
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+              {report?.studentData?.length === 0
+                ? 'No students enrolled in this class.'
+                : 'No students match this filter.'}
+            </p>
+          )}
+        </div>
 
-                {(!selectedStudent.attempts || selectedStudent.attempts.length === 0) ? (
-                  <p className="text-sm text-gray-500">No attempts recorded.</p>
-                ) : (
-                  <ul className="space-y-2">
-                    {selectedStudent.attempts.map((attempt, idx) => (
-                      <li
-                        key={attempt.submissionId || idx}
-                        className={`w-full rounded-lg border p-3 text-sm ${
-                          attempt.isRun
-                            ? 'bg-blue-50 border-blue-200'
-                            : attempt.isCorrect
-                              ? 'bg-emerald-50 border-emerald-200'
-                              : 'bg-rose-50 border-rose-200'
-                        }`}
+        <div
+          className="rounded-xl border p-4"
+          style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
+        >
+          <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-heading)' }}>
+            Blocked / Inactive students
+          </h2>
+          <div className="relative mb-4 max-w-md">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
+            <input
+              type="text"
+              value={blockedSearch}
+              onChange={(e) => setBlockedSearch(e.target.value)}
+              placeholder="Search by student name or email..."
+              className="w-full pl-9 pr-3 py-2 rounded-lg border text-sm"
+              style={{
+                borderColor: 'var(--card-border)',
+                backgroundColor: 'var(--background-light)',
+                color: 'var(--text-primary)',
+              }}
+            />
+          </div>
+          <div className="space-y-2">
+            {blockedOrInactive.map((student) => {
+              const isBlocked = Boolean(student.isBlocked);
+              return (
+                <div
+                  key={`blocked-${student.studentId}`}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2"
+                  style={{ borderColor: 'var(--card-border)' }}
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate" style={{ color: 'var(--text-heading)' }}>
+                      {student.studentName}
+                    </p>
+                    <p className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>
+                      {student.studentEmail || 'No email'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isBlocked ? 'bg-gray-800 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                      {isBlocked ? 'Blocked' : 'Inactive'}
+                    </span>
+                    {isBlocked && (
+                      <button
+                        type="button"
+                        disabled={blocking}
+                        onClick={() => handleBlockStudent(student, false)}
+                        className="px-2.5 py-1 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
                       >
-                        <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-                          <span className="font-semibold">
-                            {attempt.isRun ? 'Run' : 'Submit'}
-                            {attempt.isCustomInput ? ' (custom)' : ''}
-                          </span>
-                          <span
-                            className={`text-xs font-bold px-2 py-0.5 rounded ${
-                              attempt.isRun
-                                ? 'bg-blue-200 text-blue-900'
-                                : attempt.isCorrect
-                                  ? 'bg-emerald-200 text-emerald-900'
-                                  : 'bg-rose-200 text-rose-900'
-                            }`}
-                          >
-                            {attempt.isRun ? 'Test run' : attempt.isCorrect ? 'Correct' : 'Incorrect'}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-600">
-                          {attempt.submittedAt
-                            ? format(new Date(attempt.submittedAt), 'MMM d, yyyy h:mm a')
-                            : '—'}
-                        </p>
-                        {!attempt.isRun && (
-                          <p className="text-xs text-gray-600 mt-1">
-                            Score: {attempt.score}
-                            {attempt.totalTestCases > 0 &&
-                              ` · Tests: ${attempt.passedTestCases}/${attempt.totalTestCases}`}
-                          </p>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+                        Unblock
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {blockedOrInactive.length === 0 && (
+              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                {blockedSearch
+                  ? `No blocked or inactive students matching “${blockedSearch}”.`
+                  : 'No blocked or inactive students.'}
+              </p>
             )}
           </div>
         </div>
       </div>
+
+      {codeStudent && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div
+            className="w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-xl shadow-xl flex flex-col"
+            style={{ backgroundColor: 'var(--card-white)' }}
+          >
+            <div className="flex items-start justify-between gap-3 px-4 py-3 border-b" style={{ borderColor: 'var(--card-border)' }}>
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold" style={{ color: 'var(--text-heading)' }}>
+                  Last submitted code
+                </h3>
+                <p className="text-sm truncate" style={{ color: 'var(--text-secondary)' }}>
+                  {codeStudent.studentName} · {codeStudent.studentEmail}
+                  {codeStudent.lastSubmittedLanguage ? ` · ${codeStudent.lastSubmittedLanguage}` : ''}
+                </p>
+                {codeStudent.lastSubmittedAt && (
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                    {format(new Date(codeStudent.lastSubmittedAt), 'MMM d, yyyy h:mm a')}
+                    {codeStudent.lastSubmittedIsCorrect != null
+                      ? codeStudent.lastSubmittedIsCorrect
+                        ? ' · Correct'
+                        : ' · Wrong'
+                      : ''}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setCodeStudent(null)}
+                className="p-1 rounded hover:bg-black/5"
+                aria-label="Close"
+              >
+                <XMarkIcon className="h-5 w-5" style={{ color: 'var(--text-secondary)' }} />
+              </button>
+            </div>
+            <pre
+              className="flex-1 overflow-auto p-4 text-sm font-mono whitespace-pre-wrap break-words"
+              style={{ color: 'var(--text-primary)', backgroundColor: 'var(--background-light)' }}
+            >
+              {lastCodeText || 'No submitted code for this student.'}
+            </pre>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { adminSearchQuestionsById, getDraftQuestion, teacherTestQuestion } from '../../../common/services/api';
 import QuestionStatement from '../../teacher/components/QuestionStatement';
 import CodeEditor from '../../student/components/CodeEditor';
-import RunMetricsBadges from '../../../common/components/RunMetricsBadges';
+import TestSolutionResults from '../../../common/components/TestSolutionResults';
 
 const DEFAULT_BACK = '/admin/questions';
 
@@ -512,70 +512,7 @@ const AdminQuestionPreview = () => {
                   )}
                 </button>
               </div>
-              {testResults && (
-                <div className={`mt-4 p-4 rounded-lg border ${
-                  testResults.error 
-                    ? 'bg-red-50 border-red-200' 
-                    : testResults.isCorrect 
-                      ? 'bg-green-50 border-green-200' 
-                      : 'bg-yellow-50 border-yellow-200'
-                }`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-semibold text-gray-800">
-                      {testResults.error ? 'Error' : 'Test Results'}
-                    </h4>
-                    {!testResults.error && (
-                      <span className={`text-xs font-semibold ${
-                        testResults.isCorrect ? 'text-green-700' : 'text-yellow-700'
-                      }`}>
-                        {testResults.passedTestCases}/{testResults.totalTestCases} Passed
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm text-gray-700 mb-3">{testResults.message}</p>
-                  {testResults.results && testResults.results.length > 0 && (
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
-                      {testResults.results.map((result, idx) => (
-                        <div 
-                          key={idx} 
-                          className={`p-3 rounded border ${
-                            result.passed 
-                              ? 'bg-green-50 border-green-200' 
-                              : 'bg-red-50 border-red-200'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-2 gap-2">
-                            <span className="text-xs font-semibold text-gray-700">
-                              Test Case {idx + 1}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              <RunMetricsBadges result={result} />
-                              <span className={`text-xs font-bold ${
-                                result.passed ? 'text-green-700' : 'text-red-700'
-                              }`}>
-                                {result.passed ? '✓ PASSED' : '✗ FAILED'}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="text-xs text-gray-600 space-y-1">
-                            <div><strong>Input:</strong> <code className="bg-gray-100 px-1 rounded">{result.input}</code></div>
-                            <div><strong>Expected:</strong> <code className="bg-gray-100 px-1 rounded">{result.expected || result.expectedOutput}</code></div>
-                            <div><strong>Output:</strong> <code className="bg-gray-100 px-1 rounded">{result.output || 'N/A'}</code></div>
-                            {result.error && (
-                              <div className="mt-1 text-red-600"><strong>Error:</strong> {result.error}</div>
-                            )}
-                            {!result.isPublic && (
-                              <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded">
-                                Hidden Test Case
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              {testResults && <TestSolutionResults testResults={testResults} />}
             </div>
           </div>
         )}

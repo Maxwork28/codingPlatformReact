@@ -2,11 +2,11 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useSelector } from 'react-redux';
 import { io } from 'socket.io-client';
 import { getQuestionsByClass, runCode, runCodeWithCustomInput, submitAnswer } from '../../../common/services/api';
-import { API_BASE_URL, CUSTOM_STDIN_PLACEHOLDER, CUSTOM_STDOUT_PLACEHOLDER } from '../../../common/constants';
+import { API_BASE_URL } from '../../../common/constants';
 import CodeEditor from '../components/CodeEditor';
 import TestCaseResultsList from '../components/TestCaseResultsList';
 import StudentBackNav from '../components/StudentBackNav';
-import RunMetricsBadges from '../../../common/components/RunMetricsBadges';
+import RunMetricsBadges, { summarizeRunMetrics } from '../../../common/components/RunMetricsBadges';
 import { DiJavascript } from "react-icons/di";
 import { FaJava, FaPython, FaDatabase, FaBookOpen } from "react-icons/fa";
 import { GiNotebook } from "react-icons/gi";
@@ -409,15 +409,15 @@ const StudentTakeClass = () => {
             <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>You haven't enrolled in any classes yet.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 items-stretch">
             {enrolledClasses.map((cls) => (
               <button
                 key={cls._id}
                 onClick={() => setSelectedClass(cls)}
-                className="rounded-xl shadow-md border overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-1 hover:scale-[1.01] text-left"
+                className="h-full rounded-xl shadow-md border overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-1 hover:scale-[1.01] text-left"
                 style={{ backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }}
               >
-                <div className="p-3">
+                <div className="p-3 h-full flex flex-col">
                   <div className="flex items-center">
                     {(() => {
                       const { icon } = getClassIconAndColor(cls.name);
@@ -432,8 +432,8 @@ const StudentTakeClass = () => {
                       <p className="text-sm mt-0.5" style={{ color: 'var(--text-primary)' }}>{cls.students?.length || 0} students</p>
                     </div>
                   </div>
-                  <div className="mt-1.5">
-                    <p className="line-clamp-2" style={{ color: 'var(--text-primary)', fontSize: '14px', fontWeight: '400' }}>{cls.description}</p>
+                  <div className="mt-1.5 flex-1">
+                    <p className="line-clamp-2 min-h-[2.5rem]" style={{ color: 'var(--text-primary)', fontSize: '14px', fontWeight: '400' }}>{cls.description}</p>
                   </div>
                   <div className="mt-1.5 flex justify-between items-center">
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold" style={{ backgroundColor: 'var(--badge-slate)', color: 'var(--text-primary)' }}>
@@ -533,6 +533,13 @@ const StudentTakeClass = () => {
           results={testResults.testResults}
           className="p-2 bg-white rounded border"
         />
+        {testResults.testResults && (
+          <RunMetricsBadges
+            timeMs={summarizeRunMetrics(testResults.testResults).maxTimeMs}
+            memoryKb={summarizeRunMetrics(testResults.testResults).maxMemoryKb}
+            className="pt-1"
+          />
+        )}
 
         {testResults.explanation && (
           <div className="mt-3 p-3 bg-blue-50 rounded border" style={{ borderColor: 'var(--card-border)' }}>
@@ -895,12 +902,6 @@ const StudentTakeClass = () => {
           >
             {selectedClass.name}
           </h2>
-          <span
-            className="hidden sm:inline shrink-0 text-[10px] leading-none whitespace-nowrap"
-            style={{ color: 'var(--text-secondary)' }}
-          >
-            {questions.length} Q
-          </span>
           <button
             type="button"
             onClick={() => setShowQuestionsList(!showQuestionsList)}
@@ -1014,7 +1015,7 @@ const StudentTakeClass = () => {
                     return (
                     <div
                       key={q._id}
-                      className={`rounded-lg transition-all duration-200 hover:z-50 ${
+                      className={`rounded-lg h-[5.5rem] transition-all duration-200 hover:z-50 ${
                         selectedQuestion?._id === q._id ? 'shadow-lg z-50' : 'hover:shadow'
                       }`}
                       style={{ 
@@ -1028,14 +1029,14 @@ const StudentTakeClass = () => {
                           setSelectedQuestion(q);
                           setShowQuestionsList(false);
                         }}
-                        className="flex-1 flex items-start gap-2 p-3 text-left w-full"
+                        className="flex items-start gap-2 p-3 text-left w-full h-full"
                       >
                         <span className={`flex-shrink-0 flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${colors.badge}`}>
                           {idx + 1}
                         </span>
-                        <div className="flex-1 min-w-0">
+                        <div className="flex-1 min-w-0 h-full flex flex-col">
                           <p 
-                            className="text-sm font-medium line-clamp-2 leading-tight" 
+                            className="text-sm font-medium line-clamp-2 leading-tight min-h-[2.5rem]" 
                             style={{ color: selectedQuestion?._id === q._id && (attemptStatus === 'attempted' || attemptStatus === 'wrong') ? '#fff' : 'var(--text-primary)' }}
                             title={q.title?.replace(/<[^>]*>/g, '') || 'Untitled'}
                           >
@@ -1525,7 +1526,7 @@ const StudentTakeClass = () => {
                           backgroundColor: 'var(--card-white)', 
                           color: 'var(--text-primary)' 
                         }}
-                        placeholder={CUSTOM_STDIN_PLACEHOLDER}
+                        placeholder=""
                       />
                     </div>
                     <div>
@@ -1543,7 +1544,7 @@ const StudentTakeClass = () => {
                           backgroundColor: 'var(--card-white)', 
                           color: 'var(--text-primary)' 
                         }}
-                        placeholder={CUSTOM_STDOUT_PLACEHOLDER}
+                        placeholder=""
                       />
                     </div>
                   </div>

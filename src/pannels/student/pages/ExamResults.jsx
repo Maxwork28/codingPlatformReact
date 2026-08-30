@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { getStudentExamResults } from '../../../common/services/api';
 import parse from 'html-react-parser';
 import StudentBackNav from '../components/StudentBackNav';
+import TestCaseResultsList from '../components/TestCaseResultsList';
 
 const ExamResults = () => {
   const { examId } = useParams();
@@ -199,6 +200,11 @@ const ExamResults = () => {
                             <span className="font-semibold">Test Cases:</span>{' '}
                             {answer.submission.passedTestCases} / {answer.submission.totalTestCases} passed
                           </div>
+                        )}
+                        {(answer.submission.testResults?.length > 0 || answer.submission.output) && (
+                          <TestCaseResultsList
+                            results={answer.submission.testResults?.length ? answer.submission.testResults : answer.submission.output}
+                          />
                         )}
                         {answer.submission.answer && (
                           <div className="mt-2">

@@ -116,6 +116,49 @@ html[data-theme="dark"] body {
   letter-spacing: normal !important;
   font-variant-ligatures: none;
   font-feature-settings: "liga" 0, "calt" 0;
+  /* Global * color/border transitions make the caret fade instead of blink. */
+  transition: none !important;
+}
+
+/* Light Ace (github): keep text readable on the current line; make the caret obvious */
+.ace-github .ace_marker-layer .ace_active-line,
+.ace-github .ace_active-line {
+  background: #e8f1ff !important;
+  opacity: 1 !important;
+}
+.ace-github .ace_gutter-active-line {
+  background: #dbe7f8 !important;
+}
+.ace-github .ace_cursor {
+  color: #2563eb !important;
+  border-left: 2px solid #2563eb !important;
+}
+.ace-github .ace_hidden-cursors .ace_cursor {
+  opacity: 0.45;
+}
+.ace-github .ace_selection,
+.ace-github .ace_marker-layer .ace_selection {
+  background: rgba(37, 99, 235, 0.22) !important;
+}
+.ace-github .ace_selected-word {
+  background: rgba(37, 99, 235, 0.12) !important;
+  border: 1px solid rgba(37, 99, 235, 0.35) !important;
+}
+.ace-github .ace_multiselect .ace_selection.ace_start {
+  box-shadow: none;
+}
+
+/* Dark Ace (monokai): keep existing contrast */
+.ace-monokai .ace_marker-layer .ace_active-line,
+.ace-monokai .ace_active-line {
+  background: #3e3d32 !important;
+}
+.ace-monokai .ace_gutter-active-line {
+  background: #3e3d32 !important;
+}
+.ace-monokai .ace_cursor {
+  color: #f8f8f0 !important;
+  border-left: 2px solid #f8f8f0 !important;
 }
 
 /* Ensure headings follow theme colors */
@@ -457,4 +500,14 @@ input:focus {
 
 [data-theme="dark"] .theme-toggle svg {
   filter: drop-shadow(0 1px 2px rgba(255, 255, 255, 0.1));
+}
+
+/* Question description images (create form + student/teacher views) */
+img.question-inline-image,
+img[src*="/uploads/questions/"] {
+  max-width: min(100%, 40rem);
+  height: auto;
+  display: block;
+  margin: 0.75rem 0;
+  border-radius: 0.5rem;
 }

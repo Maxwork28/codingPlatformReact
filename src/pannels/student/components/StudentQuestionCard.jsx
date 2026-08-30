@@ -37,19 +37,19 @@ const StudentQuestionCard = ({ question, assignment }) => {
   });
 
   return (
-    <div className="flex-1">
-      <div className="flex justify-between items-start">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-800 tracking-tight">
+    <div className="flex-1 min-h-[11rem] flex flex-col">
+      <div className="flex justify-between items-start flex-1">
+        <div className="flex-1 min-w-0 flex flex-col">
+          <h3 className="text-lg font-semibold text-gray-800 tracking-tight line-clamp-2 min-h-[3.5rem]">
             {titleText || 'No Title'}
           </h3>
-          <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+          <p className="mt-2 text-sm text-gray-600 leading-relaxed line-clamp-3 min-h-[3.75rem]">
             {descriptionText || 'No Description'}
           </p>
           {isCodingQuestion && explanationText && (
             <div className="mt-3">
               <p className="text-xs font-semibold text-gray-700">Explanation</p>
-              <p className="mt-1 text-sm text-gray-600 leading-relaxed">{explanationText}</p>
+              <p className="mt-1 text-sm text-gray-600 leading-relaxed line-clamp-2 min-h-[2.5rem]">{explanationText}</p>
             </div>
           )}
           <div className="mt-3 flex flex-wrap gap-2">

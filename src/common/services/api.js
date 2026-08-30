@@ -59,6 +59,22 @@ export const uploadProfilePicture = async (file) => {
   }
 };
 
+/**
+ * Uploads an image for use inside a question description.
+ * @param {File} file
+ * @returns {Promise<{ url: string }>}
+ */
+export const uploadQuestionImage = async (file) => {
+  const formData = new FormData();
+  formData.append('image', file);
+  try {
+    const response = await api.post('/questions/upload-image', formData);
+    return response.data;
+  } catch (err) {
+    throw new Error(err.response?.data?.error || 'Failed to upload image');
+  }
+};
+
 // Admin Routes
 /**
  * Uploads an Excel file with user data
@@ -187,6 +203,24 @@ export const getTeachers = async (search = '') => {
   } catch (err) {
     console.error('getTeachers error', { error: err.response?.data?.error || 'Failed to fetch teachers' });
     throw err.response?.data?.error || 'Failed to fetch teachers';
+  }
+};
+
+/**
+ * Deletes a teacher account from the teacher list.
+ * Related classes, questions, exams, and student work are kept.
+ * @param {string} teacherId - Teacher ID
+ * @returns {Promise} Axios response
+ */
+export const deleteTeacher = async (teacherId) => {
+  console.log('deleteTeacher called', { teacherId });
+  try {
+    const response = await api.delete(`/admin/teachers/${teacherId}`);
+    console.log('deleteTeacher success', { teacherId, response: response.data });
+    return response;
+  } catch (err) {
+    console.error('deleteTeacher error', { teacherId, error: err.response?.data?.error || 'Failed to delete teacher' });
+    throw err.response?.data?.error || 'Failed to delete teacher';
   }
 };
 
@@ -1229,7 +1263,7 @@ export const runCodeWithCustomInput = async (questionId, answer, classId, langua
  * @param {string} language - Programming language
  * @returns {Promise} Axios response with all test results
  */
-export const teacherTestQuestion = async (questionId, answer, classId, language) => {
+export const teacherTestQuestion = async (questionId, answer, classId, language, options = {}) => {
   console.log('========================================');
   console.log('[API] teacherTestQuestion called');
   console.log('[API] Parameters:', { 
@@ -1250,7 +1284,8 @@ export const teacherTestQuestion = async (questionId, answer, classId, language)
     const response = await api.post(`/questions/${questionId}/teacher-test`, {
       answer,
       classId,
-      language
+      language,
+      publicOnly: Boolean(options.publicOnly),
     });
     
     console.log('[API] ====== SUCCESS ======');

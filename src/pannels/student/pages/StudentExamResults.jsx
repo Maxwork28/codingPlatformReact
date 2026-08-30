@@ -2,6 +2,8 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { getStudentExamResults } from '../../../common/services/api';
 import StudentBackNav from '../components/StudentBackNav';
+import TestCaseResultsList from '../components/TestCaseResultsList';
+import RunMetricsBadges, { summarizeRunMetrics } from '../../../common/components/RunMetricsBadges';
 
 const StudentExamResults = () => {
   const { examId } = useParams();
@@ -333,6 +335,20 @@ const SubmissionDisplay = ({ submission, questionType, question }) => {
           </div>
           {submission.language && (
             <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>Language: {submission.language}</div>
+          )}
+          {(submission.testResults?.length > 0 || submission.output) && (
+            <div className="mt-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <div className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Time / memory</div>
+                <RunMetricsBadges
+                  timeMs={summarizeRunMetrics(submission.testResults).maxTimeMs}
+                  memoryKb={summarizeRunMetrics(submission.testResults).maxMemoryKb}
+                />
+              </div>
+              <TestCaseResultsList
+                results={submission.testResults?.length ? submission.testResults : submission.output}
+              />
+            </div>
           )}
         </div>
       ) : questionType === 'fillInTheBlanks' ? (

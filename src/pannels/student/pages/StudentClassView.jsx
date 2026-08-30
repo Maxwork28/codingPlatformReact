@@ -7,7 +7,7 @@ import { Tab } from "@headlessui/react";
 import StudentQuestionCard from "../components/StudentQuestionCard";
 import StudentBackNav from "../components/StudentBackNav";
 import { API_BASE_URL } from "../../../common/constants";
-import { listClassExams } from "../../../common/services/api";
+import { listClassExams, getQuestionsByClass } from "../../../common/services/api";
 import { fetchClasses } from "../../../common/components/redux/classSlice";
 
 const socket = io(`${API_BASE_URL}/`, {
@@ -189,26 +189,36 @@ const StudentClassView = () => {
         questionCount: cls.questions?.length ?? 0,
         userId: user.id,
       });
-      const qs = Array.isArray(cls.questions) ? cls.questions : [];
-      const updatedQuestions = qs.map((q) => {
+      const annotateQuestion = (q) => {
         const classInfo = (q.classes || []).find((c) => matchesClassEntry(c, classId));
-        console.log("[StudentClassView] Processing question", {
-          questionId: q._id,
-          questionTitle: q.title,
-          isPublished: classInfo?.isPublished,
-          isDisabled: classInfo?.isDisabled,
-        });
         return {
           ...q,
           isPublished: classInfo ? classInfo.isPublished : false,
           isDisabled: classInfo ? classInfo.isDisabled : false,
         };
-      });
+      };
       setError(null);
       setClassData({
         ...cls,
-        questions: updatedQuestions,
+        questions: (Array.isArray(cls.questions) ? cls.questions : []).map(annotateQuestion),
       });
+      (async () => {
+        try {
+          const response = await getQuestionsByClass(classId);
+          const apiQuestions = (response.data.questions || []).map(annotateQuestion);
+          const seen = new Set(apiQuestions.map((q) => String(q._id)));
+          const extras = (Array.isArray(cls.questions) ? cls.questions : [])
+            .map(annotateQuestion)
+            .filter((q) => !seen.has(String(q._id)));
+          setClassData((prev) =>
+            prev && idEq(prev._id, classId)
+              ? { ...prev, questions: [...apiQuestions, ...extras] }
+              : prev
+          );
+        } catch (err) {
+          console.error("[StudentClassView] Failed to fetch questions in insertion order", err);
+        }
+      })();
       fetchAssignments();
       fetchExams();
       fetchLeaderboard();
@@ -868,7 +878,16 @@ const StudentClassView = () => {
               </div>
             ) : (
               <div className="space-y-6">
-                {assignments
+                {(() => {
+                  const order = new Map(
+                    (classData.questions || []).map((q, i) => [String(q._id), i])
+                  );
+                  return [...assignments].sort((a, b) => {
+                    const ai = order.get(String(a.questionId?._id || a.questionId));
+                    const bi = order.get(String(b.questionId?._id || b.questionId));
+                    return (ai ?? Number.MAX_SAFE_INTEGER) - (bi ?? Number.MAX_SAFE_INTEGER);
+                  });
+                })()
                   .map((assignment) => {
                     const question = classData.questions.find((q) =>
                       idEq(q._id, assignment.questionId?._id || assignment.questionId)

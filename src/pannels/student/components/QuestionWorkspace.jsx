@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react';
 import CodeEditor from './CodeEditor';
 import TestCaseResultsList from './TestCaseResultsList';
-import { CUSTOM_STDIN_PLACEHOLDER, CUSTOM_STDOUT_PLACEHOLDER } from '../../../common/constants';
 
 const QuestionWorkspace = ({
   question,
@@ -84,7 +83,6 @@ const QuestionWorkspace = ({
               value={customInput}
               onChange={(e) => setCustomInput(e.target.value)}
               disabled={!isQuestionActive || questionLocked}
-              placeholder={CUSTOM_STDIN_PLACEHOLDER}
               className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
               rows={3}
             />
@@ -97,7 +95,6 @@ const QuestionWorkspace = ({
               value={expectedOutput}
               onChange={(e) => setExpectedOutput(e.target.value)}
               disabled={!isQuestionActive || questionLocked}
-              placeholder={CUSTOM_STDOUT_PLACEHOLDER}
               className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
               rows={2}
             />

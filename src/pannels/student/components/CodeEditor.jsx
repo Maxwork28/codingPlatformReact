@@ -376,18 +376,32 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
 
   return (
     <div
-      className={`relative rounded-xl overflow-hidden border border-gray-200 shadow-md bg-gray-900 ${
+      className={`relative rounded-xl overflow-hidden border shadow-md ${
         fillParent ? 'h-full min-h-0 flex flex-col' : ''
-      }`}
+      } ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}
     >
-      <div className="px-4 py-2 bg-gradient-to-r from-gray-800 to-gray-900 border-b border-gray-700 flex justify-between items-center">
-        <span className="text-sm font-semibold text-gray-200 uppercase tracking-wider">
+      <div
+        className={`px-4 py-2 border-b flex justify-between items-center ${
+          isDark
+            ? 'bg-gradient-to-r from-gray-800 to-gray-900 border-gray-700'
+            : 'bg-slate-50 border-gray-200'
+        }`}
+      >
+        <span
+          className={`text-sm font-semibold uppercase tracking-wider ${
+            isDark ? 'text-gray-200' : 'text-slate-700'
+          }`}
+        >
           {language.charAt(0).toUpperCase() + language.slice(1) || 'Code'}
         </span>
         <div className="flex space-x-4">
           <button
             type="button"
-            className="text-sm font-medium text-gray-300 hover:text-white disabled:text-gray-500 disabled:cursor-not-allowed transition-colors duration-200"
+            className={`text-sm font-medium disabled:cursor-not-allowed transition-colors duration-200 ${
+              isDark
+                ? 'text-gray-300 hover:text-white disabled:text-gray-500'
+                : 'text-slate-600 hover:text-slate-900 disabled:text-slate-400'
+            }`}
             onClick={handleReset}
             disabled={disabled}
           >
@@ -396,7 +410,11 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
           {!copyPasteDisabled && (
             <button
               type="button"
-              className="text-sm font-medium text-gray-300 hover:text-white disabled:text-gray-500 disabled:cursor-not-allowed transition-colors duration-200"
+              className={`text-sm font-medium disabled:cursor-not-allowed transition-colors duration-200 ${
+                isDark
+                  ? 'text-gray-300 hover:text-white disabled:text-gray-500'
+                  : 'text-slate-600 hover:text-slate-900 disabled:text-slate-400'
+              }`}
               onClick={handleCopy}
               disabled={disabled}
             >
@@ -454,7 +472,7 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
           onPaste={blockClipboard}
         />
       )}
-      <style jsx global>{`
+      <style>{`
         .ace-monokai .ace_gutter {
           background-color: #2f3129;
           color: #a0a1a7;
@@ -464,25 +482,42 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
           background-color: #272822;
           color: #f8f8f2;
         }
-        .ace_gutter-active-line {
-          background-color: #3e3d32 !important;
-        }
-        .ace_active-line {
+        .ace-monokai .ace_gutter-active-line,
+        .ace-monokai .ace_active-line,
+        .ace-monokai .ace_marker-layer .ace_active-line {
           background-color: #3e3d32 !important;
         }
         .ace-monokai .ace_cursor {
           color: #f8f8f0;
+          border-left: 2px solid #f8f8f0;
         }
         .ace-monokai .ace_selection {
           background: #49483e;
         }
-        .ace_non_editable {
+        .ace-monokai .ace_non_editable {
           background-color: #2f3129 !important;
           opacity: 0.8;
         }
-        .ace_editable {
+        .ace-monokai .ace_editable {
           background-color: #3e3d32 !important;
           border-left: 4px solid #66d9ef;
+        }
+        .ace-github .ace_gutter-active-line,
+        .ace-github .ace_active-line,
+        .ace-github .ace_marker-layer .ace_active-line {
+          background-color: #e8f1ff !important;
+        }
+        .ace-github .ace_cursor {
+          color: #2563eb !important;
+          border-left: 2px solid #2563eb !important;
+        }
+        .ace-github .ace_non_editable {
+          background-color: #f1f5f9 !important;
+          opacity: 0.9;
+        }
+        .ace-github .ace_editable {
+          background-color: #e0edff !important;
+          border-left: 4px solid #2563eb;
         }
       `}</style>
     </div>

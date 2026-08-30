@@ -17,6 +17,7 @@ import {
   getQuestionPerspectiveReport,
 } from '../../../common/services/api';
 import parse from 'html-react-parser';
+import { getStudentQuestionProgress } from '../../../common/utils/studentQuestionProgress';
 
 const ClassDetails = () => {
   const { classId } = useParams();
@@ -333,11 +334,6 @@ const ClassDetails = () => {
     }
   };
 
-  const openStudentModal = (student) => {
-    setSelectedStudent(student);
-    setIsModalOpen(true);
-  };
-
   if (!user) {
     console.log('[ClassDetails] Rendering: User not logged in');
     return (
@@ -404,139 +400,20 @@ const ClassDetails = () => {
     questionReport: !!questionReport,
   });
 
-  // Student Card Component
-  const StudentCard = ({ student }) => {
-    const { name, id, email } = student.student;
-    const { totalRuns, totalSubmissions } = student;
-    const studentData = Array.isArray(leaderboard) ? leaderboard.find(l => l.studentId?._id === id) : null;
-    const isFocused = studentData?.activityStatus === 'focused';
-    const isBlocked = studentData?.isBlocked || false;
-
-    return (
-      <div className={`${isBlocked ? 'bg-gray-800 text-white' : 'bg-white/90'} backdrop-blur-sm rounded-xl shadow-lg p-6 border border-gray-100 transition-all duration-300 hover:shadow-xl overflow-visible`} style={{ position: 'relative', zIndex: 1 }}>
-        <div className="flex justify-between items-center">
-          <div className="flex items-center">
-            <div>
-              <h3 className={`text-lg font-semibold ${isBlocked ? 'text-white' : 'text-gray-800'}`}>{name}</h3>
-              <p className={`text-sm ${isBlocked ? 'text-gray-300' : 'text-gray-600'}`}>Email: {email}</p>
-            </div>
-            {isFocused && (
-              <svg
-                className="h-6 w-6 text-yellow-500 ml-2"
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-              </svg>
-            )}
-          </div>
-          <div className="flex items-center space-x-2" style={{ position: 'relative', zIndex: 100 }}>
-            <button
-              onClick={() => openStudentModal(student)}
-              className={`p-2 rounded-full ${isBlocked ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'} focus:outline-none transition-colors duration-200`}
-              aria-label="View student details"
-            >
-              <svg
-                className="h-5 w-5"
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </button>
-            <Menu as="div" className="relative">
-              <Menu.Button 
-                className={`inline-flex items-center p-2 rounded-full ${isBlocked ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'} focus:outline-none transition-colors duration-200`} 
-                aria-label="Student actions"
-              >
-                <svg
-                  className="h-5 w-5"
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-                </svg>
-              </Menu.Button>
-              <Transition
-                as={React.Fragment}
-                enter="transition ease-out duration-100"
-                enterFrom="transform opacity-0 scale-95"
-                enterTo="transform opacity-100 scale-100"
-                leave="transition ease-in duration-75"
-                leaveFrom="transform opacity-100 scale-100"
-                leaveTo="transform opacity-0 scale-95"
-              >
-                <Menu.Items className="absolute right-0 mt-2 w-48 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-[9999]">
-                  <div className="py-1">
-                    <Menu.Item>
-                      {({ active }) => (
-                        <button
-                          onClick={() => {
-                            handleFocusUser(id, !isFocused);
-                          }}
-                          className={`${
-                            active ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
-                          } block w-full px-4 py-2 text-sm text-left`}
-                        >
-                          {isFocused ? 'Unfocus' : 'Focus'}
-                        </button>
-                      )}
-                    </Menu.Item>
-                    <Menu.Item>
-                      {({ active }) => (
-                        <button
-                          onClick={() => {
-                            handleBlockUser(id, !isBlocked);
-                          }}
-                          className={`${
-                            active ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
-                          } block w-full px-4 py-2 text-sm text-left`}
-                        >
-                          {isBlocked ? 'Unblock' : 'Block'}
-                        </button>
-                      )}
-                    </Menu.Item>
-                    <Menu.Item>
-                      {({ active }) => (
-                        <button
-                          onClick={() => {
-                            setSubmissionId(id);
-                            handleViewSubmissionCode(id);
-                          }}
-                          className={`${
-                            active ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
-                          } block w-full px-4 py-2 text-sm text-left`}
-                        >
-                          View Code
-                        </button>
-                      )}
-                    </Menu.Item>
-                  </div>
-                </Menu.Items>
-              </Transition>
-            </Menu>
-          </div>
-        </div>
-        <div className="mt-4 grid grid-cols-2 gap-4">
-          <div>
-            <p className={`text-sm font-medium ${isBlocked ? 'text-gray-300' : 'text-gray-600'}`}>Total Runs</p>
-            <p className={`text-lg font-bold ${isBlocked ? 'text-white' : 'text-indigo-900'}`}>{totalRuns ?? 0}</p>
-          </div>
-          <div>
-            <p className={`text-sm font-medium ${isBlocked ? 'text-gray-300' : 'text-gray-600'}`}>Total Submissions</p>
-            <p className={`text-lg font-bold ${isBlocked ? 'text-white' : 'text-indigo-900'}`}>{totalSubmissions ?? 0}</p>
-          </div>
-        </div>
-      </div>
-    );
-  };
+  const totalQuestions = Array.isArray(classDetails?.questions) ? classDetails.questions.length : 0;
+  const studentsTableRows = (Array.isArray(leaderboard) && leaderboard.length > 0)
+    ? leaderboard
+    : (runSubmitStats?.studentStats || []).map((stat) => ({
+        studentId: {
+          _id: stat.student?.id,
+          name: stat.student?.name,
+          email: stat.student?.email,
+        },
+        activityStatus: 'inactive',
+        isBlocked: false,
+        highestScores: [],
+        attempts: [],
+      }));
 
   // Student Details Modal
   const StudentDetailsModal = () => {
@@ -900,18 +777,109 @@ const ClassDetails = () => {
 
           {/* Students Tab */}
           <Tab.Panel>
-      {/* Student Cards */}
       <section className="mb-12">
-        <h2 className="text-2xl font-semibold text-gray-800 mb-4">Students</h2>
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100 overflow-visible">
-          {runSubmitStats?.studentStats?.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 overflow-visible" style={{ position: 'relative' }}>
-              {runSubmitStats.studentStats.map((student, index) => (
-                <StudentCard key={student.student.id || index} student={student} />
-              ))}
+        <h2 className="text-2xl font-semibold text-gray-800 mb-4">Students ({studentsTableRows.length})</h2>
+        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+          {studentsTableRows.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mail ID</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Questions</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Correct Questions</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Incorrect Questions</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unattempted Questions</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {studentsTableRows.map((studentData, index) => {
+                    const studentInfo = studentData.studentId || {};
+                    const studentId = studentInfo._id;
+                    const isFocused = studentData.activityStatus === 'focused';
+                    const isBlocked = studentData.isBlocked || false;
+                    const progress = getStudentQuestionProgress(studentData, totalQuestions);
+                    return (
+                      <tr key={studentId || index} className={isBlocked ? 'bg-gray-800 text-white' : 'hover:bg-gray-50'}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          {studentInfo.name || 'Unknown'}
+                        </td>
+                        <td className={`px-6 py-4 whitespace-nowrap text-sm ${isBlocked ? 'text-gray-300' : 'text-gray-500'}`}>
+                          {studentInfo.email || 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span
+                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                              isBlocked
+                                ? 'bg-red-100 text-red-800'
+                                : studentData.activityStatus === 'active'
+                                ? 'bg-green-100 text-green-800'
+                                : studentData.activityStatus === 'focused'
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : 'bg-gray-100 text-gray-800'
+                            }`}
+                          >
+                            {isBlocked ? 'Blocked' : studentData.activityStatus || 'inactive'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{progress.totalQuestions}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{progress.correct}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{progress.incorrect}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{progress.unattempted}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <Menu as="div" className="relative inline-block text-left">
+                            <Menu.Button className="inline-flex items-center p-1 text-gray-400 hover:text-gray-600 focus:outline-none">
+                              <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                              </svg>
+                            </Menu.Button>
+                            <Transition
+                              as={React.Fragment}
+                              enter="transition ease-out duration-100"
+                              enterFrom="transform opacity-0 scale-95"
+                              enterTo="transform opacity-100 scale-100"
+                              leave="transition ease-in duration-75"
+                              leaveFrom="transform opacity-100 scale-100"
+                              leaveTo="transform opacity-0 scale-95"
+                            >
+                              <Menu.Items className="absolute right-0 mt-2 w-36 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-10">
+                                <div className="py-1">
+                                  <Menu.Item>
+                                    {({ active }) => (
+                                      <button
+                                        onClick={() => handleFocusUser(studentId, !isFocused)}
+                                        className={`${active ? 'bg-gray-100 text-gray-900' : 'text-gray-700'} block w-full px-4 py-2 text-sm text-left`}
+                                      >
+                                        {isFocused ? 'Unfocus' : 'Focus'}
+                                      </button>
+                                    )}
+                                  </Menu.Item>
+                                  <Menu.Item>
+                                    {({ active }) => (
+                                      <button
+                                        onClick={() => handleBlockUser(studentId, !isBlocked)}
+                                        className={`${active ? 'bg-gray-100 text-gray-900' : 'text-gray-700'} block w-full px-4 py-2 text-sm text-left`}
+                                      >
+                                        {isBlocked ? 'Unblock' : 'Block'}
+                                      </button>
+                                    )}
+                                  </Menu.Item>
+                                </div>
+                              </Menu.Items>
+                            </Transition>
+                          </Menu>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           ) : (
-            <p className="text-gray-500">No student data available</p>
+            <p className="text-gray-500 p-6">No student data available</p>
           )}
         </div>
       </section>

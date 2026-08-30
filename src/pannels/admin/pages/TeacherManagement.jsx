@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { getTeachers, manageTeacherPermission } from '../../../common/services/api';
-import { ShieldCheckIcon } from '@heroicons/react/24/outline';
+import { getTeachers, manageTeacherPermission, deleteTeacher } from '../../../common/services/api';
+import { ShieldCheckIcon, TrashIcon } from '@heroicons/react/24/outline';
 
 const TeacherManagement = () => {
   const [teachers, setTeachers] = useState([]);
@@ -9,6 +9,8 @@ const TeacherManagement = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
+  const [deleteModal, setDeleteModal] = useState({ open: false, teacher: null });
+  const [processing, setProcessing] = useState(false);
 
   // Calculate pagination
   const indexOfLastItem = currentPage * itemsPerPage;
@@ -57,6 +59,29 @@ const TeacherManagement = () => {
       ));
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to update permission');
+    }
+  };
+
+  const handleDeleteClick = (teacher) => {
+    setDeleteModal({ open: true, teacher });
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteModal.teacher?._id) return;
+    setProcessing(true);
+    try {
+      await deleteTeacher(deleteModal.teacher._id);
+      const remaining = teachers.filter((t) => t._id !== deleteModal.teacher._id);
+      setTeachers(remaining);
+      const nextTotalPages = Math.max(1, Math.ceil(remaining.length / itemsPerPage));
+      if (currentPage > nextTotalPages) {
+        setCurrentPage(nextTotalPages);
+      }
+      setDeleteModal({ open: false, teacher: null });
+    } catch (err) {
+      setError(err.response?.data?.error || err || 'Failed to delete teacher');
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -248,15 +273,25 @@ const TeacherManagement = () => {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <label className="inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={teacher.canCreateQuestion}
-                        onChange={(e) => handlePermissionToggle(teacher._id, e.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                    </label>
+                    <div className="inline-flex items-center gap-4">
+                      <label className="inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={teacher.canCreateQuestion}
+                          onChange={(e) => handlePermissionToggle(teacher._id, e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteClick(teacher)}
+                        className="text-red-600 hover:text-red-900 inline-flex items-center"
+                      >
+                        <TrashIcon className="h-4 w-4 mr-1" />
+                        Delete Teacher
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -386,6 +421,37 @@ const TeacherManagement = () => {
           )}
           </>
           )}
+        </div>
+      )}
+
+      {deleteModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="rounded-lg p-6 w-full max-w-md mx-4" style={{ backgroundColor: 'var(--card-white)' }}>
+            <h3 className="text-lg font-semibold mb-4 text-red-600">Delete Teacher</h3>
+            <p className="mb-6" style={{ color: 'var(--text-secondary)' }}>
+              Remove <strong>{deleteModal.teacher?.name}</strong> from the teacher list?
+              Classes, questions, exams, and student work they created will be kept.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => setDeleteModal({ open: false, teacher: null })}
+                className="px-4 py-2 hover:opacity-80"
+                style={{ color: 'var(--text-secondary)' }}
+                disabled={processing}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteConfirm}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                disabled={processing}
+              >
+                {processing ? 'Deleting...' : 'Delete Teacher'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
