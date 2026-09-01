@@ -4,6 +4,8 @@ import { ArrowLeftIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
 import { format } from 'date-fns';
+import { io } from 'socket.io-client';
+import { API_BASE_URL } from '../../../common/constants';
 import { getQuestionPerspectiveReport, blockUser, blockAllUsers } from '../../../common/services/api';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
@@ -40,8 +42,10 @@ const doughnutPercentPlugin = {
       const pct = Math.round((value / total) * 100);
       const pos = arc.tooltipPosition();
       ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.7)';
+      ctx.shadowBlur = 6;
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 13px ui-sans-serif, system-ui, sans-serif';
+      ctx.font = 'bold 15px ui-sans-serif, system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(`${pct}%`, pos.x, pos.y);
@@ -119,6 +123,29 @@ const QuestionStatistics = () => {
   useEffect(() => {
     loadReport();
   }, [loadReport]);
+
+  useEffect(() => {
+    if (!classId) return undefined;
+    const socket = io(API_BASE_URL, { transports: ['websocket', 'polling'] });
+    socket.emit('joinClass', classId);
+    const refresh = ({ classId: updatedClassId } = {}) => {
+      if (!updatedClassId || String(updatedClassId) === String(classId)) {
+        loadReport({ silent: true });
+      }
+    };
+    socket.on('analyticsUpdated', refresh);
+    socket.on('codeRun', () => loadReport({ silent: true }));
+    socket.on('submissionUpdate', () => loadReport({ silent: true }));
+    socket.on('studentBlockStatusUpdated', () => loadReport({ silent: true }));
+    return () => {
+      socket.off('analyticsUpdated', refresh);
+      socket.off('codeRun');
+      socket.off('submissionUpdate');
+      socket.off('studentBlockStatusUpdated');
+      socket.emit('leaveClass', classId);
+      socket.disconnect();
+    };
+  }, [classId, loadReport]);
 
   const handleBack = () => {
     if (backState.fromTakeClass) {
@@ -248,7 +275,7 @@ const QuestionStatistics = () => {
             style={{ borderColor: 'var(--card-border)', color: 'var(--text-primary)' }}
           >
             <ArrowLeftIcon className="w-4 h-4" />
-            Back to Take Class
+            {backState.fromTakeClass ? 'Back to Take Class' : 'Back to class'}
           </button>
           <div className="flex-1 min-w-0">
             <h1 className="text-lg sm:text-xl font-bold truncate" style={{ color: 'var(--text-heading)' }}>

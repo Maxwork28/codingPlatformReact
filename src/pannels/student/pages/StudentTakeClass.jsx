@@ -124,7 +124,7 @@ const StudentTakeClass = () => {
             fetchedQuestions,
             selectedClass._id
           );
-          
+
           setQuestions(availableQuestions);
           if (availableQuestions.length > 0) {
             const firstQuestion = availableQuestions[0];
@@ -414,7 +414,7 @@ const StudentTakeClass = () => {
               <button
                 key={cls._id}
                 onClick={() => setSelectedClass(cls)}
-                className="h-full rounded-xl shadow-md border overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-1 hover:scale-[1.01] text-left"
+                className="h-full min-h-[9rem] rounded-xl shadow-md border overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-1 hover:scale-[1.01] text-left"
                 style={{ backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }}
               >
                 <div className="p-3 h-full flex flex-col">
@@ -1015,7 +1015,7 @@ const StudentTakeClass = () => {
                     return (
                     <div
                       key={q._id}
-                      className={`rounded-lg h-[5.5rem] transition-all duration-200 hover:z-50 ${
+                      className={`rounded-lg h-24 min-h-24 max-h-24 overflow-hidden flex-shrink-0 transition-all duration-200 hover:z-50 ${
                         selectedQuestion?._id === q._id ? 'shadow-lg z-50' : 'hover:shadow'
                       }`}
                       style={{ 
@@ -1029,20 +1029,20 @@ const StudentTakeClass = () => {
                           setSelectedQuestion(q);
                           setShowQuestionsList(false);
                         }}
-                        className="flex items-start gap-2 p-3 text-left w-full h-full"
+                        className="flex items-start gap-2 p-3 text-left w-full h-full overflow-hidden"
                       >
                         <span className={`flex-shrink-0 flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${colors.badge}`}>
                           {idx + 1}
                         </span>
-                        <div className="flex-1 min-w-0 h-full flex flex-col">
+                        <div className="flex-1 min-w-0 h-full flex flex-col justify-between overflow-hidden">
                           <p 
-                            className="text-sm font-medium line-clamp-2 leading-tight min-h-[2.5rem]" 
+                            className="text-sm font-medium line-clamp-2 leading-tight" 
                             style={{ color: selectedQuestion?._id === q._id && (attemptStatus === 'attempted' || attemptStatus === 'wrong') ? '#fff' : 'var(--text-primary)' }}
                             title={q.title?.replace(/<[^>]*>/g, '') || 'Untitled'}
                           >
                             {q.title?.replace(/<[^>]*>/g, '') || 'Untitled'}
                           </p>
-                          <p className="text-xs mt-1 font-medium" style={{ color: selectedQuestion?._id === q._id && (attemptStatus === 'attempted' || attemptStatus === 'wrong') ? 'rgba(255,255,255,0.9)' : colors.labelColor }}>
+                          <p className="text-xs mt-1 font-medium truncate" style={{ color: selectedQuestion?._id === q._id && (attemptStatus === 'attempted' || attemptStatus === 'wrong') ? 'rgba(255,255,255,0.9)' : colors.labelColor }}>
                             {colors.label}
                           </p>
                         </div>
@@ -1130,36 +1130,6 @@ const StudentTakeClass = () => {
                     {stripHtml(selectedQuestion.description) || "—"}
                   </div>
                 </div>
-
-                {['fillInTheBlanksCoding', 'coding', 'codingWithDriver'].includes(selectedQuestion.type) &&
-                  selectedQuestion.inputFormat && (
-                  <div className="mb-4 sm:mb-6">
-                    <h3 className="text-base sm:text-lg font-semibold mb-2" style={{ color: 'var(--text-heading)' }}>
-                      Input Format
-                    </h3>
-                    <div 
-                      className="text-xs sm:text-sm leading-relaxed whitespace-pre-wrap" 
-                      style={{ color: 'var(--text-primary)' }}
-                    >
-                      {stripHtml(selectedQuestion.inputFormat)}
-                    </div>
-                  </div>
-                )}
-
-                {['fillInTheBlanksCoding', 'coding', 'codingWithDriver'].includes(selectedQuestion.type) &&
-                  selectedQuestion.outputFormat && (
-                  <div className="mb-4 sm:mb-6">
-                    <h3 className="text-base sm:text-lg font-semibold mb-2" style={{ color: 'var(--text-heading)' }}>
-                      Output Format
-                    </h3>
-                    <div 
-                      className="text-xs sm:text-sm leading-relaxed whitespace-pre-wrap" 
-                      style={{ color: 'var(--text-primary)' }}
-                    >
-                      {stripHtml(selectedQuestion.outputFormat)}
-                    </div>
-                  </div>
-                )}
 
                 {selectedQuestion.constraints && (
                   <div className="mb-4 sm:mb-6">
@@ -1526,7 +1496,6 @@ const StudentTakeClass = () => {
                           backgroundColor: 'var(--card-white)', 
                           color: 'var(--text-primary)' 
                         }}
-                        placeholder=""
                       />
                     </div>
                     <div>
@@ -1544,7 +1513,6 @@ const StudentTakeClass = () => {
                           backgroundColor: 'var(--card-white)', 
                           color: 'var(--text-primary)' 
                         }}
-                        placeholder=""
                       />
                     </div>
                   </div>

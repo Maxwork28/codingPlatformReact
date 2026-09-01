@@ -206,13 +206,9 @@ const StudentClassView = () => {
         try {
           const response = await getQuestionsByClass(classId);
           const apiQuestions = (response.data.questions || []).map(annotateQuestion);
-          const seen = new Set(apiQuestions.map((q) => String(q._id)));
-          const extras = (Array.isArray(cls.questions) ? cls.questions : [])
-            .map(annotateQuestion)
-            .filter((q) => !seen.has(String(q._id)));
           setClassData((prev) =>
             prev && idEq(prev._id, classId)
-              ? { ...prev, questions: [...apiQuestions, ...extras] }
+              ? { ...prev, questions: apiQuestions }
               : prev
           );
         } catch (err) {

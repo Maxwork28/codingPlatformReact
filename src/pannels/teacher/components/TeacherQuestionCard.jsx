@@ -265,8 +265,18 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate, summary }) =
             <h3 className="text-lg font-semibold pr-8 mb-2 line-clamp-2" 
                 style={{ color: 'var(--text-heading)' }}
                 dangerouslySetInnerHTML={{ __html: question.title || 'No Title' }} />
-            <p className="text-xs mb-2 font-mono" style={{ color: 'var(--text-secondary)' }}>ID: {question._id}</p>
-            <p className="text-sm mb-3 line-clamp-3" style={{ color: 'var(--text-secondary)' }} dangerouslySetInnerHTML={{ __html: question.description || 'No Description' }} />
+            {isPublished ? (
+              <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
+                Published {classEntry?.publishedAt || question.publishedAt
+                  ? new Date(classEntry?.publishedAt || question.publishedAt).toLocaleDateString()
+                  : ''}
+              </p>
+            ) : (
+              <>
+                <p className="text-xs mb-2 font-mono" style={{ color: 'var(--text-secondary)' }}>ID: {question._id}</p>
+                <p className="text-sm mb-3 line-clamp-3" style={{ color: 'var(--text-secondary)' }} dangerouslySetInnerHTML={{ __html: question.description || 'No Description' }} />
+              </>
+            )}
             {summary && (
               <div className="flex gap-3 mb-3 text-xs">
                 <span title="Attempted">📝 {summary.attempted || 0}</span>
@@ -291,19 +301,23 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate, summary }) =
         )}
         
         <div className="flex flex-wrap gap-2">
-          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-            question.difficulty === 'easy' ? 'bg-green-100 text-green-700' :
-            question.difficulty === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-            'bg-red-100 text-red-700'
-          }`}>
-            {question.difficulty}
-          </span>
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
-            {question.type}
-          </span>
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">
-            {question.points != null ? `${question.points} points` : 'No points'}
-          </span>
+          {!isPublished && (
+            <>
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                question.difficulty === 'easy' ? 'bg-green-100 text-green-700' :
+                question.difficulty === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                'bg-red-100 text-red-700'
+              }`}>
+                {question.difficulty}
+              </span>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
+                {question.type}
+              </span>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">
+                {question.points != null ? `${question.points} points` : 'No points'}
+              </span>
+            </>
+          )}
           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
             isPublished ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
           }`}>

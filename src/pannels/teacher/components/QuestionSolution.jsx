@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { getQuestion } from '../../../common/services/api';
+import { getQuestion, viewSolution } from '../../../common/services/api';
 import parse from 'html-react-parser';
 
 const stripHtml = (html) => {
@@ -57,7 +57,14 @@ const QuestionSolution = () => {
       try {
         setIsLoading(true);
         const response = await getQuestion(questionId);
-        setQuestion(response.data.question);
+        let q = response.data.question;
+        try {
+          const solRes = await viewSolution(questionId);
+          q = { ...q, ...(solRes.data?.solution || {}) };
+        } catch {
+          /* getQuestion already includes solutions for teachers */
+        }
+        setQuestion(q);
       } catch (err) {
         setError(err.response?.data?.error || err?.error || 'Failed to load question solution');
       } finally {

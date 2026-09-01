@@ -33,6 +33,15 @@ function stripHtml(html) {
   return doc.body.textContent || '';
 }
 
+function getCodeTemplateForLanguage(question, lang) {
+  if (!question || !lang) return '';
+  const fromTemplate = question.templateCode?.find((tc) => tc.language === lang);
+  if (fromTemplate?.code) return fromTemplate.code;
+  const fromStarter = question.starterCode?.find((sc) => sc.language === lang);
+  if (fromStarter?.code) return fromStarter.code;
+  return question.codeSnippet || '';
+}
+
 function getSolutionCodeForLanguage(question, lang) {
   if (!question) return '';
   const fromList = question.solutionCodes?.find((sc) => sc.language === lang && sc.code);
@@ -398,6 +407,7 @@ const TakeClass = () => {
         }
       }
 
+      skipEditorResetRef.current = true;
       if (q.type === 'fillInTheBlanksCoding') {
         const blankSolution =
           stripHtml(source.correctAnswer || '') ||
@@ -416,8 +426,8 @@ const TakeClass = () => {
         setPresentMsg('No solution code saved for this question.');
         return;
       }
+      skipEditorResetRef.current = true;
       if (picked.language && picked.language !== selectedLanguage) {
-        skipEditorResetRef.current = true;
         setSelectedLanguage(picked.language);
       }
       setCode(picked.code);
@@ -535,24 +545,12 @@ const TakeClass = () => {
   };
 
   // Menu action handlers
-  const handleViewStatement = (questionId) => {
-    navigateWithClassContext(`/teacher/questions/${questionId}/statement`);
-  };
-
   const handleViewSolution = (questionId) => {
     navigateWithClassContext(`/teacher/questions/${questionId}/solution`);
   };
 
   const handleViewTestCases = (questionId) => {
     navigateWithClassContext(`/teacher/questions/${questionId}/test-cases`);
-  };
-
-  const handleEditQuestion = (questionId) => {
-    navigateWithClassContext(`/teacher/questions/${questionId}/edit`);
-  };
-
-  const handlePreviewAsStudent = (questionId) => {
-    navigateWithClassContext(`/teacher/questions/${questionId}/preview`);
   };
 
   const handleViewQuestionStatistics = (questionOverrideId) => {
@@ -1093,25 +1091,6 @@ const TakeClass = () => {
                                           <button
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              handleViewStatement(q._id);
-                                            }}
-                                            className={`${
-                                              active ? 'bg-indigo-50' : ''
-                                            } group flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors`}
-                                            style={{ color: 'var(--text-primary)' }}
-                                          >
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                            </svg>
-                                            View Statement
-                                          </button>
-                                        )}
-                                      </Menu.Item>
-                                      <Menu.Item>
-                                        {({ active }) => (
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
                                               setSelectedQuestion(q);
                                               handleViewQuestionStatistics(q._id);
                                             }}
@@ -1162,46 +1141,6 @@ const TakeClass = () => {
                                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                                             </svg>
                                             View Test Cases
-                                          </button>
-                                        )}
-                                      </Menu.Item>
-                                      <div className="my-1 h-px" style={{ backgroundColor: 'var(--card-border)' }}></div>
-                                      <Menu.Item>
-                                        {({ active }) => (
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleEditQuestion(q._id);
-                                            }}
-                                            className={`${
-                                              active ? 'bg-indigo-50' : ''
-                                            } group flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors`}
-                                            style={{ color: 'var(--text-primary)' }}
-                                          >
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                            </svg>
-                                            Edit Question
-                                          </button>
-                                        )}
-                                      </Menu.Item>
-                                      <Menu.Item>
-                                        {({ active }) => (
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handlePreviewAsStudent(q._id);
-                                            }}
-                                            className={`${
-                                              active ? 'bg-indigo-50' : ''
-                                            } group flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors`}
-                                            style={{ color: 'var(--text-primary)' }}
-                                          >
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                            </svg>
-                                            Preview as Student
                                           </button>
                                         )}
                                       </Menu.Item>
@@ -1287,12 +1226,30 @@ const TakeClass = () => {
                             >
                               {q.title?.replace(/<[^>]*>/g, '') || 'Untitled'}
                             </p>
-                            <p className="text-xs mt-0.5 font-mono" style={{ color: 'var(--text-secondary)' }}>
-                              ID: {q._id}
-                            </p>
-                            <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
-                              {q.difficulty} • {QUESTION_TYPE_LABELS[q.type] || q.type}
-                            </p>
+                            {(() => {
+                              const classEntry = q.classes?.find(
+                                (c) => c.classId?.toString() === selectedClass._id || c.classId?._id?.toString() === selectedClass._id
+                              );
+                              const isPublished = classEntry?.isPublished || false;
+                              const publishedAt = classEntry?.publishedAt || q.publishedAt;
+                              if (isPublished) {
+                                return (
+                                  <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                                    Published {publishedAt ? new Date(publishedAt).toLocaleDateString() : ''}
+                                  </p>
+                                );
+                              }
+                              return (
+                                <>
+                                  <p className="text-xs mt-0.5 font-mono" style={{ color: 'var(--text-secondary)' }}>
+                                    ID: {q._id}
+                                  </p>
+                                  <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                                    {q.difficulty} • {QUESTION_TYPE_LABELS[q.type] || q.type}
+                                  </p>
+                                </>
+                              );
+                            })()}
                           </div>
                         </button>
                       </div>
@@ -1410,19 +1367,6 @@ const TakeClass = () => {
                       className="text-xs sm:text-sm leading-relaxed" 
                       style={{ color: 'var(--text-primary)' }}
                       dangerouslySetInnerHTML={{ __html: selectedQuestion.outputFormat }}
-                    />
-                  </div>
-                )}
-
-                {selectedQuestion.explanation && (
-                  <div className="mb-4 sm:mb-6">
-                    <h3 className="text-base sm:text-lg font-semibold mb-2" style={{ color: 'var(--text-heading)' }}>
-                      Explanation
-                    </h3>
-                    <div
-                      className="text-xs sm:text-sm leading-relaxed"
-                      style={{ color: 'var(--text-primary)' }}
-                      dangerouslySetInnerHTML={{ __html: selectedQuestion.explanation }}
                     />
                   </div>
                 )}
@@ -1617,7 +1561,7 @@ const TakeClass = () => {
                 >
                 {isRunnableCoding ? (
                   <>
-                    {showFullCodeEditor && (
+                    {showFullCodeEditor && !isFullscreen && (
                       <>
                         {questionType === 'codingWithDriver' && (
                           <div
@@ -1667,7 +1611,7 @@ const TakeClass = () => {
                         </div>
                       </>
                     )}
-                    {isFillInBlanksCoding && (
+                    {isFillInBlanksCoding && !isFullscreen && (
                       <>
                         <div
                           className="flex flex-col min-h-0 overflow-hidden"
@@ -1726,7 +1670,7 @@ const TakeClass = () => {
                 ) : (
                   <div className="flex-1 overflow-y-auto space-y-4 pr-1">
                     <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                      This question is not executed in the sandbox here. Use <strong>Preview as Student</strong> in the ⋮ menu for the full interactive view.
+                      This question is not executed in the sandbox here. Select it to present the statement on the left.
                     </p>
                     {questionType === 'singleCorrectMcq' && (
                       <div className="space-y-2">
@@ -2039,7 +1983,7 @@ const TakeClass = () => {
       )}
 
       {presentMsg && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[80] max-w-md px-4 py-2 rounded-lg shadow-lg text-sm font-medium text-white bg-indigo-700">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] max-w-md px-4 py-2 rounded-lg shadow-lg text-sm font-medium text-white bg-indigo-700">
           {presentMsg}
         </div>
       )}

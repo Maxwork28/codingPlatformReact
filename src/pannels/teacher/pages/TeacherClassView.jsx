@@ -1567,12 +1567,22 @@ const TeacherClassView = () => {
                               {new Date(assignment.dueDate).toLocaleString()}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                              <button
-                                onClick={() => handleDeleteAssignment(assignment._id)}
-                                className="text-red-600 hover:text-red-900"
-                              >
-                                Delete
-                              </button>
+                              <div className="flex items-center justify-end gap-3">
+                                {assignment.questionId?._id || assignment.questionId ? (
+                                  <Link
+                                    to={`/teacher/take-class/${classId}/questions/${assignment.questionId?._id || assignment.questionId}/statistics`}
+                                    className="text-indigo-600 hover:text-indigo-900"
+                                  >
+                                    Question statistics
+                                  </Link>
+                                ) : null}
+                                <button
+                                  onClick={() => handleDeleteAssignment(assignment._id)}
+                                  className="text-red-600 hover:text-red-900"
+                                >
+                                  Delete
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
