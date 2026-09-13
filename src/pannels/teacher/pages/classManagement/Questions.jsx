@@ -429,14 +429,24 @@ const Questions = () => {
                         </span>
                       </div>
                     </div>
-                    <Link
-                      to={`/teacher/questions/${question._id}/edit`}
-                      state={selectedClassId ? { classId: selectedClassId } : undefined}
-                      className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md transition-colors"
-                      style={{ color: 'var(--primary-navy)', backgroundColor: 'var(--background-light)', border: '1px solid var(--card-border)' }}
-                    >
-                      View/Edit
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Link
+                        to={`/teacher/questions/${question._id}/preview`}
+                        state={selectedClassId ? { classId: selectedClassId } : undefined}
+                        className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md transition-colors"
+                        style={{ color: 'var(--primary-navy)', backgroundColor: 'var(--background-light)', border: '1px solid var(--card-border)' }}
+                      >
+                        Preview & Test
+                      </Link>
+                      <Link
+                        to={`/teacher/questions/${question._id}/edit`}
+                        state={selectedClassId ? { classId: selectedClassId } : undefined}
+                        className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md transition-colors"
+                        style={{ color: 'var(--primary-navy)', backgroundColor: 'var(--background-light)', border: '1px solid var(--card-border)' }}
+                      >
+                        Edit
+                      </Link>
+                    </div>
                   </div>
                 ))}
               </div>

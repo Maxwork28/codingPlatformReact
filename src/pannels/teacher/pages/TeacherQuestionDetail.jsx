@@ -1,91 +1,163 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
-import { getQuestion, getQuestionPerspectiveReport, teacherTestQuestion } from '../../../common/services/api';
+import { getQuestion, getDraftQuestion, getQuestionPerspectiveReport, teacherTestQuestion } from '../../../common/services/api';
 import CodeEditor from '../../student/components/CodeEditor';
-import parse from 'html-react-parser';
+import QuestionStatement from '../components/QuestionStatement';
 import TestSolutionResults from '../../../common/components/TestSolutionResults';
+import TestSolutionLimitControls from '../../../common/components/TestSolutionLimitControls';
+import {
+  withPreviewStarterCode,
+  questionTypeLabel,
+  resolveClassId,
+} from '../components/QuestionPreview';
+import {
+  buildSolutionCodesFromQuestion,
+  hasSavedSolution,
+  solutionCodeForLanguage,
+} from '../../../common/utils/solutionCodes';
+
+const RUNNABLE_TYPES = ['coding', 'fillInTheBlanksCoding', 'codingWithDriver'];
+
+const apiErrorMessage = (err, fallback) =>
+  (typeof err === 'string' && err) || err?.response?.data?.error || err?.message || fallback;
 
 const TeacherQuestionDetail = () => {
   const { classId, questionId } = useParams();
   const { state } = useLocation();
   const [question, setQuestion] = useState(null);
   const [report, setReport] = useState(null);
-  const [code, setCode] = useState('');
-  const [selectedLanguage, setSelectedLanguage] = useState('javascript');
   const [loading, setLoading] = useState(true);
-  const [testLoading, setTestLoading] = useState(false);
-  const [testResults, setTestResults] = useState(null);
   const [error, setError] = useState('');
+  const [activeTab, setActiveTab] = useState('preview');
+  const [solutionCodes, setSolutionCodes] = useState([]);
+  const [solutionLanguage, setSolutionLanguage] = useState('javascript');
+  const [isTestingSolution, setIsTestingSolution] = useState(false);
+  const [testResults, setTestResults] = useState(null);
+  const limitOptionsRef = useRef(null);
 
-  const stripHtml = (html) => {
-    if (!html || typeof html !== 'string') return '';
-    const div = document.createElement('div');
-    div.innerHTML = html;
-    return div.textContent || div.innerText || '';
-  };
+  const activeSolutionCode = solutionCodeForLanguage(solutionCodes, solutionLanguage);
+
+  useEffect(() => {
+    setActiveTab('preview');
+  }, [questionId]);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [qRes, rRes] = await Promise.all([
-          getQuestion(questionId),
-          classId ? getQuestionPerspectiveReport(classId, questionId).catch(() => ({ data: { report: null } })) : Promise.resolve({ data: { report: null } })
-        ]);
-        const q = qRes.data?.question || qRes.data;
+        setError('');
+        let q = null;
+        try {
+          const draftResponse = await getDraftQuestion(questionId);
+          q = draftResponse.data.question;
+        } catch {
+          const qRes = await getQuestion(questionId, classId || null);
+          q = qRes.data?.question || qRes.data;
+        }
+
+        const rRes = classId
+          ? await getQuestionPerspectiveReport(classId, questionId).catch(() => ({ data: { report: null } }))
+          : { data: { report: null } };
+
         setQuestion(q);
         setReport(rRes.data?.report || null);
-        const lang = state?.initialLanguage || q?.languages?.[0] || 'javascript';
-        setSelectedLanguage(lang);
+
+        const codes = buildSolutionCodesFromQuestion(q);
+        setSolutionCodes(codes);
+        const defaultLang =
+          state?.initialLanguage ||
+          q?.solutionLanguage ||
+          codes.find((s) => s.code?.trim())?.language ||
+          q?.languages?.[0] ||
+          'javascript';
+        setSolutionLanguage(defaultLang);
         if (state?.initialCode) {
-          setCode(state.initialCode);
-        } else {
-          const sc = q?.starterCode?.find(s => s.language === lang) || q?.starterCode?.[0];
-          setCode(sc?.code || '// Write your solution here');
+          setSolutionCodes((prev) =>
+            prev.map((s) => (s.language === defaultLang ? { ...s, code: state.initialCode } : s))
+          );
         }
       } catch (err) {
-        setError(err.response?.data?.error || err.message || 'Failed to load');
+        setError(apiErrorMessage(err, 'Failed to load'));
       } finally {
         setLoading(false);
       }
     };
     if (questionId) fetchData();
-  }, [questionId, classId]);
+  }, [questionId, classId, state?.initialCode, state?.initialLanguage]);
+
+  const previewQuestion = useMemo(() => withPreviewStarterCode(question), [question]);
 
   useEffect(() => {
-    if (state?.initialCode) {
-      setCode(state.initialCode);
-      if (state?.initialLanguage) setSelectedLanguage(state.initialLanguage);
-    } else if (question?.starterCode?.length && selectedLanguage) {
-      const sc = question.starterCode.find(s => s.language === selectedLanguage);
-      if (sc?.code) setCode(sc.code);
+    if (previewQuestion && !RUNNABLE_TYPES.includes(previewQuestion.type)) {
+      setActiveTab('preview');
     }
-  }, [question, selectedLanguage, state?.initialCode, state?.initialLanguage]);
+  }, [previewQuestion]);
 
-  const handleRunCode = async () => {
-    if (!question || !code.trim()) return;
-    try {
-      setTestLoading(true);
-      setTestResults(null);
-      const res = await teacherTestQuestion(questionId, code, classId || null, selectedLanguage);
-      setTestResults({
-        message: res.data.message,
-        testResults: res.data.testResults,
-        passedTestCases: res.data.passedTestCases,
-        totalTestCases: res.data.totalTestCases,
-        isCorrect: res.data.isCorrect,
-        explanation: res.data.explanation
-      });
-    } catch (err) {
-      setTestResults({ error: true, message: err.response?.data?.error || err.message || 'Test failed' });
-    } finally {
-      setTestLoading(false);
-    }
+  const handleSolutionCodeChange = (code) => {
+    setSolutionCodes((prev) =>
+      prev.map((s) =>
+        s.language?.toLowerCase() === solutionLanguage?.toLowerCase() ? { ...s, code } : s
+      )
+    );
   };
 
-  const handleResetCode = () => {
-    const sc = question?.starterCode?.find(s => s.language === selectedLanguage);
-    setCode(sc?.code || '// Write your solution here');
+  const handleTestSolution = async () => {
+    const q = previewQuestion;
+    if (!activeSolutionCode.trim()) {
+      alert('Please write a solution first');
+      return;
+    }
+    if (!q.testCases || q.testCases.length === 0) {
+      alert('Please add at least one test case');
+      return;
+    }
+    if (q.testCases.some((tc) => !tc.input?.trim() || !tc.expectedOutput?.trim())) {
+      alert('All test cases must have input and expected output');
+      return;
+    }
+    if (!RUNNABLE_TYPES.includes(q.type)) {
+      alert('Solution testing is only available for coding questions');
+      return;
+    }
+
+    setIsTestingSolution(true);
+    setTestResults(null);
+    try {
+      const classIdForTest = classId || resolveClassId(q) || null;
+      const res = await teacherTestQuestion(
+        q._id,
+        activeSolutionCode,
+        classIdForTest,
+        solutionLanguage,
+        limitOptionsRef.current || {}
+      );
+      const {
+        testResults: results,
+        passedTestCases,
+        totalTestCases,
+        isCorrect,
+        publicTestCases,
+        hiddenTestCases,
+      } = res.data;
+      setTestResults({
+        message: isCorrect
+          ? `All ${totalTestCases} test cases passed! (${publicTestCases} public, ${hiddenTestCases} hidden)`
+          : `${passedTestCases}/${totalTestCases} test cases passed (${publicTestCases} public, ${hiddenTestCases} hidden)`,
+        results,
+        totalTestCases,
+        passedTestCases,
+        isCorrect,
+        publicTestCases,
+        hiddenTestCases,
+      });
+    } catch (err) {
+      setTestResults({
+        error: true,
+        message: `Error: ${apiErrorMessage(err, 'Failed to test solution')}`,
+      });
+    } finally {
+      setIsTestingSolution(false);
+    }
   };
 
   if (loading) {
@@ -96,24 +168,46 @@ const TeacherQuestionDetail = () => {
     );
   }
 
-  if (error || !question) {
+  if (error || !previewQuestion) {
     return (
       <div className="max-w-2xl mx-auto p-6">
         <div className="p-4 bg-red-50 rounded-lg border border-red-200">
           <p className="text-red-700">{error || 'Question not found'}</p>
-          <Link to={classId ? `/teacher/classes/${classId}` : '/teacher/questions'} className="text-indigo-600 hover:underline mt-2 inline-block">← Back</Link>
+          <Link to={classId ? `/teacher/classes/${classId}` : '/teacher/questions'} className="text-indigo-600 hover:underline mt-2 inline-block">
+            ← Back
+          </Link>
         </div>
       </div>
     );
   }
 
-  const isCoding = ['coding', 'fillInTheBlanksCoding', 'codingWithDriver'].includes(question.type);
+  const isRunnable = RUNNABLE_TYPES.includes(previewQuestion.type);
+  const linkState = classId ? { classId, returnTo: `/teacher/classes/${classId}/questions/${questionId}` } : undefined;
 
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-6">
-      <Link to={classId ? `/teacher/classes/${classId}` : '/teacher/questions'} className="text-indigo-600 hover:underline">← Back to {classId ? 'Class' : 'Questions'}</Link>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link to={classId ? `/teacher/classes/${classId}` : '/teacher/questions'} className="text-indigo-600 hover:underline">
+          ← Back to {classId ? 'Class' : 'Questions'}
+        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to={`/teacher/questions/${questionId}/edit`}
+            state={linkState}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-800 hover:bg-gray-200"
+          >
+            Edit
+          </Link>
+          <Link
+            to={`/teacher/questions/${questionId}/preview`}
+            state={linkState}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700"
+          >
+            Full Preview
+          </Link>
+        </div>
+      </div>
 
-      {/* Question Summary */}
       {report && (
         <div className="bg-white rounded-xl shadow border border-gray-200 p-6">
           <h2 className="text-lg font-semibold text-gray-800 mb-4">Question Summary</h2>
@@ -142,97 +236,128 @@ const TeacherQuestionDetail = () => {
         </div>
       )}
 
-      {/* Question Info */}
-      <div className="bg-white rounded-xl shadow border border-gray-200 overflow-hidden">
-        <div className="p-6 border-b">
-          <h1 className="text-xl font-bold text-gray-900">{stripHtml(question.title)}</h1>
-          <div className="flex gap-2 mt-2">
-            <span className="px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-700">{question.type}</span>
-            <span className="px-2 py-0.5 rounded text-xs bg-indigo-100 text-indigo-700">{question.difficulty}</span>
-            {question.points != null && question.points !== '' && (
-              <span className="px-2 py-0.5 rounded text-xs bg-green-100 text-green-700">{question.points} pts</span>
-            )}
-          </div>
-          {question.description && (
-            <div className="mt-4 prose prose-sm max-w-none text-gray-700">{parse(question.description)}</div>
-          )}
-          {isCoding && question.inputFormat && (
-            <div className="mt-4">
-              <h2 className="text-sm font-semibold text-gray-600 mb-2">Input format</h2>
-              <div className="prose prose-sm max-w-none text-gray-700">{parse(question.inputFormat)}</div>
-            </div>
-          )}
-          {isCoding && question.outputFormat && (
-            <div className="mt-4">
-              <h2 className="text-sm font-semibold text-gray-600 mb-2">Output format</h2>
-              <div className="prose prose-sm max-w-none text-gray-700">{parse(question.outputFormat)}</div>
-            </div>
-          )}
-          {question.explanation && (
-            <div className="mt-4">
-              <h2 className="text-sm font-semibold text-gray-600 mb-2">Explanation</h2>
-              <div className="prose prose-sm max-w-none text-gray-700">{parse(question.explanation)}</div>
-            </div>
-          )}
-          {isCoding &&
-            question.sampleIo?.some((p) => (p.input || '').trim() || (p.output || '').trim()) && (
-              <div className="mt-4">
-                <h2 className="text-sm font-semibold text-gray-600 mb-2">Sample input / output</h2>
-                <div className="space-y-3">
-                  {question.sampleIo
-                    .filter((p) => (p.input || '').trim() || (p.output || '').trim())
-                    .map((pair, i) => (
-                      <div key={i} className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm space-y-2">
-                        <div>
-                          <span className="font-semibold text-gray-600">Input</span>
-                          <pre className="mt-1 font-mono text-gray-800 whitespace-pre-wrap break-all text-xs">{pair.input || '—'}</pre>
-                        </div>
-                        <div>
-                          <span className="font-semibold text-gray-600">Output</span>
-                          <pre className="mt-1 font-mono text-gray-800 whitespace-pre-wrap break-all text-xs">{pair.output || '—'}</pre>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
+      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
+        <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+          <p className="text-sm text-blue-800">
+            <strong>Preview Mode:</strong> This is how students will see this question. Use Test Solution to run the official or your own answer against all cases.
+          </p>
         </div>
 
-        {/* Teacher Attempt - Code Editor */}
-        {isCoding && (
-          <div className="p-6 border-t">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">Attempt Question</h3>
-            {question.languages?.length > 1 && (
-              <div className="flex gap-2 mb-3">
-                {question.languages.map((lang) => (
-                  <button
-                    key={lang}
-                    onClick={() => {
-                      setSelectedLanguage(lang);
-                      const sc = question.starterCode?.find(s => s.language === lang);
-                      setCode(sc?.code || '');
-                    }}
-                    className={`px-3 py-1 rounded text-sm font-medium ${selectedLanguage === lang ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-                  >
-                    {lang}
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="border rounded-lg overflow-hidden">
-              <CodeEditor value={code} onChange={setCode} language={selectedLanguage} height="400px" />
-            </div>
-            <div className="flex gap-2 mt-3">
-              <button onClick={handleRunCode} disabled={testLoading} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium">
-                {testLoading ? 'Running...' : 'Run Tests'}
+        <div className="mb-6 flex flex-wrap gap-2 items-center text-sm">
+          <span className="px-3 py-1.5 rounded-full font-semibold bg-slate-800 text-white">{questionTypeLabel(previewQuestion.type)}</span>
+          {previewQuestion?.isDraft || previewQuestion?.status === 'draft' ? (
+            <span className="px-3 py-1.5 rounded-full font-medium bg-amber-100 text-amber-900">Draft</span>
+          ) : null}
+          {previewQuestion?.languages?.length > 0 && (
+            <span className="px-3 py-1.5 rounded-full font-medium bg-indigo-100 text-indigo-900">
+              Languages: {previewQuestion.languages.join(', ')}
+            </span>
+          )}
+          {previewQuestion?.testCases?.length > 0 && (
+            <span className="px-3 py-1.5 rounded-full font-medium bg-gray-100 text-gray-800">
+              {previewQuestion.testCases.length} test case{previewQuestion.testCases.length === 1 ? '' : 's'}
+            </span>
+          )}
+        </div>
+
+        {isRunnable && (
+          <div className="mb-6 border-b border-gray-200">
+            <nav className="flex space-x-8" aria-label="Tabs">
+              <button
+                type="button"
+                onClick={() => setActiveTab('preview')}
+                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === 'preview'
+                    ? 'border-indigo-500 text-indigo-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Preview
               </button>
-              <button onClick={handleResetCode} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium">Reset Code</button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('test')}
+                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === 'test'
+                    ? 'border-indigo-500 text-indigo-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Test Solution
+              </button>
+            </nav>
+          </div>
+        )}
+
+        {activeTab === 'preview' && <QuestionStatement isPreview={true} question={previewQuestion} />}
+
+        {activeTab === 'test' && isRunnable && (
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">Test Solution</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Solution Language</label>
+                <select
+                  value={solutionLanguage}
+                  onChange={(e) => setSolutionLanguage(e.target.value)}
+                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
+                >
+                  {(previewQuestion.languages?.length > 0
+                    ? previewQuestion.languages
+                    : solutionCodes.map((s) => s.language)
+                  ).map((lang) => (
+                    <option key={lang} value={lang}>
+                      {lang.charAt(0).toUpperCase() + lang.slice(1)}
+                      {hasSavedSolution(solutionCodes, lang) ? '' : ' (no solution saved)'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Solution Code</label>
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <CodeEditor
+                    key={`solution-${solutionLanguage}-${previewQuestion._id}`}
+                    value={activeSolutionCode}
+                    onChange={handleSolutionCodeChange}
+                    language={solutionLanguage}
+                    disabled={false}
+                    isFillInTheBlanks={false}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-gray-500">
+                  Saved solutions load per language. You can edit and run them against all test cases, including hidden ones.
+                </p>
+              </div>
+              <TestSolutionLimitControls
+                question={previewQuestion}
+                testResults={testResults}
+                optionsRef={limitOptionsRef}
+                getBenchmarkPayload={() => ({
+                  questionId: previewQuestion._id,
+                  answer: activeSolutionCode,
+                  classId: classId || resolveClassId(previewQuestion) || null,
+                  language: solutionLanguage,
+                })}
+                onSaved={(timeLimit, memoryLimit) => {
+                  setQuestion((prev) => (prev ? { ...prev, timeLimit, memoryLimit } : prev));
+                }}
+              />
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleTestSolution}
+                  disabled={isTestingSolution || !activeSolutionCode.trim() || !previewQuestion.testCases?.length}
+                  className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  {isTestingSolution ? 'Testing...' : 'Test Solution'}
+                </button>
+              </div>
+              {testResults && <TestSolutionResults testResults={testResults} />}
             </div>
           </div>
         )}
       </div>
-
-      {testResults && <TestSolutionResults testResults={testResults} />}
     </div>
   );
 };

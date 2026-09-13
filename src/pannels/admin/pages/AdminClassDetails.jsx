@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Tab, Combobox } from '@headlessui/react';
 import { CheckIcon, ChevronUpDownIcon } from '@heroicons/react/20/solid';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
@@ -1314,6 +1314,9 @@ const AdminClassDetails = () => {
                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Points
                       </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -1357,6 +1360,15 @@ const AdminClassDetails = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.type}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{question.points}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <Link
+                            to={`/admin/questions/${question._id}/preview`}
+                            state={{ classId, returnTo: `/admin/classes/${classId}` }}
+                            className="text-indigo-600 hover:underline font-medium"
+                          >
+                            Preview & Test
+                          </Link>
+                        </td>
                       </tr>
                     ))}
                    </tbody>

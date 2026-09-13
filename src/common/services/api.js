@@ -900,6 +900,11 @@ export const editQuestion = async (questionId, questionData) => {
   }
 };
 
+export const updateQuestionLimits = async (questionId, timeLimit, memoryLimit) => {
+  const response = await api.put(`/questions/${questionId}/limits`, { timeLimit, memoryLimit });
+  return response;
+};
+
 /**
  * Deletes a question
  * @param {string} questionId - Question ID
@@ -1286,6 +1291,11 @@ export const teacherTestQuestion = async (questionId, answer, classId, language,
       classId,
       language,
       publicOnly: Boolean(options.publicOnly),
+      ...(options.runs != null ? { runs: Number(options.runs) } : {}),
+      ...(options.timeLimit != null ? { timeLimit: Number(options.timeLimit) } : {}),
+      ...(options.memoryLimit != null ? { memoryLimit: Number(options.memoryLimit) } : {}),
+    }, {
+      timeout: Number(options.runs) > 1 ? 300000 : 60000,
     });
     
     console.log('[API] ====== SUCCESS ======');

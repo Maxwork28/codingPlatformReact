@@ -80,17 +80,17 @@ const ClassManagement = () => {
   const handleCreateClass = async (e) => {
     e.preventDefault();
     try {
-      await createClass({ name, description }, file);
+      const response = await createClass({ name, description }, file);
       dispatch(fetchClasses(''));
       setName('');
       setDescription('');
       setFile(null);
-      setMessage('Class created successfully');
+      setMessage(response.data?.message || 'Class created successfully');
       setError('');
       setShowCreateForm(false);
       setCurrentPage(1); // Reset to first page after creating
     } catch (err) {
-      setError(err.message || 'Failed to create class');
+      setError(typeof err === 'string' ? err : err.message || 'Failed to create class');
       setMessage('');
     }
   };
@@ -175,6 +175,9 @@ const ClassManagement = () => {
                 onChange={(e) => setFile(e.target.files[0])}
                 className="w-full text-sm text-gray-600 dark:text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-gray-200 file:text-gray-800 hover:file:bg-gray-300 dark:file:bg-white dark:file:text-gray-900 dark:hover:file:bg-gray-100"
               />
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Email column is enough. Missing students are created automatically.
+              </p>
             </div>
             <div>
               <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-white">Description</label>

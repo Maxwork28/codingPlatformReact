@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { API_BASE_URL } from '../../../common/constants';
 import { useSelector } from 'react-redux';
-import { Tab, Menu, Transition, Dialog, Disclosure, Combobox } from '@headlessui/react';
+import { Tab, Menu, Transition, Dialog, Combobox } from '@headlessui/react';
 import { CheckIcon, ChevronUpDownIcon } from '@heroicons/react/20/solid';
 import { format } from 'date-fns';
 import {
@@ -22,7 +22,6 @@ import {
   blockAllUsers,
   focusStudent,
   viewSubmissionCode,
-  getQuestionPerspectiveReport,
   adminSearchQuestionsById,
   getClassStudents,
   getQuestionSummary,
@@ -47,11 +46,9 @@ const TeacherClassView = () => {
   const [filteredQuestions, setFilteredQuestions] = useState([]);
   const [submissionCode, setSubmissionCode] = useState('');
   const [submissionViewData, setSubmissionViewData] = useState(null); // { code, language, questionId, classId, isCorrect, status }
-  const [questionReport, setQuestionReport] = useState(null);
   const [questionSummary, setQuestionSummary] = useState([]);
   const [analyticsStudentFilter, setAnalyticsStudentFilter] = useState('all'); // all | active | inactive
   const [loading, setLoading] = useState(true);
-  const [reportLoading, setReportLoading] = useState(false);
   const [error, setError] = useState('');
 
   // Assignment form
@@ -73,7 +70,6 @@ const TeacherClassView = () => {
   const [allAvailableQuestions, setAllAvailableQuestions] = useState([]);
 
   // Other forms
-  const [questionIdInput, setQuestionIdInput] = useState('');
   const [leaderboardFilters, setLeaderboardFilters] = useState({
     studentName: '',
     activityStatus: '',
@@ -421,24 +417,6 @@ const TeacherClassView = () => {
   // Question search effect - removed, using handleQuestionSearch instead
 
   // Handlers
-  const handleFetchQuestionReport = async (e) => {
-    e.preventDefault();
-    if (!questionIdInput.trim()) {
-      setError('Question ID is required');
-      return;
-    }
-    setError('');
-    setReportLoading(true);
-    try {
-      const response = await getQuestionPerspectiveReport(classId, questionIdInput);
-      setQuestionReport(response.data.report);
-    } catch (err) {
-      setError(err.error || 'Failed to fetch question report');
-    } finally {
-      setReportLoading(false);
-    }
-  };
-
   const handleCreateAssignment = async (e) => {
     e.preventDefault();
     setAssignmentLoading(true);
@@ -1043,9 +1021,9 @@ const TeacherClassView = () => {
       )}
 
       {/* Tabs */}
-      <Tab.Group selectedIndex={selectedTabIndex} onChange={handleTabChange}>
+      <Tab.Group selectedIndex={Math.min(selectedTabIndex, 2)} onChange={handleTabChange}>
         <Tab.List className="flex gap-2 rounded-xl p-1.5 mb-8 border" style={{ backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }}>
-          {['Leaderboard', 'Assignments', 'Questions', 'Management'].map((tabName) => (
+          {['Leaderboard', 'Assignments', 'Questions'].map((tabName) => (
             <Tab key={tabName} className="flex-1">
               {({ selected }) => (
                 <div
@@ -1763,70 +1741,6 @@ const TeacherClassView = () => {
                 </div>
               )}
             </div>
-          </Tab.Panel>
-
-          {/* Management Tab */}
-          <Tab.Panel className="overflow-visible">
-            {/* Question Perspective Report */}
-            <Disclosure>
-              {({ open }) => (
-                <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 mb-8 transition-all duration-300 hover:shadow-2xl" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-                  <Disclosure.Button className="flex justify-between w-full">
-                    <h3 className="text-lg font-semibold" style={{ color: 'var(--text-heading)' }}>
-                      Question Perspective Report
-                    </h3>
-                    <svg
-                      className={`${open ? 'rotate-180 transform' : ''} h-5 w-5 text-gray-500`}
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 9l-7 7-7-7"
-                      />
-                    </svg>
-                  </Disclosure.Button>
-
-                  <Disclosure.Panel className="mt-4">
-                    <form onSubmit={handleFetchQuestionReport} className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Question ID
-                        </label>
-                        <input
-                          type="text"
-                          value={questionIdInput}
-                          onChange={(e) => setQuestionIdInput(e.target.value)}
-                          className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                          required
-                        />
-                      </div>
-                      <div className="flex justify-end">
-                        <button
-                          type="submit"
-                          disabled={reportLoading}
-                          className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
-                        >
-                          {reportLoading ? 'Loading...' : 'Fetch Report'}
-                        </button>
-                      </div>
-                    </form>
-
-                    {questionReport && (
-                      <div className="mt-6 p-4 bg-gray-50/80 backdrop-blur-sm rounded-lg">
-                        <pre className="text-sm whitespace-pre-wrap" style={{ color: 'var(--text-primary)' }}>
-                          {JSON.stringify(questionReport, null, 2)}
-                        </pre>
-                      </div>
-                    )}
-                  </Disclosure.Panel>
-                </div>
-              )}
-            </Disclosure>
-
           </Tab.Panel>
         </Tab.Panels>
       </Tab.Group>

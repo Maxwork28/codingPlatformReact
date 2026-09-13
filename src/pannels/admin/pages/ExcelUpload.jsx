@@ -163,7 +163,7 @@ const UploadExcel = () => {
                 )}
                 {uploadSummary?.invalid?.length > 0 && (
                   <p>
-                    Invalid rows (missing name, email, or number): {uploadSummary.invalid.length}
+                    Invalid rows (missing email): {uploadSummary.invalid.length}
                   </p>
                 )}
               </div>
@@ -197,10 +197,10 @@ const UploadExcel = () => {
           <ul className="list-disc pl-5 space-y-1 text-sm mt-2 text-gray-600 dark:text-gray-300">
             <li>First row should contain column headers</li>
             <li>
-              Required columns: <strong>name</strong>, <strong>email</strong>, <strong>number</strong>
+              Required column: <strong>email</strong>. Optional: <strong>name</strong>, <strong>number</strong>
             </li>
             <li>File size should not exceed 5MB</li>
-            <li>Rows with an email that already exists are skipped (no error); new users receive credentials by email</li>
+            <li>Rows with an email that already exists are skipped. New users get a default password when email is not configured.</li>
           </ul>
         </div>
       </div>

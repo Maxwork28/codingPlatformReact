@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Slate, Editable, withReact, useSlate } from 'slate-react';
 import { createEditor, Transforms, Editor, Text, Range } from 'slate';
 import { withHistory } from 'slate-history';
@@ -10,6 +10,7 @@ import { teacherTestQuestion } from '../../../common/services/api';
 import BulkIoPairsEditor, { QuestionFormStepper } from '../../../common/components/BulkIoPairsEditor';
 import PasteFullQuestion from '../../../common/components/PasteFullQuestion';
 import TestSolutionResults from '../../../common/components/TestSolutionResults';
+import TestSolutionLimitControls from '../../../common/components/TestSolutionLimitControls';
 import { parseOptionalPoints, pointsFieldValue } from '../../../common/utils/optionalPoints';
 import { plainTextToSlate, STARTER_STUBS } from '../../../common/utils/parsePastedQuestion';
 import {
@@ -524,6 +525,7 @@ const AdminQuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId
   const activeSolutionCode = solutionCodes.find((s) => s.language === solutionLanguage)?.code ?? '';
   const [testResults, setTestResults] = useState(null);
   const [isTestingSolution, setIsTestingSolution] = useState(false);
+  const limitOptionsRef = useRef(null);
   const navigate = useNavigate();
   const [formStep, setFormStep] = useState(1);
   const [editorPasteKey, setEditorPasteKey] = useState(0);
@@ -866,7 +868,8 @@ const AdminQuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId
         initialData._id,
         activeSolutionCode,
         null, // classId is optional for drafts
-        solutionLanguage
+        solutionLanguage,
+        limitOptionsRef.current || {}
       );
 
       console.log('[AdminQuestionForm] API call successful. Processing response...');
@@ -1452,8 +1455,9 @@ const AdminQuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId
                   onChange={(e) => setTimeLimit(e.target.value)}
                   className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
                   required
-                  min="1"
+                  min="0.1"
                   max="5"
+                  step="0.1"
                 />
               </div>
               <div>
@@ -1464,8 +1468,9 @@ const AdminQuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId
                   onChange={(e) => setMemoryLimit(e.target.value)}
                   className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
                   required
-                  min="128"
+                  min="16"
                   max="1024"
+                  step="1"
                 />
               </div>
             </div>
@@ -1549,6 +1554,21 @@ const AdminQuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId
                   Write the solution code here. Save the draft first, then you can test it against all test cases (including hidden ones).
                 </p>
               </div>
+              <TestSolutionLimitControls
+                question={{ _id: initialData?._id, type, timeLimit, memoryLimit }}
+                testResults={testResults}
+                optionsRef={limitOptionsRef}
+                getBenchmarkPayload={() => ({
+                  questionId: initialData?._id,
+                  answer: activeSolutionCode,
+                  classId: null,
+                  language: solutionLanguage,
+                })}
+                onSaved={(nextTime, nextMemory) => {
+                  setTimeLimit(nextTime);
+                  setMemoryLimit(nextMemory);
+                }}
+              />
               <div className="flex items-center gap-3">
                 <button
                   type="button"

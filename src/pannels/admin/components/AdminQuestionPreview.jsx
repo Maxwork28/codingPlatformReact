@@ -1,29 +1,17 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { adminSearchQuestionsById, getDraftQuestion, teacherTestQuestion } from '../../../common/services/api';
 import QuestionStatement from '../../teacher/components/QuestionStatement';
 import CodeEditor from '../../student/components/CodeEditor';
 import TestSolutionResults from '../../../common/components/TestSolutionResults';
+import TestSolutionLimitControls from '../../../common/components/TestSolutionLimitControls';
+import {
+  buildSolutionCodesFromQuestion,
+  hasSavedSolution,
+  solutionCodeForLanguage,
+} from '../../../common/utils/solutionCodes';
 
 const DEFAULT_BACK = '/admin/questions';
-
-const buildSolutionCodesFromQuestion = (q) => {
-  const langs = Array.isArray(q?.languages) && q.languages.length > 0 ? q.languages : [];
-  if (Array.isArray(q?.solutionCodes) && q.solutionCodes.length > 0) {
-    const fromApi = q.solutionCodes.map((s) => ({ language: s.language, code: s.code || '' }));
-    const langList = langs.length > 0 ? langs : fromApi.map((s) => s.language);
-    return langList.map((lang) => {
-      const existing = fromApi.find((s) => s.language === lang);
-      return existing || { language: lang, code: '' };
-    });
-  }
-  const primaryLang = q?.solutionLanguage || langs[0] || 'javascript';
-  const primaryCode = q?.solutionCode || '';
-  if (langs.length > 0) {
-    return langs.map((lang) => ({ language: lang, code: lang === primaryLang ? primaryCode : '' }));
-  }
-  return primaryCode ? [{ language: primaryLang, code: primaryCode }] : [{ language: 'javascript', code: '' }];
-};
 
 const AdminQuestionPreview = () => {
   const { questionId } = useParams();
@@ -43,10 +31,11 @@ const AdminQuestionPreview = () => {
   const [classId, setClassId] = useState(location.state?.classId || '');
   const [solutionCodes, setSolutionCodes] = useState([]);
   const [solutionLanguage, setSolutionLanguage] = useState('javascript');
-  const activeSolutionCode = solutionCodes.find((s) => s.language === solutionLanguage)?.code ?? '';
+  const activeSolutionCode = solutionCodeForLanguage(solutionCodes, solutionLanguage);
   const [isTestingSolution, setIsTestingSolution] = useState(false);
   const [testResults, setTestResults] = useState(null);
   const [activeTab, setActiveTab] = useState('preview');
+  const limitOptionsRef = useRef(null);
 
   useEffect(() => {
     setActiveTab('preview');
@@ -294,7 +283,9 @@ const AdminQuestionPreview = () => {
 
   const handleSolutionCodeChange = (code) => {
     setSolutionCodes((prev) =>
-      prev.map((s) => (s.language === solutionLanguage ? { ...s, code } : s))
+      prev.map((s) =>
+        s.language?.toLowerCase() === solutionLanguage?.toLowerCase() ? { ...s, code } : s
+      )
     );
   };
 
@@ -341,7 +332,8 @@ const AdminQuestionPreview = () => {
         q._id,
         activeSolutionCode,
         classIdForTest,
-        solutionLanguage
+        solutionLanguage,
+        limitOptionsRef.current || {}
       );
 
       const { testResults: results, passedTestCases, totalTestCases, isCorrect, publicTestCases, hiddenTestCases } = response.data;
@@ -471,7 +463,7 @@ const AdminQuestionPreview = () => {
                   ).map((lang) => (
                     <option key={lang} value={lang}>
                       {lang.charAt(0).toUpperCase() + lang.slice(1)}
-                      {solutionCodes.find((s) => s.language === lang && s.code?.trim()) ? '' : ' (no solution saved)'}
+                      {hasSavedSolution(solutionCodes, lang) ? '' : ' (no solution saved)'}
                     </option>
                   ))}
                 </select>
@@ -492,6 +484,20 @@ const AdminQuestionPreview = () => {
                   Switch language to view or edit each saved solution. You can test the code shown for the selected language.
                 </p>
               </div>
+              <TestSolutionLimitControls
+                question={previewQuestion}
+                testResults={testResults}
+                optionsRef={limitOptionsRef}
+                getBenchmarkPayload={() => ({
+                  questionId: previewQuestion._id,
+                  answer: activeSolutionCode,
+                  classId: classId || resolveClassId(previewQuestion) || null,
+                  language: solutionLanguage,
+                })}
+                onSaved={(timeLimit, memoryLimit) => {
+                  setQuestion((prev) => (prev ? { ...prev, timeLimit, memoryLimit } : prev));
+                }}
+              />
               <div className="flex items-center gap-3">
                 <button
                   type="button"

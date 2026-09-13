@@ -294,6 +294,13 @@ const QuestionBank = () => {
                   </div>
                   <div className="flex space-x-2">
                     <Link
+                      to={`/admin/questions/${question._id}/preview`}
+                      className="inline-flex items-center px-3 py-1 border text-sm font-medium rounded-md bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                      style={{ borderColor: 'var(--card-border)', color: 'white' }}
+                    >
+                      Preview & Test
+                    </Link>
+                    <Link
                       to={`/admin/questions/${question._id}/edit`}
                       className="inline-flex items-center px-3 py-1 border text-sm font-medium rounded-md bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
                       style={{ borderColor: 'var(--card-border)', color: 'white' }}

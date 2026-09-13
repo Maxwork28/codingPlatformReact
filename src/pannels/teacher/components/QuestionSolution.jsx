@@ -56,17 +56,35 @@ const QuestionSolution = () => {
     const fetchQuestion = async () => {
       try {
         setIsLoading(true);
-        const response = await getQuestion(questionId);
-        let q = response.data.question;
+        let q = null;
+        try {
+          const response = await getQuestion(questionId);
+          q = response.data?.question || response.data;
+        } catch (err) {
+          if (typeof err === 'string') {
+            /* continue to viewSolution */
+          } else {
+            throw err;
+          }
+        }
         try {
           const solRes = await viewSolution(questionId);
-          q = { ...q, ...(solRes.data?.solution || {}) };
+          q = { ...(q || {}), ...(solRes.data?.solution || {}) };
         } catch {
           /* getQuestion already includes solutions for teachers */
         }
+        if (!q) {
+          throw new Error('Question not found');
+        }
         setQuestion(q);
       } catch (err) {
-        setError(err.response?.data?.error || err?.error || 'Failed to load question solution');
+        setError(
+          (typeof err === 'string' && err) ||
+            err.response?.data?.error ||
+            err?.error ||
+            err?.message ||
+            'Failed to load question solution'
+        );
       } finally {
         setIsLoading(false);
       }

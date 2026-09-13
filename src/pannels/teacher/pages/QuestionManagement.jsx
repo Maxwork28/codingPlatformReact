@@ -387,10 +387,10 @@ const QuestionManagement = () => {
                                       Edit
                                     </Link>
                                     <Link
-                                      to={`/teacher/questions/${q._id}/statement`}
+                                      to={`/teacher/questions/${q._id}/preview`}
                                       className="text-gray-600 hover:text-gray-900"
                                     >
-                                      View
+                                      Preview & Test
                                     </Link>
                                   </td>
                                 </tr>

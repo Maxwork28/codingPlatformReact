@@ -1,14 +1,16 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Slate, Editable, withReact, useSlate } from 'slate-react';
 import { createEditor, Transforms, Editor, Text, Range } from 'slate';
 import { withHistory } from 'slate-history';
 import isHotkey from 'is-hotkey';
+import { useNavigate } from 'react-router-dom';
 import { ChevronDownIcon, ChevronUpIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
 import CodeEditor from '../../student/components/CodeEditor';
 import { teacherTestQuestion } from '../../../common/services/api';
 import BulkIoPairsEditor, { QuestionFormStepper } from '../../../common/components/BulkIoPairsEditor';
 import PasteFullQuestion from '../../../common/components/PasteFullQuestion';
 import TestSolutionResults from '../../../common/components/TestSolutionResults';
+import TestSolutionLimitControls from '../../../common/components/TestSolutionLimitControls';
 import { parseOptionalPoints, pointsFieldValue } from '../../../common/utils/optionalPoints';
 import { plainTextToSlate, STARTER_STUBS } from '../../../common/utils/parsePastedQuestion';
 import {
@@ -458,6 +460,7 @@ const CollapsibleSection = ({ title, children, defaultOpen = true }) => {
 };
 
 const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) => {
+  const navigate = useNavigate();
   const [type, setType] = useState(initialData?.type || 'singleCorrectMcq');
   const [title, setTitle] = useState(deserializeFromHTML(initialData?.title || ''));
   const [description, setDescription] = useState(deserializeFromHTML(initialData?.description || ''));
@@ -539,6 +542,7 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
   const activeSolutionCode = solutionCodes.find((s) => s.language === solutionLanguage)?.code ?? '';
   const [isTestingSolution, setIsTestingSolution] = useState(false);
   const [testResults, setTestResults] = useState(null);
+  const limitOptionsRef = useRef(null);
   const [editorPasteKey, setEditorPasteKey] = useState(0);
   const editorResetKey = `${initialData?._id || initialData?.id || 'new'}-${editorPasteKey}`;
   const [formStep, setFormStep] = useState(1);
@@ -864,7 +868,8 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
         initialData._id,
         activeSolutionCode,
         classIdForTest, // classId is optional for drafts
-        solutionLanguage
+        solutionLanguage,
+        limitOptionsRef.current || {}
       );
 
       const { testResults, passedTestCases, totalTestCases, isCorrect, publicTestCases, hiddenTestCases } = response.data;
@@ -1384,8 +1389,9 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                   onChange={(e) => setTimeLimit(e.target.value)}
                   className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
                   required
-                  min="1"
+                  min="0.1"
                   max="5"
+                  step="0.1"
                 />
               </div>
               <div>
@@ -1396,8 +1402,9 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                   onChange={(e) => setMemoryLimit(e.target.value)}
                   className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
                   required
-                  min="128"
+                  min="16"
                   max="1024"
+                  step="1"
                 />
               </div>
             </div>
@@ -1481,6 +1488,21 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                   Write the solution code here. Save the question first, then you can test it against all test cases (including hidden ones).
                 </p>
               </div>
+              <TestSolutionLimitControls
+                question={{ _id: initialData?._id, type, timeLimit, memoryLimit }}
+                testResults={testResults}
+                optionsRef={limitOptionsRef}
+                getBenchmarkPayload={() => ({
+                  questionId: initialData?._id,
+                  answer: activeSolutionCode,
+                  classId: classIds && classIds.length > 0 ? classIds[0] : null,
+                  language: solutionLanguage,
+                })}
+                onSaved={(nextTime, nextMemory) => {
+                  setTimeLimit(nextTime);
+                  setMemoryLimit(nextMemory);
+                }}
+              />
               <div className="flex items-center gap-3">
                 <button
                   type="button"
@@ -1509,15 +1531,31 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
 
       {/* Step nav + save */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
-        <button
-          type="button"
-          onClick={() => setFormStep((s) => Math.max(1, s - 1))}
-          disabled={formStep === 1}
-          className="px-4 py-2 rounded-lg text-sm font-semibold border disabled:opacity-40"
-          style={{ color: 'var(--text-primary)', borderColor: 'var(--card-border)', backgroundColor: 'var(--background-light)' }}
-        >
-          Back
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setFormStep((s) => Math.max(1, s - 1))}
+            disabled={formStep === 1}
+            className="px-4 py-2 rounded-lg text-sm font-semibold border disabled:opacity-40"
+            style={{ color: 'var(--text-primary)', borderColor: 'var(--card-border)', backgroundColor: 'var(--background-light)' }}
+          >
+            Back
+          </button>
+          {initialData?._id && (
+            <button
+              type="button"
+              onClick={() =>
+                navigate(`/teacher/questions/${initialData._id}/preview`, {
+                  state: defaultClassId ? { classId: defaultClassId, returnTo: window.location.pathname } : { returnTo: window.location.pathname },
+                })
+              }
+              className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold border"
+              style={{ color: 'var(--text-primary)', borderColor: 'var(--card-border)', backgroundColor: 'var(--card-white)' }}
+            >
+              Preview as Student
+            </button>
+          )}
+        </div>
         <div className="flex gap-3">
           {formStep < totalFormSteps && (
             <button

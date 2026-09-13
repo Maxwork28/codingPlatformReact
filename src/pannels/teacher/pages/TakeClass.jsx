@@ -5,7 +5,7 @@ import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { Menu, Transition, Portal } from '@headlessui/react';
 import parse from 'html-react-parser';
 import { io } from 'socket.io-client';
-import { getQuestionsByClass, teacherTestQuestion, teacherTestWithCustomInput, publishQuestion, unpublishQuestion, disableQuestion, enableQuestion, viewSolution } from '../../../common/services/api';
+import { getQuestionsByClass, getQuestion, teacherTestQuestion, teacherTestWithCustomInput, publishQuestion, unpublishQuestion, disableQuestion, enableQuestion, viewSolution } from '../../../common/services/api';
 import { API_BASE_URL, CUSTOM_STDIN_PLACEHOLDER, CUSTOM_STDOUT_PLACEHOLDER } from '../../../common/constants';
 import CodeEditor from '../../student/components/CodeEditor';
 import TestCaseResultsList from '../../student/components/TestCaseResultsList';
@@ -42,11 +42,19 @@ function getCodeTemplateForLanguage(question, lang) {
   return question.codeSnippet || '';
 }
 
+function normalizeLang(lang) {
+  return String(lang || '').trim().toLowerCase();
+}
+
 function getSolutionCodeForLanguage(question, lang) {
   if (!question) return '';
-  const fromList = question.solutionCodes?.find((sc) => sc.language === lang && sc.code);
+  const want = normalizeLang(lang);
+  const fromList = (question.solutionCodes || []).find(
+    (sc) => normalizeLang(sc.language) === want && String(sc.code || '').trim()
+  );
   if (fromList?.code) return fromList.code;
-  if (question.solutionCode && (question.solutionLanguage === lang || !question.solutionLanguage)) {
+  const legacy = String(question.solutionCode || '').trim();
+  if (legacy && (!question.solutionLanguage || normalizeLang(question.solutionLanguage) === want)) {
     return question.solutionCode;
   }
   return '';
@@ -56,12 +64,40 @@ function pickSolutionForQuestion(question, preferredLang) {
   if (!question) return { code: '', language: preferredLang };
   const preferred = getSolutionCodeForLanguage(question, preferredLang);
   if (preferred) return { code: preferred, language: preferredLang };
-  const firstSaved = question.solutionCodes?.find((sc) => sc.code);
+  const firstSaved = (question.solutionCodes || []).find((sc) => String(sc.code || '').trim());
   if (firstSaved?.code) return { code: firstSaved.code, language: firstSaved.language || preferredLang };
-  if (question.solutionCode) {
+  if (String(question.solutionCode || '').trim()) {
     return { code: question.solutionCode, language: question.solutionLanguage || preferredLang };
   }
   return { code: '', language: preferredLang };
+}
+
+function describeOfficialAnswer(question) {
+  if (!question) return null;
+  if (question.type === 'singleCorrectMcq') {
+    const idx = Number(question.correctOption);
+    const opt = question.options?.[idx];
+    if (!Number.isInteger(idx) || idx < 0 || opt == null) return null;
+    return {
+      indexes: [idx],
+      text: `Correct option: ${idx + 1}. ${stripHtml(opt)}`,
+    };
+  }
+  if (question.type === 'multipleCorrectMcq') {
+    const indexes = (question.correctOptions || []).map(Number).filter((idx) => Number.isInteger(idx) && idx >= 0);
+    if (!indexes.length) return null;
+    const lines = indexes.map((idx) => `${idx + 1}. ${stripHtml(question.options?.[idx] || '')}`);
+    return {
+      indexes,
+      text: `Correct options: ${lines.join(' · ')}`,
+    };
+  }
+  if (question.type === 'fillInTheBlanks' || question.type === 'fillInTheBlanksCoding') {
+    const ans = stripHtml(question.correctAnswer || '');
+    if (!ans) return null;
+    return { indexes: [], text: `Correct answer: ${ans}`, blank: ans };
+  }
+  return null;
 }
 
 const TakeClass = () => {
@@ -95,7 +131,9 @@ const TakeClass = () => {
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [resultsModalKind, setResultsModalKind] = useState(null); // 'run'
   const [presentMsg, setPresentMsg] = useState('');
+  const [presentedReveal, setPresentedReveal] = useState(null);
   const skipEditorResetRef = useRef(false);
+  const selectedQuestionId = selectedQuestion?._id;
 
   // Filter classes taught by the current teacher
   const myClasses = classes.filter(
@@ -388,50 +426,64 @@ const TakeClass = () => {
       return;
     }
 
-    const q = selectedQuestion;
     try {
       setLoading(true);
-      let source = q;
-      const initial = pickSolutionForQuestion(source, selectedLanguage);
-      const fillInHint = stripHtml(source.correctAnswer || '');
-      if (
-        !initial.code &&
-        !(q.type === 'fillInTheBlanksCoding' && fillInHint) &&
-        q._id
-      ) {
-        try {
-          const response = await viewSolution(q._id);
-          source = { ...source, ...(response.data?.solution || {}) };
-        } catch {
-          /* use fields already on the question */
-        }
+      setPresentMsg('');
+      let source = selectedQuestion;
+      if (selectedQuestion._id) {
+        const [qRes, solRes] = await Promise.all([
+          getQuestion(selectedQuestion._id, selectedClass?._id || null).catch(() => null),
+          viewSolution(selectedQuestion._id).catch(() => null),
+        ]);
+        const fromGet = qRes?.data?.question || (qRes?.data && !qRes.data.solution ? qRes.data : {});
+        const fromSol = solRes?.data?.solution || {};
+        source = { ...selectedQuestion, ...fromGet, ...fromSol };
       }
 
-      skipEditorResetRef.current = true;
-      if (q.type === 'fillInTheBlanksCoding') {
-        const blankSolution =
-          stripHtml(source.correctAnswer || '') ||
-          pickSolutionForQuestion(source, selectedLanguage).code;
+      const official = describeOfficialAnswer(source);
+      if (source.type === 'fillInTheBlanksCoding') {
+        const picked = pickSolutionForQuestion(source, selectedLanguage);
+        const blankSolution = official?.blank || picked.code;
         if (!blankSolution?.trim()) {
+          setPresentedReveal(null);
           setPresentMsg('No solution saved for this question.');
           return;
         }
+        skipEditorResetRef.current = true;
+        setSelectedQuestion(source);
         setFillInBlankLine(blankSolution);
+        setPresentedReveal(official);
         setPresentMsg('Solution loaded.');
         return;
       }
 
-      const picked = pickSolutionForQuestion(source, selectedLanguage);
-      if (!picked.code?.trim()) {
-        setPresentMsg('No solution code saved for this question.');
+      if (FULL_CODE_EDITOR_TYPES.includes(source.type)) {
+        const picked = pickSolutionForQuestion(source, selectedLanguage);
+        if (!picked.code?.trim()) {
+          setPresentedReveal(null);
+          setPresentMsg('No solution code saved for this question. Add one under Edit → Test Solution.');
+          return;
+        }
+        skipEditorResetRef.current = true;
+        setSelectedQuestion(source);
+        if (picked.language && normalizeLang(picked.language) !== normalizeLang(selectedLanguage)) {
+          setSelectedLanguage(picked.language);
+        }
+        setCode(picked.code);
+        setPresentedReveal(null);
+        setPresentMsg('Solution loaded in the editor.');
         return;
       }
-      skipEditorResetRef.current = true;
-      if (picked.language && picked.language !== selectedLanguage) {
-        setSelectedLanguage(picked.language);
+
+      if (official?.text) {
+        setSelectedQuestion(source);
+        setPresentedReveal(official);
+        setPresentMsg(official.text);
+        return;
       }
-      setCode(picked.code);
-      setPresentMsg('Solution loaded in the editor.');
+
+      setPresentedReveal(null);
+      setPresentMsg('No solution saved for this question.');
     } catch (err) {
       setPresentMsg(typeof err === 'string' ? err : 'Failed to load solution.');
     } finally {
@@ -842,6 +894,10 @@ const TakeClass = () => {
       setIsFullscreen(false);
     }
   }, [selectedQuestion, isFullscreen]);
+
+  useEffect(() => {
+    setPresentedReveal(null);
+  }, [selectedQuestionId]);
 
   useEffect(() => {
     if (!presentMsg) return undefined;
@@ -1681,13 +1737,19 @@ const TakeClass = () => {
                           <div
                             key={index}
                             className="flex items-start gap-3 p-3 rounded-lg border"
-                            style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--card-white)' }}
+                            style={{
+                              borderColor: presentedReveal?.indexes?.includes(index) ? '#16a34a' : 'var(--card-border)',
+                              backgroundColor: presentedReveal?.indexes?.includes(index) ? '#dcfce7' : 'var(--card-white)',
+                            }}
                           >
                             <span className="text-sm font-semibold shrink-0" style={{ color: 'var(--text-primary)' }}>
                               {(index + 10).toString(36).toUpperCase()}.
                             </span>
                             <div className="text-sm prose prose-sm max-w-none flex-1" style={{ color: 'var(--text-primary)' }}>
                               {parse(option || '')}
+                              {presentedReveal?.indexes?.includes(index) ? (
+                                <span className="ml-2 text-xs font-semibold text-green-700">Correct</span>
+                              ) : null}
                             </div>
                           </div>
                         ))}
@@ -1702,13 +1764,19 @@ const TakeClass = () => {
                           <div
                             key={index}
                             className="flex items-start gap-3 p-3 rounded-lg border"
-                            style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--card-white)' }}
+                            style={{
+                              borderColor: presentedReveal?.indexes?.includes(index) ? '#16a34a' : 'var(--card-border)',
+                              backgroundColor: presentedReveal?.indexes?.includes(index) ? '#dcfce7' : 'var(--card-white)',
+                            }}
                           >
                             <span className="text-sm font-semibold shrink-0" style={{ color: 'var(--text-primary)' }}>
                               {(index + 10).toString(36).toUpperCase()}.
                             </span>
                             <div className="text-sm prose prose-sm max-w-none flex-1" style={{ color: 'var(--text-primary)' }}>
                               {parse(option || '')}
+                              {presentedReveal?.indexes?.includes(index) ? (
+                                <span className="ml-2 text-xs font-semibold text-green-700">Correct</span>
+                              ) : null}
                             </div>
                           </div>
                         ))}
@@ -1736,6 +1804,11 @@ const TakeClass = () => {
                   <h4 className="text-sm font-semibold" style={{ color: 'var(--text-heading)' }}>
                     {isRunnableCoding ? 'Test & Present' : 'Present'}
                   </h4>
+                  {presentedReveal?.text && !isRunnableCoding && (
+                    <div className="p-3 rounded-lg border text-sm font-medium bg-green-50 border-green-200 text-green-800 whitespace-pre-wrap">
+                      {presentedReveal.text}
+                    </div>
+                  )}
                   {isRunnableCoding && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
