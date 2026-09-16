@@ -1,14 +1,25 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 import { API_BASE_URL } from '../../constants';
+import { login, logout, validateToken } from './authSlice';
+
+const resetList = (state) => {
+  state.classes = [];
+  state.status = 'idle';
+  state.error = null;
+};
 
 export const fetchClasses = createAsyncThunk('classes/fetchClasses', async (search = '', { getState, rejectWithValue }) => {
   try {
     const { auth } = getState();
-    console.log('classSlice: Fetching classes with token', auth.token, 'search:', search);
+    const token = auth.token || localStorage.getItem('token');
+    if (!token) {
+      return rejectWithValue('Please authenticate');
+    }
+    console.log('classSlice: Fetching classes', { search: search || '' });
     const params = search ? { search } : {};
     const response = await axios.get(`${API_BASE_URL}/admin/classes`, {
-      headers: { Authorization: `Bearer ${auth.token}` },
+      headers: { Authorization: `Bearer ${token}` },
       params,
     });
     console.log('classSlice: Fetch classes response', response.data);
@@ -32,17 +43,22 @@ const classSlice = createSlice({
       .addCase(fetchClasses.pending, (state) => {
         console.log('classSlice: Fetch classes pending');
         state.status = 'loading';
+        state.error = null;
       })
       .addCase(fetchClasses.fulfilled, (state, action) => {
         console.log('classSlice: Fetch classes fulfilled', action.payload);
         state.status = 'succeeded';
         state.classes = action.payload;
+        state.error = null;
       })
       .addCase(fetchClasses.rejected, (state, action) => {
         console.log('classSlice: Fetch classes rejected', action.payload);
         state.status = 'failed';
         state.error = action.payload;
-      });
+      })
+      .addCase(login.fulfilled, resetList)
+      .addCase(logout, resetList)
+      .addCase(validateToken.rejected, resetList);
   },
 });
 

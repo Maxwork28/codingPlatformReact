@@ -3,10 +3,12 @@ import axios from 'axios';
 import { API_BASE_URL } from '../../constants';
 import { jwtDecode } from 'jwt-decode';
 
+const isAuthFailureStatus = (status) => status === 401 || status === 403;
+
 // Validate token and fetch user details
 export const validateToken = createAsyncThunk('auth/validateToken', async (_, { rejectWithValue }) => {
+  const token = localStorage.getItem('token');
   try {
-    const token = localStorage.getItem('token');
     if (!token) throw new Error('No token found');
     const response = await axios.get(`${API_BASE_URL}/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -22,12 +24,19 @@ export const validateToken = createAsyncThunk('auth/validateToken', async (_, { 
     };
   } catch (error) {
     console.error('authSlice: Validate token error', error.response?.data || error);
-    // Only clear session on auth failures, not on transient network errors
     const status = error.response?.status;
-    if (status === 401 || status === 403 || !error.response) {
+    // Only drop THIS token. A login that finished while /auth/me was in-flight
+    // must not have its new token deleted.
+    if (isAuthFailureStatus(status) && localStorage.getItem('token') === token) {
       localStorage.removeItem('token');
     }
-    return rejectWithValue(error.response?.data?.error || 'Invalid token');
+    if (!error.response) {
+      return rejectWithValue({ message: error.message || 'Could not verify session', keepSession: true });
+    }
+    return rejectWithValue({
+      message: error.response?.data?.error || 'Invalid token',
+      keepSession: !isAuthFailureStatus(status),
+    });
   }
 });
 
@@ -51,6 +60,8 @@ export const login = createAsyncThunk('auth/login', async ({ email, password }, 
     if (!role || !id) {
       return rejectWithValue('Login succeeded but user role/id is missing');
     }
+
+    localStorage.setItem('token', response.data.token);
 
     return {
       ...response.data,
@@ -111,6 +122,7 @@ const authSlice = createSlice({
       .addCase(login.pending, (state) => {
         console.log('authSlice: Login pending');
         state.status = 'loading';
+        state.error = null;
       })
       .addCase(login.fulfilled, (state, action) => {
         console.log('authSlice: Login fulfilled', action.payload);
@@ -156,12 +168,27 @@ const authSlice = createSlice({
       })
       .addCase(validateToken.rejected, (state, action) => {
         console.log('authSlice: Validate token rejected', action.payload);
+        // Login may have completed while /auth/me was still failing with the old token.
+        if (state.user?.name && state.token) {
+          return;
+        }
+        const payload = action.payload;
+        const keepSession = typeof payload === 'object' && payload?.keepSession;
+        if (keepSession) {
+          // Network/CORS: keep the stored token, but stop the restore spinner loop.
+          state.status = 'failed';
+          return;
+        }
+        const staleToken = state.token;
         state.status = 'failed';
         state.user = null;
         state.token = null;
         state.role = null;
-        state.error = action.payload;
-        localStorage.removeItem('token');
+        // Do not show restore failures as a login-form error.
+        state.error = null;
+        if (!localStorage.getItem('token') || localStorage.getItem('token') === staleToken) {
+          localStorage.removeItem('token');
+        }
       });
   },
 });

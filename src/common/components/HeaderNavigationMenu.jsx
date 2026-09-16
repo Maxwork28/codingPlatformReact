@@ -170,16 +170,17 @@ function StudentAssignmentsSection({ close }) {
 }
 
 const HeaderNavigationMenu = () => {
-  const { role } = useSelector((state) => state.auth);
+  const { token, role } = useSelector((state) => state.auth);
   const { classes, status } = useSelector((state) => state.classes || { classes: [], status: 'idle' });
   const dispatch = useDispatch();
   const [draftCount, setDraftCount] = useState(0);
 
   useEffect(() => {
-    if (classes.length === 0 && status === 'idle') {
+    if (!token) return;
+    if (status === 'idle' || status === 'failed') {
       dispatch(fetchClasses(''));
     }
-  }, [dispatch, classes.length, status]);
+  }, [dispatch, token]);
 
   useEffect(() => {
     if (role === 'admin' || role === 'teacher') {

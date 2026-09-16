@@ -1,14 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { ArrowLeftIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, PlayIcon, XMarkIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
 import { format } from 'date-fns';
 import { io } from 'socket.io-client';
 import { API_BASE_URL } from '../../../common/constants';
-import { getQuestionPerspectiveReport, blockUser, blockAllUsers } from '../../../common/services/api';
+import { getQuestionPerspectiveReport, blockUser, teacherTestQuestion } from '../../../common/services/api';
+import CodeEditor from '../../student/components/CodeEditor';
+import TestCaseResultsList from '../../student/components/TestCaseResultsList';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
+
+const CODING_TYPES = ['coding', 'fillInTheBlanksCoding', 'codingWithDriver'];
+const LANGUAGES = ['javascript', 'python', 'c', 'cpp', 'java', 'php', 'ruby', 'go'];
 
 const stripHtml = (html) => {
   if (!html) return '';
@@ -17,7 +22,7 @@ const stripHtml = (html) => {
   return (tmp.textContent || tmp.innerText || '').trim();
 };
 
-const formatAnswer = (answer) => {
+const extractCode = (answer) => {
   if (answer == null || answer === '') return '';
   if (typeof answer === 'string') return answer;
   if (Array.isArray(answer)) return answer.join('\n');
@@ -42,10 +47,8 @@ const doughnutPercentPlugin = {
       const pct = Math.round((value / total) * 100);
       const pos = arc.tooltipPosition();
       ctx.save();
-      ctx.shadowColor = 'rgba(0,0,0,0.7)';
-      ctx.shadowBlur = 6;
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 15px ui-sans-serif, system-ui, sans-serif';
+      ctx.font = 'bold 13px ui-sans-serif, system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(`${pct}%`, pos.x, pos.y);
@@ -54,42 +57,11 @@ const doughnutPercentPlugin = {
   },
 };
 
-const STATUS_STYLES = {
-  correct: {
-    bg: 'bg-emerald-500',
-    border: 'border-emerald-600',
-    ring: 'ring-emerald-300',
-    label: 'Correct',
-    text: 'text-emerald-900',
-    light: 'bg-emerald-50',
-    color: '#10b981',
-  },
-  incorrect: {
-    bg: 'bg-rose-500',
-    border: 'border-rose-600',
-    ring: 'ring-rose-300',
-    label: 'Wrong',
-    text: 'text-rose-900',
-    light: 'bg-rose-50',
-    color: '#f43f5e',
-  },
-  not_attempted: {
-    bg: 'bg-slate-400',
-    border: 'border-slate-500',
-    ring: 'ring-slate-300',
-    label: 'Inactive',
-    text: 'text-slate-700',
-    light: 'bg-slate-100',
-    color: '#94a3b8',
-  },
+const STATUS = {
+  correct: { label: 'Correct', chip: 'bg-emerald-50 text-emerald-800 border-emerald-200', dot: 'bg-emerald-500' },
+  incorrect: { label: 'Wrong', chip: 'bg-rose-50 text-rose-800 border-rose-200', dot: 'bg-rose-500' },
+  not_attempted: { label: 'Inactive', chip: 'bg-slate-100 text-slate-700 border-slate-200', dot: 'bg-slate-400' },
 };
-
-const FILTER_OPTIONS = [
-  { value: 'all', label: 'All' },
-  { value: 'correct', label: 'Correct' },
-  { value: 'incorrect', label: 'Wrong' },
-  { value: 'not_attempted', label: 'Inactive' },
-];
 
 const QuestionStatistics = () => {
   const navigate = useNavigate();
@@ -103,8 +75,18 @@ const QuestionStatistics = () => {
   const [actionMsg, setActionMsg] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [blocking, setBlocking] = useState(false);
-  const [blockedSearch, setBlockedSearch] = useState('');
+  const [search, setSearch] = useState('');
+
   const [codeStudent, setCodeStudent] = useState(null);
+  const [editorCode, setEditorCode] = useState('');
+  const [originalCode, setOriginalCode] = useState('');
+  const [editorLanguage, setEditorLanguage] = useState('javascript');
+  const [boardMode, setBoardMode] = useState(false);
+  const [runLoading, setRunLoading] = useState(false);
+  const [runResults, setRunResults] = useState(null);
+
+  const questionType = report?.question?.type;
+  const isCodingQuestion = CODING_TYPES.includes(questionType);
 
   const loadReport = useCallback(async ({ silent = false } = {}) => {
     if (!classId || !questionId) return;
@@ -149,32 +131,11 @@ const QuestionStatistics = () => {
 
   const handleBack = () => {
     if (backState.fromTakeClass) {
-      navigate('/teacher/take-class', {
-        state: { classId, questionId },
-      });
+      navigate('/teacher/take-class', { state: { classId, questionId } });
     } else {
       navigate(`/teacher/classes/${classId}`);
     }
   };
-
-  const filteredStudents = useMemo(() => {
-    const list = report?.studentData ?? [];
-    if (statusFilter === 'all') return list;
-    return list.filter((s) => s.status === statusFilter);
-  }, [report?.studentData, statusFilter]);
-
-  const blockedOrInactive = useMemo(() => {
-    const list = (report?.studentData ?? []).filter(
-      (s) => s.isBlocked || s.status === 'not_attempted'
-    );
-    const q = blockedSearch.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter(
-      (s) =>
-        (s.studentName || '').toLowerCase().includes(q) ||
-        (s.studentEmail || '').toLowerCase().includes(q)
-    );
-  }, [report?.studentData, blockedSearch]);
 
   const summary = report
     ? {
@@ -187,14 +148,8 @@ const QuestionStatistics = () => {
 
   const chartData = useMemo(() => {
     if (!summary) return null;
-    const total = summary.enrolled || 1;
-    const pct = (n) => Math.round((n / total) * 100);
     return {
-      labels: [
-        `Correct ${pct(summary.correct)}%`,
-        `Wrong ${pct(summary.incorrect)}%`,
-        `Inactive ${pct(summary.notAttempted)}%`,
-      ],
+      labels: ['Correct', 'Wrong', 'Inactive'],
       datasets: [
         {
           data: [summary.correct, summary.incorrect, summary.notAttempted],
@@ -204,6 +159,61 @@ const QuestionStatistics = () => {
       ],
     };
   }, [summary]);
+
+  const filteredStudents = useMemo(() => {
+    let list = report?.studentData ?? [];
+    if (statusFilter !== 'all') list = list.filter((s) => s.status === statusFilter);
+    const q = search.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (s) =>
+          (s.studentName || '').toLowerCase().includes(q) ||
+          (s.studentEmail || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [report?.studentData, statusFilter, search]);
+
+  const openStudentWork = (student) => {
+    const code = extractCode(student.lastSubmittedAnswer);
+    const language = student.lastSubmittedLanguage || (report?.question?.languages || [])[0] || 'javascript';
+    setCodeStudent(student);
+    setEditorCode(code);
+    setOriginalCode(code);
+    setEditorLanguage(language);
+    setRunResults(null);
+    setBoardMode(false);
+    setActionMsg('');
+  };
+
+  const closeEditor = () => {
+    setCodeStudent(null);
+    setBoardMode(false);
+    setRunResults(null);
+  };
+
+  const handleRunCorrected = async () => {
+    if (!questionId || !editorCode.trim()) return;
+    setRunLoading(true);
+    setRunResults(null);
+    try {
+      const res = await teacherTestQuestion(questionId, editorCode, classId, editorLanguage);
+      setRunResults({
+        isCorrect: res.data.isCorrect,
+        passedTestCases: res.data.passedTestCases,
+        totalTestCases: res.data.totalTestCases,
+        testResults: res.data.testResults,
+        error: false,
+      });
+    } catch (err) {
+      setRunResults({
+        error: true,
+        message: err.response?.data?.error || err.message || 'Run failed',
+      });
+    } finally {
+      setRunLoading(false);
+    }
+  };
 
   const handleBlockStudent = async (student, shouldBlock) => {
     if (!student?.studentId) return;
@@ -215,29 +225,6 @@ const QuestionStatistics = () => {
       await loadReport({ silent: true });
     } catch (err) {
       setError(typeof err === 'string' ? err : err?.error || 'Failed to update block status');
-    } finally {
-      setBlocking(false);
-    }
-  };
-
-  const handleBlockNotAttempted = async () => {
-    const ids = (report?.studentData ?? [])
-      .filter((s) => s.status === 'not_attempted')
-      .map((s) => s.studentId);
-    if (ids.length === 0) {
-      setActionMsg('No inactive students to block');
-      return;
-    }
-    if (!confirm(`Block ${ids.length} inactive student(s)?`)) return;
-    setBlocking(true);
-    setActionMsg('');
-    try {
-      const response = await blockAllUsers(classId, true, { studentIds: ids });
-      setActionMsg(response?.data?.message || `${ids.length} student(s) blocked`);
-      setStatusFilter('not_attempted');
-      await loadReport({ silent: true });
-    } catch (err) {
-      setError(typeof err === 'string' ? err : err?.error || 'Failed to block inactive students');
     } finally {
       setBlocking(false);
     }
@@ -262,33 +249,35 @@ const QuestionStatistics = () => {
     );
   }
 
-  const lastCodeText = codeStudent ? formatAnswer(codeStudent.lastSubmittedAnswer) : '';
+  const languages = (report?.question?.languages || []).length
+    ? report.question.languages
+    : LANGUAGES;
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--background-content)' }}>
-      <div className="border-b px-4 py-4 sm:px-6" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-        <div className="max-w-6xl mx-auto flex flex-wrap items-center gap-3">
+      <div className="border-b px-4 py-3 sm:px-6" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={handleBack}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium hover:opacity-90"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium hover:bg-gray-50"
             style={{ borderColor: 'var(--card-border)', color: 'var(--text-primary)' }}
           >
             <ArrowLeftIcon className="w-4 h-4" />
             {backState.fromTakeClass ? 'Back to Take Class' : 'Back to class'}
           </button>
           <div className="flex-1 min-w-0">
-            <h1 className="text-lg sm:text-xl font-bold truncate" style={{ color: 'var(--text-heading)' }}>
-              Question statistics
+            <h1 className="text-lg font-bold truncate" style={{ color: 'var(--text-heading)' }}>
+              {stripHtml(report?.question?.title) || 'Question statistics'}
             </h1>
             <p className="text-sm truncate" style={{ color: 'var(--text-secondary)' }}>
-              {report?.class?.name} · {stripHtml(report?.question?.title) || 'Question'}
+              {report?.class?.name}
             </p>
           </div>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
+      <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-5">
         {(actionMsg || error) && (
           <div
             className={`rounded-lg border px-4 py-2 text-sm ${
@@ -301,204 +290,137 @@ const QuestionStatistics = () => {
 
         {summary && chartData && (
           <div
-            className="rounded-xl border p-4 flex flex-col items-center justify-center max-w-xl mx-auto w-full"
+            className="rounded-xl border p-4 grid grid-cols-1 sm:grid-cols-4 gap-4 items-center"
             style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
           >
-            <h2 className="text-sm font-semibold mb-3 self-start" style={{ color: 'var(--text-heading)' }}>
-              Status distribution
-            </h2>
-            <div className="w-full max-w-[280px]">
+            <div className="w-36 mx-auto sm:mx-0">
               <Doughnut
                 data={chartData}
                 plugins={[doughnutPercentPlugin]}
                 options={{
-                  plugins: {
-                    legend: {
-                      position: 'bottom',
-                      labels: { boxWidth: 12, padding: 16, font: { size: 13, weight: '600' } },
-                    },
-                    tooltip: {
-                      callbacks: {
-                        label(ctx) {
-                          const value = Number(ctx.raw || 0);
-                          const total = summary.enrolled || 1;
-                          return ` ${value} students (${Math.round((value / total) * 100)}%)`;
-                        },
-                      },
-                    },
-                  },
-                  cutout: '52%',
+                  plugins: { legend: { display: false }, tooltip: { enabled: true } },
+                  cutout: '58%',
                 }}
               />
             </div>
-            <p className="text-xs mt-3" style={{ color: 'var(--text-secondary)' }}>
-              Enrolled: {summary.enrolled} · Correct {summary.correct} · Wrong {summary.incorrect} · Inactive {summary.notAttempted}
-            </p>
+            {[
+              { label: 'Correct', value: summary.correct, color: 'text-emerald-700' },
+              { label: 'Wrong', value: summary.incorrect, color: 'text-rose-700' },
+              { label: 'Inactive', value: summary.notAttempted, color: 'text-slate-600' },
+            ].map((item) => (
+              <div key={item.label} className="text-center sm:text-left">
+                <p className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
+                  {item.label}
+                </p>
+                <p className={`text-2xl font-bold ${item.color}`}>{item.value}</p>
+                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  of {summary.enrolled} enrolled
+                </p>
+              </div>
+            ))}
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium mr-1" style={{ color: 'var(--text-secondary)' }}>
-            Filter:
-          </span>
-          {FILTER_OPTIONS.map((opt) => {
-            const isActive = statusFilter === opt.value;
-            const style = opt.value !== 'all' ? STATUS_STYLES[opt.value] : null;
-            const count =
-              opt.value === 'all'
-                ? summary?.enrolled
-                : opt.value === 'correct'
-                  ? summary?.correct
-                  : opt.value === 'incorrect'
-                    ? summary?.incorrect
-                    : summary?.notAttempted;
-            return (
+        <div
+          className="rounded-xl border overflow-hidden"
+          style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
+        >
+          <div className="px-4 py-3 border-b flex flex-wrap items-center gap-2" style={{ borderColor: 'var(--card-border)' }}>
+            <p className="text-sm font-semibold mr-2" style={{ color: 'var(--text-heading)' }}>
+              Students
+            </p>
+            {[
+              { value: 'all', label: 'All', count: summary?.enrolled },
+              { value: 'correct', label: 'Correct', count: summary?.correct },
+              { value: 'incorrect', label: 'Wrong', count: summary?.incorrect },
+              { value: 'not_attempted', label: 'Inactive', count: summary?.notAttempted },
+            ].map((opt) => (
               <button
                 key={opt.value}
                 type="button"
                 onClick={() => setStatusFilter(opt.value)}
-                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
-                  isActive
-                    ? style
-                      ? `${style.bg} text-white border-transparent shadow-sm`
-                      : 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                    : 'bg-white border-gray-300 hover:bg-gray-50'
+                className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
+                  statusFilter === opt.value
+                    ? 'bg-slate-800 text-white border-slate-800'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                 }`}
-                style={!isActive && !style ? { color: 'var(--text-primary)' } : undefined}
               >
-                {opt.label}
-                {count != null && (
-                  <span className={`text-xs ${isActive ? 'text-white/90' : 'opacity-70'}`}>({count})</span>
-                )}
+                {opt.label} {opt.count != null ? `(${opt.count})` : ''}
               </button>
-            );
-          })}
-          {(statusFilter === 'not_attempted' || statusFilter === 'all') && (
-            <button
-              type="button"
-              disabled={blocking || (summary?.notAttempted ?? 0) === 0}
-              onClick={handleBlockNotAttempted}
-              className="ml-auto inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
-            >
-              Block all inactive
-            </button>
-          )}
-        </div>
-
-        <div>
-          <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-heading)' }}>
-            Students ({filteredStudents.length}
-            {statusFilter !== 'all' ? ` of ${report?.studentData?.length ?? 0}` : ''})
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {filteredStudents.map((student) => {
-              const style = STATUS_STYLES[student.status] || STATUS_STYLES.not_attempted;
-              const isBlocked = Boolean(student.isBlocked);
-              const hasCode = Boolean(formatAnswer(student.lastSubmittedAnswer));
-              return (
-                <div
-                  key={student.studentId}
-                  className={`rounded-lg border-2 p-3 ${style.bg} ${style.border} ${isBlocked ? 'opacity-80' : ''}`}
-                >
-                  <p className="text-sm font-semibold text-white drop-shadow-sm truncate">{student.studentName}</p>
-                  <p className="text-xs text-white/90 mt-0.5 truncate">{student.studentEmail || 'No email'}</p>
-                  <p className="text-xs text-white/85 mt-1">
-                    {isBlocked ? 'Blocked · ' : ''}
-                    {style.label}
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={blocking}
-                      onClick={() => handleBlockStudent(student, !isBlocked)}
-                      className="px-2.5 py-1 rounded-md text-xs font-semibold bg-black/25 text-white hover:bg-black/40 disabled:opacity-50"
-                    >
-                      {isBlocked ? 'Unblock' : 'Block'}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!hasCode}
-                      onClick={() => setCodeStudent(student)}
-                      className="px-2.5 py-1 rounded-md text-xs font-semibold bg-white/90 text-slate-800 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Last submitted code
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {filteredStudents.length === 0 && (
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              {report?.studentData?.length === 0
-                ? 'No students enrolled in this class.'
-                : 'No students match this filter.'}
-            </p>
-          )}
-        </div>
-
-        <div
-          className="rounded-xl border p-4"
-          style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
-        >
-          <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-heading)' }}>
-            Blocked / Inactive students
-          </h2>
-          <div className="relative mb-4 max-w-md">
-            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: 'var(--text-secondary)' }} />
+            ))}
             <input
               type="text"
-              value={blockedSearch}
-              onChange={(e) => setBlockedSearch(e.target.value)}
-              placeholder="Search by student name or email..."
-              className="w-full pl-9 pr-3 py-2 rounded-lg border text-sm"
-              style={{
-                borderColor: 'var(--card-border)',
-                backgroundColor: 'var(--background-light)',
-                color: 'var(--text-primary)',
-              }}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name or email"
+              className="ml-auto w-full sm:w-56 px-3 py-1.5 rounded-lg border text-sm"
+              style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--background-light)' }}
             />
           </div>
-          <div className="space-y-2">
-            {blockedOrInactive.map((student) => {
-              const isBlocked = Boolean(student.isBlocked);
-              return (
-                <div
-                  key={`blocked-${student.studentId}`}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2"
-                  style={{ borderColor: 'var(--card-border)' }}
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate" style={{ color: 'var(--text-heading)' }}>
-                      {student.studentName}
-                    </p>
-                    <p className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>
-                      {student.studentEmail || 'No email'}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isBlocked ? 'bg-gray-800 text-white' : 'bg-slate-200 text-slate-700'}`}>
-                      {isBlocked ? 'Blocked' : 'Inactive'}
-                    </span>
-                    {isBlocked && (
-                      <button
-                        type="button"
-                        disabled={blocking}
-                        onClick={() => handleBlockStudent(student, false)}
-                        className="px-2.5 py-1 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
-                      >
-                        Unblock
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-            {blockedOrInactive.length === 0 && (
-              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                {blockedSearch
-                  ? `No blocked or inactive students matching “${blockedSearch}”.`
-                  : 'No blocked or inactive students.'}
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide" style={{ color: 'var(--text-secondary)', backgroundColor: 'var(--background-light)' }}>
+                  <th className="px-4 py-2 font-medium">Student</th>
+                  <th className="px-4 py-2 font-medium">Status</th>
+                  <th className="px-4 py-2 font-medium hidden md:table-cell">Language</th>
+                  <th className="px-4 py-2 font-medium text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredStudents.map((student) => {
+                  const style = STATUS[student.status] || STATUS.not_attempted;
+                  const hasWork = Boolean(extractCode(student.lastSubmittedAnswer));
+                  return (
+                    <tr key={student.studentId} className="border-t" style={{ borderColor: 'var(--card-border)' }}>
+                      <td className="px-4 py-2.5">
+                        <p className="font-medium truncate" style={{ color: 'var(--text-heading)' }}>
+                          {student.studentName}
+                          {student.isBlocked ? <span className="ml-2 text-xs text-slate-500">Blocked</span> : null}
+                        </p>
+                        <p className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>
+                          {student.studentEmail || 'No email'}
+                        </p>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs font-medium ${style.chip}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
+                          {style.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 hidden md:table-cell" style={{ color: 'var(--text-secondary)' }}>
+                        {student.lastSubmittedLanguage || '—'}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            disabled={!hasWork}
+                            onClick={() => openStudentWork(student)}
+                            className="px-2.5 py-1 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            {isCodingQuestion ? 'Open in editor' : 'View answer'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={blocking}
+                            onClick={() => handleBlockStudent(student, !student.isBlocked)}
+                            className="px-2.5 py-1 rounded-md text-xs font-medium border hover:bg-slate-50 disabled:opacity-50"
+                            style={{ borderColor: 'var(--card-border)', color: 'var(--text-primary)' }}
+                          >
+                            {student.isBlocked ? 'Unblock' : 'Block'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {filteredStudents.length === 0 && (
+              <p className="px-4 py-8 text-sm text-center" style={{ color: 'var(--text-secondary)' }}>
+                {report?.studentData?.length === 0 ? 'No students enrolled in this class.' : 'No students match this filter.'}
               </p>
             )}
           </div>
@@ -506,46 +428,150 @@ const QuestionStatistics = () => {
       </div>
 
       {codeStudent && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: boardMode ? '#0f172a' : 'var(--background-content)' }}>
           <div
-            className="w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-xl shadow-xl flex flex-col"
-            style={{ backgroundColor: 'var(--card-white)' }}
+            className="flex-shrink-0 border-b px-4 py-3 flex flex-wrap items-center gap-2"
+            style={{
+              backgroundColor: boardMode ? '#1e293b' : 'var(--card-white)',
+              borderColor: boardMode ? '#334155' : 'var(--card-border)',
+            }}
           >
-            <div className="flex items-start justify-between gap-3 px-4 py-3 border-b" style={{ borderColor: 'var(--card-border)' }}>
-              <div className="min-w-0">
-                <h3 className="text-base font-semibold" style={{ color: 'var(--text-heading)' }}>
-                  Last submitted code
-                </h3>
-                <p className="text-sm truncate" style={{ color: 'var(--text-secondary)' }}>
-                  {codeStudent.studentName} · {codeStudent.studentEmail}
-                  {codeStudent.lastSubmittedLanguage ? ` · ${codeStudent.lastSubmittedLanguage}` : ''}
-                </p>
-                {codeStudent.lastSubmittedAt && (
-                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                    {format(new Date(codeStudent.lastSubmittedAt), 'MMM d, yyyy h:mm a')}
-                    {codeStudent.lastSubmittedIsCorrect != null
-                      ? codeStudent.lastSubmittedIsCorrect
-                        ? ' · Correct'
-                        : ' · Wrong'
-                      : ''}
-                  </p>
-                )}
-              </div>
+            <button
+              type="button"
+              onClick={closeEditor}
+              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium ${
+                boardMode ? 'text-white hover:bg-white/10' : 'border hover:bg-gray-50'
+              }`}
+              style={!boardMode ? { borderColor: 'var(--card-border)' } : undefined}
+            >
+              <XMarkIcon className="w-4 h-4" />
+              Close
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className={`text-sm font-semibold truncate ${boardMode ? 'text-white' : ''}`} style={!boardMode ? { color: 'var(--text-heading)' } : undefined}>
+                {codeStudent.studentName}
+                {codeStudent.lastSubmittedIsCorrect === true
+                  ? ' · Correct'
+                  : codeStudent.lastSubmittedIsCorrect === false
+                    ? ' · Wrong'
+                    : ''}
+              </p>
+              <p className={`text-xs truncate ${boardMode ? 'text-slate-300' : ''}`} style={!boardMode ? { color: 'var(--text-secondary)' } : undefined}>
+                Students watch the board and type the fix in their own editor.
+                {codeStudent.lastSubmittedAt
+                  ? ` · ${format(new Date(codeStudent.lastSubmittedAt), 'MMM d, h:mm a')}`
+                  : ''}
+              </p>
+            </div>
+            {isCodingQuestion && (
+              <select
+                value={editorLanguage}
+                onChange={(e) => setEditorLanguage(e.target.value)}
+                className={`rounded-lg border text-sm px-2 py-1.5 ${boardMode ? 'bg-slate-800 text-white border-slate-600' : ''}`}
+              >
+                {languages.map((lang) => (
+                  <option key={lang} value={lang}>
+                    {lang}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setEditorCode(originalCode);
+                setRunResults(null);
+              }}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                boardMode ? 'text-slate-200 hover:bg-white/10' : 'border hover:bg-gray-50'
+              }`}
+              style={!boardMode ? { borderColor: 'var(--card-border)' } : undefined}
+            >
+              Reset
+            </button>
+            {isCodingQuestion && (
               <button
                 type="button"
-                onClick={() => setCodeStudent(null)}
-                className="p-1 rounded hover:bg-black/5"
-                aria-label="Close"
+                onClick={handleRunCorrected}
+                disabled={runLoading || !editorCode.trim()}
+                className="inline-flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
               >
-                <XMarkIcon className="h-5 w-5" style={{ color: 'var(--text-secondary)' }} />
+                <PlayIcon className="w-4 h-4" />
+                {runLoading ? 'Running…' : 'Run corrected code'}
               </button>
-            </div>
-            <pre
-              className="flex-1 overflow-auto p-4 text-sm font-mono whitespace-pre-wrap break-words"
-              style={{ color: 'var(--text-primary)', backgroundColor: 'var(--background-light)' }}
+            )}
+            <button
+              type="button"
+              onClick={() => setBoardMode((v) => !v)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium ${
+                boardMode ? 'bg-white/10 text-white' : 'border hover:bg-gray-50'
+              }`}
+              style={!boardMode ? { borderColor: 'var(--card-border)' } : undefined}
             >
-              {lastCodeText || 'No submitted code for this student.'}
-            </pre>
+              {boardMode ? <ArrowsPointingInIcon className="w-4 h-4" /> : <ArrowsPointingOutIcon className="w-4 h-4" />}
+              {boardMode ? 'Exit board' : 'Board / projector'}
+            </button>
+          </div>
+
+          <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
+            <div className="flex-1 min-h-0 min-w-0 p-3 lg:p-4">
+              {isCodingQuestion ? (
+                <div className="h-full min-h-[320px] rounded-xl overflow-hidden border" style={{ borderColor: boardMode ? '#334155' : 'var(--card-border)' }}>
+                  <CodeEditor
+                    value={editorCode}
+                    onChange={setEditorCode}
+                    language={editorLanguage}
+                    height={boardMode ? 'calc(100vh - 9rem)' : 'calc(100vh - 14rem)'}
+                    copyPasteDisabled={false}
+                    fontSize={boardMode ? 20 : 15}
+                  />
+                </div>
+              ) : (
+                <div
+                  className={`h-full rounded-xl border p-6 overflow-auto ${boardMode ? 'text-2xl leading-relaxed text-white' : 'text-lg'}`}
+                  style={{
+                    backgroundColor: boardMode ? '#1e293b' : 'var(--card-white)',
+                    borderColor: boardMode ? '#334155' : 'var(--card-border)',
+                    color: boardMode ? '#fff' : 'var(--text-primary)',
+                  }}
+                >
+                  <p className="text-sm font-semibold mb-3 opacity-70">Student answer — edit on the board if needed</p>
+                  <textarea
+                    value={editorCode}
+                    onChange={(e) => setEditorCode(e.target.value)}
+                    className={`w-full min-h-[50vh] rounded-lg p-4 font-mono ${boardMode ? 'bg-slate-900 text-white text-2xl' : 'border text-base'}`}
+                  />
+                </div>
+              )}
+            </div>
+            {isCodingQuestion && (
+              <div
+                className={`lg:w-[360px] flex-shrink-0 border-t lg:border-t-0 lg:border-l overflow-y-auto p-4 ${
+                  boardMode ? 'bg-slate-900 text-slate-100' : ''
+                }`}
+                style={!boardMode ? { backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' } : { borderColor: '#334155' }}
+              >
+                <p className={`text-sm font-semibold mb-3 ${boardMode ? 'text-white' : ''}`} style={!boardMode ? { color: 'var(--text-heading)' } : undefined}>
+                  Test result
+                </p>
+                {!runResults && (
+                  <p className={`text-sm ${boardMode ? 'text-slate-400' : ''}`} style={!boardMode ? { color: 'var(--text-secondary)' } : undefined}>
+                    Correct the code in the editor, then run it. Students copy the working version into their own editor.
+                  </p>
+                )}
+                {runResults?.error && <p className="text-sm text-red-400">{runResults.message}</p>}
+                {runResults && !runResults.error && (
+                  <div>
+                    <p className={`font-semibold mb-3 ${runResults.isCorrect ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {runResults.isCorrect
+                        ? `All ${runResults.totalTestCases} tests passed`
+                        : `${runResults.passedTestCases}/${runResults.totalTestCases} passed`}
+                    </p>
+                    <TestCaseResultsList results={runResults.testResults} showHiddenDetails />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

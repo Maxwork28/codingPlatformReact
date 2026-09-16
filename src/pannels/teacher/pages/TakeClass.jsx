@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeftIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, ClockIcon } from '@heroicons/react/24/outline';
 import { Menu, Transition, Portal } from '@headlessui/react';
 import parse from 'html-react-parser';
 import { io } from 'socket.io-client';
@@ -14,6 +14,15 @@ import { DiJavascript } from "react-icons/di";
 import { FaJava,  FaPython, FaDatabase, FaBookOpen } from "react-icons/fa";
 import { GiNotebook } from "react-icons/gi";
 import { MdDataObject, MdDataArray } from "react-icons/md";
+import QuestionHtml from '../../../common/components/QuestionHtml';
+import { makeRunHistoryEntry, historyKindLabel, formatHistoryTime, loadRunHistory, saveRunHistory } from '../../../common/utils/runOutputHistory';
+
+const ButtonSpinner = () => (
+  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+  </svg>
+);
 
 const QUESTION_TYPE_LABELS = {
   singleCorrectMcq: 'Single choice',
@@ -113,7 +122,8 @@ const TakeClass = () => {
   const [code, setCode] = useState('');
   const [fillInBlankLine, setFillInBlankLine] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('javascript');
-  const [loading, setLoading] = useState(false);
+  const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [runBusy, setRunBusy] = useState(null);
   
   // Layout states
   const [showQuestionsList, setShowQuestionsList] = useState(false);
@@ -130,10 +140,16 @@ const TakeClass = () => {
   const [testResults, setTestResults] = useState(null);
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [resultsModalKind, setResultsModalKind] = useState(null); // 'run'
+  const [runHistory, setRunHistory] = useState([]);
+  const [resultsView, setResultsView] = useState('detail');
   const [presentMsg, setPresentMsg] = useState('');
   const [presentedReveal, setPresentedReveal] = useState(null);
   const skipEditorResetRef = useRef(false);
   const selectedQuestionId = selectedQuestion?._id;
+
+  useEffect(() => {
+    setRunHistory(loadRunHistory('teacher', selectedClass?._id));
+  }, [selectedClass?._id]);
 
   // Filter classes taught by the current teacher
   const myClasses = classes.filter(
@@ -227,6 +243,43 @@ const TakeClass = () => {
     return code;
   };
 
+  const openResultsModal = (kind) => {
+    setResultsModalKind(kind);
+    setShowResultsModal(true);
+  };
+
+  const closeResultsModal = () => setShowResultsModal(false);
+
+  const recordAndShowResults = (kind, payload) => {
+    setTestResults(payload);
+    if (selectedQuestion?._id) {
+      setRunHistory((prev) => {
+        const next = [makeRunHistoryEntry(selectedQuestion._id, kind, payload), ...prev].slice(0, 30);
+        saveRunHistory('teacher', selectedClass?._id, next);
+        return next;
+      });
+    }
+    setResultsView('detail');
+    openResultsModal(kind === 'submit' ? 'submit' : 'run');
+  };
+
+  const questionRunHistory = runHistory.filter(
+    (entry) => entry.questionId === String(selectedQuestion?._id || '')
+  );
+
+  const openRunHistory = () => {
+    if (!questionRunHistory.length) return;
+    setResultsView('list');
+    setShowResultsModal(true);
+  };
+
+  const openHistoryEntry = (entry) => {
+    setTestResults(entry.results);
+    setResultsModalKind(entry.kind === 'submit' ? 'submit' : 'run');
+    setResultsView('detail');
+    setShowResultsModal(true);
+  };
+
   // Teacher-specific testing handlers
   const handleRunCode = async () => {
     if (!selectedQuestion) {
@@ -250,7 +303,7 @@ const TakeClass = () => {
     }
 
     try {
-      setLoading(true);
+      setRunBusy('run');
       setTestResults(null);
       
       console.log('Teacher running code...', { 
@@ -268,8 +321,7 @@ const TakeClass = () => {
       );
 
       console.log('Test results received:', response.data);
-      
-      setTestResults({
+      recordAndShowResults('run', {
         message: response.data.message,
         testResults: response.data.testResults,
         passedTestCases: response.data.passedTestCases,
@@ -278,17 +330,15 @@ const TakeClass = () => {
         hiddenTestCases: response.data.hiddenTestCases,
         isCorrect: response.data.isCorrect,
       });
-      openResultsModal('run');
 
     } catch (err) {
       console.error('Failed to run code:', err);
-      setTestResults({
+      recordAndShowResults('run', {
         error: true,
         message: typeof err === 'string' ? err : 'Failed to execute code. Please try again.'
       });
-      openResultsModal('run');
     } finally {
-      setLoading(false);
+      setRunBusy(null);
     }
   };
 
@@ -314,7 +364,7 @@ const TakeClass = () => {
     }
 
     try {
-      setLoading(true);
+      setRunBusy('submit');
       setTestResults(null);
       const response = await teacherTestQuestion(
         selectedQuestion._id,
@@ -323,7 +373,7 @@ const TakeClass = () => {
         selectedLanguage,
         { publicOnly: false }
       );
-      setTestResults({
+      recordAndShowResults('submit', {
         message: response.data.message,
         testResults: response.data.testResults,
         passedTestCases: response.data.passedTestCases,
@@ -332,16 +382,14 @@ const TakeClass = () => {
         hiddenTestCases: response.data.hiddenTestCases,
         isCorrect: response.data.isCorrect,
       });
-      openResultsModal('submit');
     } catch (err) {
       console.error('Failed to submit code:', err);
-      setTestResults({
+      recordAndShowResults('submit', {
         error: true,
         message: typeof err === 'string' ? err : 'Failed to submit code. Please try again.'
       });
-      openResultsModal('submit');
     } finally {
-      setLoading(false);
+      setRunBusy(null);
     }
   };
 
@@ -372,7 +420,7 @@ const TakeClass = () => {
     }
 
     try {
-      setLoading(true);
+      setRunBusy('custom');
       setTestResults(null);
       
       console.log('Teacher running with custom input...', { 
@@ -394,8 +442,7 @@ const TakeClass = () => {
 
       console.log('Custom test result received:', response.data);
       
-      // Set results with custom test information
-      setTestResults({
+      recordAndShowResults('custom', {
         message: response.data.message,
         testResult: response.data.testResult,
         customInput: response.data.customInput,
@@ -406,17 +453,15 @@ const TakeClass = () => {
         memoryKb: response.data.memoryKb ?? response.data.testResult?.memoryKb,
         isCustomTest: true,
       });
-      openResultsModal('run');
 
     } catch (err) {
       console.error('Failed to run with custom input:', err);
-      setTestResults({
+      recordAndShowResults('custom', {
         error: true,
         message: typeof err === 'string' ? err : 'Failed to execute code with custom input. Please try again.'
       });
-      openResultsModal('run');
     } finally {
-      setLoading(false);
+      setRunBusy(null);
     }
   };
 
@@ -427,7 +472,7 @@ const TakeClass = () => {
     }
 
     try {
-      setLoading(true);
+      setRunBusy('present');
       setPresentMsg('');
       let source = selectedQuestion;
       if (selectedQuestion._id) {
@@ -487,16 +532,9 @@ const TakeClass = () => {
     } catch (err) {
       setPresentMsg(typeof err === 'string' ? err : 'Failed to load solution.');
     } finally {
-      setLoading(false);
+      setRunBusy(null);
     }
   };
-
-  const openResultsModal = (kind) => {
-    setResultsModalKind(kind);
-    setShowResultsModal(true);
-  };
-
-  const closeResultsModal = () => setShowResultsModal(false);
 
   const renderTestResultsBody = () => {
     if (!testResults) return null;
@@ -547,6 +585,7 @@ const TakeClass = () => {
         <TestCaseResultsList
           results={testResults.testResults}
           className="p-2 bg-white rounded border"
+          showHiddenDetails
         />
         {testResults.testResults && (
           <RunMetricsBadges
@@ -632,7 +671,6 @@ const TakeClass = () => {
       );
       const isPublished = classEntry?.isPublished || false;
       
-      setLoading(true);
       if (isPublished) {
         await unpublishQuestion(questionId, { classId: selectedClass._id });
       } else {
@@ -659,8 +697,6 @@ const TakeClass = () => {
         err?.error ||
         'Failed to update publish status';
       alert(errorMsg);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -679,7 +715,6 @@ const TakeClass = () => {
       );
       const isDisabled = classEntry?.isDisabled || false;
       
-      setLoading(true);
       if (isDisabled) {
         await enableQuestion(questionId, { classId: selectedClass._id });
       } else {
@@ -706,8 +741,6 @@ const TakeClass = () => {
         err?.error ||
         'Failed to update disable status';
       alert(errorMsg);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -716,7 +749,7 @@ const TakeClass = () => {
     const handleMouseMove = (e) => {
       if (!isDragging) return;
       
-      const sidebarWidth = isSidebarCollapsed ? 0 : 256;
+      const sidebarWidth = isSidebarCollapsed ? 0 : 288;
       const availableWidth = window.innerWidth - sidebarWidth;
       const mouseXRelative = e.clientX - sidebarWidth;
       const newLeftWidth = (mouseXRelative / availableWidth) * 100;
@@ -812,7 +845,7 @@ const TakeClass = () => {
     if (selectedClass) {
       const fetchQuestions = async () => {
         try {
-          setLoading(true);
+          setQuestionsLoading(true);
           const response = await getQuestionsByClass(selectedClass._id);
           const fetchedQuestions = response.data.questions || [];
           setQuestions(fetchedQuestions);
@@ -833,7 +866,7 @@ const TakeClass = () => {
         } catch (err) {
           console.error('Failed to fetch questions:', err);
         } finally {
-          setLoading(false);
+          setQuestionsLoading(false);
         }
       };
       fetchQuestions();
@@ -1043,7 +1076,7 @@ const TakeClass = () => {
             showQuestionsList ? 'fixed inset-y-0 left-0 z-40 flex h-full max-h-dvh flex-col lg:relative lg:max-h-none' : 'hidden'
           } ${
             isSidebarCollapsed ? 'lg:hidden' : 'lg:flex lg:flex-col'
-          } w-64 flex-shrink-0 border-r transition-all duration-300 lg:h-full lg:min-h-0 lg:self-stretch`} 
+          } w-72 flex-shrink-0 border-r transition-all duration-300 lg:h-full lg:min-h-0 lg:self-stretch`} 
           style={{ 
             backgroundColor: 'var(--card-white)', 
             borderColor: 'var(--card-border)',
@@ -1077,11 +1110,11 @@ const TakeClass = () => {
           {/* relative + absolute inset-0: reliable scroll area (flex-1 alone often gets unbounded height in nested flex) */}
           <div className="relative min-h-0 flex-1 w-full" style={{ minHeight: 0 }}>
             <div
-              className="absolute inset-0 overflow-y-scroll overflow-x-hidden overscroll-contain pr-1 touch-pan-y"
+              className="absolute inset-0 overflow-y-auto overflow-x-hidden overscroll-contain touch-pan-y"
               style={{ WebkitOverflowScrolling: 'touch' }}
             >
-            <div className="px-4 pb-4 pt-3">
-              {loading ? (
+            <div className="px-3 pb-4 pt-3">
+              {questionsLoading ? (
                 <div className="text-center py-8">
                   <div className="w-8 h-8 border-4 border-t-transparent rounded-full animate-spin mx-auto" style={{ borderColor: 'var(--text-primary)', borderTopColor: 'transparent' }}></div>
                 </div>
@@ -1091,30 +1124,70 @@ const TakeClass = () => {
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {questions.map((q, idx) => (
+                  {questions.map((q, idx) => {
+                    const isSelected = selectedQuestion?._id === q._id;
+                    const classEntry = q.classes?.find(
+                      (c) => c.classId?.toString() === selectedClass._id || c.classId?._id?.toString() === selectedClass._id
+                    );
+                    const isPublished = classEntry?.isPublished || false;
+                    const plainTitle = q.title?.replace(/<[^>]*>/g, '') || 'Untitled';
+                    return (
                     <div
                       key={q._id}
-                      className={`rounded-lg transition-all duration-200 hover:z-50 ${
-                        selectedQuestion?._id === q._id ? 'shadow-lg z-50' : 'hover:shadow'
+                      className={`rounded-xl transition-all duration-200 ${
+                        isSelected ? 'shadow-md' : 'hover:shadow-sm'
                       }`}
                       style={{ 
-                        backgroundColor: selectedQuestion?._id === q._id ? 'var(--accent-indigo)' : 'var(--background-light)',
-                        border: selectedQuestion?._id === q._id ? '2px solid var(--accent-indigo)' : '1px solid var(--card-border)',
+                        backgroundColor: isSelected ? 'var(--accent-indigo)' : 'var(--card-white)',
+                        border: isSelected ? '1px solid var(--accent-indigo)' : '1px solid var(--card-border)',
                         position: 'relative'
                       }}
                     >
-                      <div className="flex items-start gap-2 p-3">
-                        {/* Three-dot menu */}
-                        <Menu as="div" style={{ position: 'relative', zIndex: 10000 }}>
-                          {({ open }) => (
+                      <div className="flex items-center gap-1 px-2 py-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedQuestion(q);
+                            setSelectedLanguage(q.languages?.[0] || 'javascript');
+                            setShowQuestionsList(false);
+                          }}
+                          className="flex-1 min-w-0 flex items-center gap-2.5 text-left px-1 py-0.5"
+                        >
+                          <span
+                            className={`flex-shrink-0 flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
+                              isSelected ? 'bg-white text-indigo-700' : 'bg-indigo-100 text-indigo-700'
+                            }`}
+                          >
+                            {idx + 1}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p
+                              className="text-sm font-medium truncate leading-5"
+                              style={{ color: isSelected ? '#ffffff' : 'var(--text-heading)' }}
+                              title={plainTitle}
+                            >
+                              {plainTitle}
+                            </p>
+                            <p
+                              className="text-[11px] truncate leading-4 mt-0.5"
+                              style={{ color: isSelected ? 'rgba(255,255,255,0.8)' : 'var(--text-secondary)' }}
+                            >
+                              {isPublished ? 'Published' : 'Unpublished'}
+                            </p>
+                          </div>
+                        </button>
+                        <Menu as="div" className="relative flex-shrink-0">
+                          {() => (
                             <>
                               <Menu.Button 
-                                className="p-1.5 rounded-lg hover:bg-white/10 transition-colors flex-shrink-0"
+                                className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
+                                  isSelected ? 'hover:bg-white/15' : 'hover:bg-gray-100'
+                                }`}
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <svg
                                   className="h-4 w-4"
-                                  style={{ color: 'var(--text-secondary)' }}
+                                  style={{ color: isSelected ? '#ffffff' : 'var(--text-secondary)' }}
                                   xmlns="http://www.w3.org/2000/svg"
                                   viewBox="0 0 20 20"
                                   fill="currentColor"
@@ -1262,55 +1335,10 @@ const TakeClass = () => {
                             </>
                           )}
                         </Menu>
-
-                        <button
-                          onClick={() => {
-                            setSelectedQuestion(q);
-                            setSelectedLanguage(q.languages?.[0] || 'javascript');
-                            setShowQuestionsList(false);
-                          }}
-                          className="flex-1 flex items-start gap-2 text-left"
-                        >
-                          <span className="flex-shrink-0 flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold">
-                            {idx + 1}
-                          </span>
-                          <div className="flex-1 min-w-0">
-                            <p 
-                              className="text-sm font-medium line-clamp-2 leading-tight" 
-                              style={{ color: 'var(--text-primary)' }}
-                              title={q.title?.replace(/<[^>]*>/g, '') || 'Untitled'}
-                            >
-                              {q.title?.replace(/<[^>]*>/g, '') || 'Untitled'}
-                            </p>
-                            {(() => {
-                              const classEntry = q.classes?.find(
-                                (c) => c.classId?.toString() === selectedClass._id || c.classId?._id?.toString() === selectedClass._id
-                              );
-                              const isPublished = classEntry?.isPublished || false;
-                              const publishedAt = classEntry?.publishedAt || q.publishedAt;
-                              if (isPublished) {
-                                return (
-                                  <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
-                                    Published {publishedAt ? new Date(publishedAt).toLocaleDateString() : ''}
-                                  </p>
-                                );
-                              }
-                              return (
-                                <>
-                                  <p className="text-xs mt-0.5 font-mono" style={{ color: 'var(--text-secondary)' }}>
-                                    ID: {q._id}
-                                  </p>
-                                  <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
-                                    {q.difficulty} • {QUESTION_TYPE_LABELS[q.type] || q.type}
-                                  </p>
-                                </>
-                              );
-                            })()}
-                          </div>
-                        </button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1392,10 +1420,11 @@ const TakeClass = () => {
                   <h3 className="text-base sm:text-lg font-semibold mb-2" style={{ color: 'var(--text-heading)' }}>
                     Problem Statement
                   </h3>
-                  <div 
-                    className="text-xs sm:text-sm leading-relaxed" 
+                  <QuestionHtml
+                    html={selectedQuestion.description}
+                    className="text-xs sm:text-sm leading-relaxed"
                     style={{ color: 'var(--text-primary)' }}
-                    dangerouslySetInnerHTML={{ __html: selectedQuestion.description }}
+                    empty={<span className="text-xs sm:text-sm">—</span>}
                   />
                 </div>
 
@@ -1513,22 +1542,22 @@ const TakeClass = () => {
               }}
             >
               {/* Editor Controls (type-aware) */}
-              <div className="border-b p-3 sm:p-4 flex-shrink-0" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
+              <div className="border-b px-3 py-2.5 sm:px-4 flex-shrink-0" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
                     {isRunnableCoding && selectedQuestion.languages?.length > 0 ? (
-                      <div className="w-full sm:w-auto">
-                        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                      <div className="inline-flex items-center gap-2">
+                        <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>
                           Language
                         </label>
                         <select
                           value={selectedLanguage}
                           onChange={(e) => setSelectedLanguage(e.target.value)}
-                          className="w-full sm:w-auto rounded-lg border shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-1.5"
-                          style={{ 
-                            borderColor: 'var(--card-border)', 
-                            backgroundColor: 'var(--background-light)', 
-                            color: 'var(--text-primary)' 
+                          className="rounded-lg border shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-1.5 min-w-[7.5rem]"
+                          style={{
+                            borderColor: 'var(--card-border)',
+                            backgroundColor: 'var(--background-light)',
+                            color: 'var(--text-primary)',
                           }}
                         >
                           {selectedQuestion.languages?.map((lang) => (
@@ -1549,26 +1578,22 @@ const TakeClass = () => {
                       </div>
                     ) : null}
                     {isRunnableCoding && (
-                      <div className="hidden sm:flex items-center gap-3">
-                        <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                          Time: {selectedQuestion.timeLimit ?? 2}s
-                        </span>
-                        <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                          Memory: {selectedQuestion.memoryLimit ?? 256}MB
-                        </span>
+                      <div className="hidden sm:inline-flex items-center gap-3 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                        <span>Time: {selectedQuestion.timeLimit ?? 2}s</span>
+                        <span>Memory: {selectedQuestion.memoryLimit ?? 256}MB</span>
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
                     {(showFullCodeEditor || isFillInBlanksCoding) && (
                       <button
                         type="button"
                         onClick={toggleFullscreen}
-                        className="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all duration-200 hover:shadow"
-                        style={{ 
-                          backgroundColor: 'var(--card-white)', 
-                          borderColor: 'var(--card-border)', 
-                          color: 'var(--text-primary)' 
+                        className="inline-flex items-center justify-center h-8 w-8 rounded-lg border transition-all duration-200 hover:shadow"
+                        style={{
+                          backgroundColor: 'var(--card-white)',
+                          borderColor: 'var(--card-border)',
+                          color: 'var(--text-primary)',
                         }}
                         title="Fullscreen (F11)"
                       >
@@ -1579,14 +1604,30 @@ const TakeClass = () => {
                     )}
                     {isRunnableCoding && (
                       <>
+                        {questionRunHistory.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={openRunHistory}
+                            className="inline-flex items-center gap-1 h-8 px-3 text-xs font-semibold rounded-lg border transition-all duration-200 hover:shadow"
+                            style={{
+                              backgroundColor: 'var(--accent-indigo)',
+                              borderColor: 'var(--accent-indigo)',
+                              color: '#fff',
+                            }}
+                            title="Reopen past runs and outputs"
+                          >
+                            <ClockIcon className="w-4 h-4" />
+                            History ({questionRunHistory.length})
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={handleResetCode}
-                          className="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all duration-200 hover:shadow"
-                          style={{ 
-                            backgroundColor: 'var(--card-white)', 
-                            borderColor: 'var(--card-border)', 
-                            color: 'var(--text-primary)' 
+                          className="inline-flex items-center h-8 px-3 text-xs font-semibold rounded-lg border transition-all duration-200 hover:shadow"
+                          style={{
+                            backgroundColor: 'var(--card-white)',
+                            borderColor: 'var(--card-border)',
+                            color: 'var(--text-primary)',
                           }}
                         >
                           Reset
@@ -1594,11 +1635,11 @@ const TakeClass = () => {
                         <button
                           type="button"
                           onClick={handleCopyCode}
-                          className="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all duration-200 hover:shadow"
-                          style={{ 
-                            backgroundColor: 'var(--card-white)', 
-                            borderColor: 'var(--card-border)', 
-                            color: 'var(--text-primary)' 
+                          className="inline-flex items-center h-8 px-3 text-xs font-semibold rounded-lg border transition-all duration-200 hover:shadow"
+                          style={{
+                            backgroundColor: 'var(--card-white)',
+                            borderColor: 'var(--card-border)',
+                            color: 'var(--text-primary)',
                           }}
                         >
                           Copy
@@ -1848,6 +1889,32 @@ const TakeClass = () => {
                   </div>
                   )}
 
+                  {questionRunHistory.length > 0 && !showResultsModal && (
+                    <button
+                      type="button"
+                      onClick={openRunHistory}
+                      className="w-full flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left"
+                      style={{
+                        borderColor: 'var(--card-border)',
+                        backgroundColor: 'var(--background-light)',
+                        color: 'var(--text-primary)',
+                      }}
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
+                          Last run / history
+                        </span>
+                        <span className={`block text-sm font-medium truncate ${questionRunHistory[0].failed ? 'text-rose-600' : 'text-emerald-600'}`}>
+                          {historyKindLabel(questionRunHistory[0].kind)} · {questionRunHistory[0].summary}
+                        </span>
+                      </span>
+                      <span className="shrink-0 inline-flex items-center text-xs font-semibold text-indigo-600">
+                        <ClockIcon className="h-4 w-4 mr-1" />
+                        Open
+                      </span>
+                    </button>
+                  )}
+
                   {/* Action Buttons */}
                   <div className="flex flex-wrap justify-end gap-2 border-t pt-3" style={{ borderColor: 'var(--card-border)' }}>
                     {isRunnableCoding && (
@@ -1855,17 +1922,14 @@ const TakeClass = () => {
                         <button
                           type="button"
                           onClick={handleRunCode}
-                          disabled={loading}
+                          disabled={Boolean(runBusy)}
                           className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 ${
-                            loading ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                            runBusy ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
                           }`}
                         >
-                          {loading ? (
+                          {runBusy === 'run' ? (
                             <>
-                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
+                              <ButtonSpinner />
                               Running...
                             </>
                           ) : isFillInBlanksCoding ? 'Run tests' : 'Run Code'}
@@ -1873,27 +1937,29 @@ const TakeClass = () => {
                         <button
                           type="button"
                           onClick={handleSubmitCode}
-                          disabled={loading}
+                          disabled={Boolean(runBusy)}
                           className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-all duration-200 ${
-                            loading ? 'bg-emerald-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'
+                            runBusy ? 'bg-emerald-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'
                           }`}
                         >
-                          Submit
+                          {runBusy === 'submit' ? (
+                            <>
+                              <ButtonSpinner />
+                              Submitting...
+                            </>
+                          ) : 'Submit'}
                         </button>
                         <button
                           type="button"
                           onClick={handleRunWithCustomInput}
-                          disabled={!customInput.trim() || loading}
+                          disabled={!customInput.trim() || Boolean(runBusy)}
                           className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-200 ${
-                            customInput.trim() && !loading ? 'bg-green-600 hover:bg-green-700 focus:ring-green-500' : 'bg-gray-400 cursor-not-allowed'
+                            customInput.trim() && !runBusy ? 'bg-green-600 hover:bg-green-700 focus:ring-green-500' : 'bg-gray-400 cursor-not-allowed'
                           }`}
                         >
-                          {loading ? (
+                          {runBusy === 'custom' ? (
                             <>
-                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
+                              <ButtonSpinner />
                               Running...
                             </>
                           ) : 'Run Custom'}
@@ -1903,13 +1969,33 @@ const TakeClass = () => {
                     <button
                       type="button"
                       onClick={handlePresentSolution}
-                      disabled={loading}
+                      disabled={Boolean(runBusy)}
                       className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-200 ${
-                        loading ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+                        runBusy ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
                       }`}
                     >
-                      Present Solution
+                      {runBusy === 'present' ? (
+                        <>
+                          <ButtonSpinner />
+                          Loading...
+                        </>
+                      ) : 'Present Solution'}
                     </button>
+                    {questionRunHistory.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={openRunHistory}
+                        className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold border transition-all duration-200"
+                        style={{
+                          borderColor: 'var(--card-border)',
+                          backgroundColor: 'var(--card-white)',
+                          color: 'var(--text-primary)',
+                        }}
+                      >
+                        <ClockIcon className="h-4 w-4 mr-1.5" />
+                        Run history ({questionRunHistory.length})
+                      </button>
+                    )}
                   </div>
 
                 </div>
@@ -1970,31 +2056,57 @@ const TakeClass = () => {
               <button
                 type="button"
                 onClick={handleRunCode}
-                disabled={loading}
+                disabled={Boolean(runBusy)}
                 className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
               >
-                {isFillInBlanksCoding ? 'Run tests' : 'Run Code'}
+                {runBusy === 'run' ? (
+                  <>
+                    <ButtonSpinner />
+                    Running...
+                  </>
+                ) : isFillInBlanksCoding ? 'Run tests' : 'Run Code'}
               </button>
               <button
                 type="button"
                 onClick={handleSubmitCode}
-                disabled={loading}
+                disabled={Boolean(runBusy)}
                 className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 ${
-                  loading ? 'bg-emerald-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'
+                  runBusy ? 'bg-emerald-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'
                 }`}
               >
-                Submit
+                {runBusy === 'submit' ? (
+                  <>
+                    <ButtonSpinner />
+                    Submitting...
+                  </>
+                ) : 'Submit'}
               </button>
               <button
                 type="button"
                 onClick={handlePresentSolution}
-                disabled={loading}
+                disabled={Boolean(runBusy)}
                 className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
-                  loading ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+                  runBusy ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
                 }`}
               >
-                {loading ? 'Loading…' : 'Present Solution'}
+                {runBusy === 'present' ? (
+                  <>
+                    <ButtonSpinner />
+                    Loading...
+                  </>
+                ) : 'Present Solution'}
               </button>
+              {questionRunHistory.length > 0 && (
+                <button
+                  type="button"
+                  onClick={openRunHistory}
+                  className="inline-flex items-center px-3 py-2 rounded-lg text-sm font-semibold border"
+                  style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--card-white)', color: 'var(--text-primary)' }}
+                >
+                  <ClockIcon className="h-4 w-4 mr-1.5" />
+                  History
+                </button>
+              )}
               <button
                 type="button"
                 onClick={toggleFullscreen}
@@ -2061,7 +2173,7 @@ const TakeClass = () => {
         </div>
       )}
 
-      {showResultsModal && testResults && (
+      {showResultsModal && (resultsView === 'list' || testResults) && (
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center p-4"
           role="dialog"
@@ -2078,38 +2190,102 @@ const TakeClass = () => {
             className="relative w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-lg shadow-xl border p-5 z-10"
             style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
           >
-            <div className="flex items-start justify-between gap-3 mb-4">
-              <h2 id="results-modal-title" className="text-lg font-semibold" style={{ color: 'var(--text-heading)' }}>
-                {testResults?.error
-                  ? 'Error'
-                  : testResults?.isCustomTest
-                    ? 'Custom Test Results'
-                    : resultsModalKind === 'submit'
-                      ? 'Submit Results'
-                      : 'Test Results'}
-              </h2>
-              <button
-                type="button"
-                onClick={closeResultsModal}
-                className="shrink-0 p-1 rounded hover:opacity-70 text-lg leading-none"
-                style={{ color: 'var(--text-secondary)' }}
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
-            {!testResults?.error && !testResults?.isCustomTest && testResults?.totalTestCases != null && (
-              <div className="mb-3">
-                <span
-                  className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                    testResults.isCorrect ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                  }`}
-                >
-                  {testResults.passedTestCases}/{testResults.totalTestCases} Passed
-                </span>
-              </div>
+            {resultsView === 'list' ? (
+              <>
+                <div className="flex items-start justify-between gap-3 mb-4">
+                  <h2 id="results-modal-title" className="text-lg font-semibold" style={{ color: 'var(--text-heading)' }}>
+                    Run history
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={closeResultsModal}
+                    className="shrink-0 p-1 rounded hover:opacity-70 text-lg leading-none"
+                    style={{ color: 'var(--text-secondary)' }}
+                    aria-label="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+                <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
+                  This session for the current question. Open a run to see failed cases and output.
+                </p>
+                {questionRunHistory.length === 0 ? (
+                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>No runs yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {questionRunHistory.map((entry) => (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        onClick={() => openHistoryEntry(entry)}
+                        className="w-full text-left rounded-lg border px-3 py-2 hover:border-indigo-400 transition-colors"
+                        style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--background-light)' }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
+                            {historyKindLabel(entry.kind)}
+                          </span>
+                          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                            {formatHistoryTime(entry.at)}
+                          </span>
+                        </div>
+                        <div className={`text-sm font-medium mt-0.5 ${entry.failed ? 'text-rose-600' : 'text-emerald-600'}`}>
+                          {entry.summary}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="flex items-start justify-between gap-3 mb-4">
+                  <h2 id="results-modal-title" className="text-lg font-semibold" style={{ color: 'var(--text-heading)' }}>
+                    {testResults?.error
+                      ? 'Error'
+                      : testResults?.isCustomTest
+                        ? 'Custom Test Results'
+                        : resultsModalKind === 'submit'
+                          ? 'Submit Results'
+                          : 'Test Results'}
+                  </h2>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {questionRunHistory.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setResultsView('list')}
+                        className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold border"
+                        style={{ borderColor: 'var(--card-border)', color: 'var(--text-primary)' }}
+                      >
+                        <ClockIcon className="h-3.5 w-3.5 mr-1" />
+                        History
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={closeResultsModal}
+                      className="p-1 rounded hover:opacity-70 text-lg leading-none"
+                      style={{ color: 'var(--text-secondary)' }}
+                      aria-label="Close"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+                {!testResults?.error && !testResults?.isCustomTest && testResults?.totalTestCases != null && (
+                  <div className="mb-3">
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                        testResults.isCorrect ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                      }`}
+                    >
+                      {testResults.passedTestCases}/{testResults.totalTestCases} Passed
+                    </span>
+                  </div>
+                )}
+                {renderTestResultsBody()}
+              </>
             )}
-            {renderTestResultsBody()}
           </div>
         </div>
       )}

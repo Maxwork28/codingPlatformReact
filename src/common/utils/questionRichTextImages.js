@@ -6,12 +6,32 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 export function resolveQuestionMediaUrl(src) {
   if (!src) return '';
-  if (/^(https?:|data:|blob:)/i.test(src)) return src;
-  return `${API_BASE_URL}${src}`;
+  const raw = String(src).trim();
+  if (/^(https?:|data:|blob:)/i.test(raw)) return raw;
+  const base = String(API_BASE_URL || '').replace(/\/$/, '');
+  if (!raw.startsWith('/')) return `${base}/${raw}`;
+  return `${base}${raw}`;
+}
+
+export function toStoredQuestionMediaUrl(src) {
+  if (!src) return '';
+  const raw = String(src).trim();
+  const base = String(API_BASE_URL || '').replace(/\/$/, '');
+  if (base && (raw === base || raw.startsWith(`${base}/`))) {
+    return raw.slice(base.length) || '/';
+  }
+  return raw;
+}
+
+export function rewriteQuestionHtmlMedia(html) {
+  if (!html || typeof html !== 'string') return '';
+  return html.replace(/(<img\b[^>]*\bsrc\s*=\s*)(["'])([^"']*)\2/gi, (_, prefix, quote, src) => (
+    `${prefix}${quote}${resolveQuestionMediaUrl(src)}${quote}`
+  ));
 }
 
 export function serializeImageHtml(node) {
-  const src = String(node.url || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  const src = toStoredQuestionMediaUrl(node.url).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
   const alt = String(node.alt || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
   return `<img src="${src}" alt="${alt}" class="question-inline-image" />`;
 }
@@ -20,7 +40,7 @@ export function deserializeImgNode(domNode) {
   return [
     {
       type: 'image',
-      url: domNode.getAttribute('src') || '',
+      url: toStoredQuestionMediaUrl(domNode.getAttribute('src') || ''),
       alt: domNode.getAttribute('alt') || '',
       children: [{ text: '' }],
     },
@@ -37,7 +57,7 @@ export function insertImageNode(editor, url, alt = '') {
   });
 }
 
-export async function insertImageFile(editor, file) {
+export async function uploadQuestionImageFile(file) {
   if (!file || !file.type || !file.type.startsWith('image/')) {
     throw new Error('Please choose an image file (PNG, JPG, GIF, or WebP).');
   }
@@ -45,8 +65,30 @@ export async function insertImageFile(editor, file) {
     throw new Error('Image must be 5MB or smaller.');
   }
   const data = await uploadQuestionImage(file);
-  const url = resolveQuestionMediaUrl(data.url);
-  insertImageNode(editor, url, file.name || '');
+  const url = toStoredQuestionMediaUrl(data?.url || '');
+  if (!url) throw new Error('Upload did not return an image URL.');
+  return { url, alt: file.name || '' };
+}
+
+export function appendImageElements(nodes, items) {
+  const base = Array.isArray(nodes) && nodes.length
+    ? nodes
+    : [{ type: 'paragraph', children: [{ text: '' }] }];
+  const extras = (items || [])
+    .filter((item) => item?.url)
+    .map((item) => ({
+      type: 'paragraph',
+      children: [
+        { type: 'image', url: item.url, alt: item.alt || '', children: [{ text: '' }] },
+        { text: '' },
+      ],
+    }));
+  return extras.length ? [...base, ...extras] : base;
+}
+
+export async function insertImageFile(editor, file) {
+  const { url, alt } = await uploadQuestionImageFile(file);
+  insertImageNode(editor, url, alt);
   return url;
 }
 

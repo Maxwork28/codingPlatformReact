@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import CodeEditor from './CodeEditor';
 import TestCaseResultsList from './TestCaseResultsList';
+import QuestionHtml from '../../../common/components/QuestionHtml';
 
 const QuestionWorkspace = ({
   question,
@@ -197,7 +198,7 @@ const QuestionWorkspace = ({
       <div className="flex-1 overflow-y-auto bg-white">
         <div className="border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white px-6 py-5">
           <h2 className="text-2xl font-bold text-gray-900" dangerouslySetInnerHTML={{ __html: question.title }} />
-          <div className="mt-2 text-sm text-gray-600" dangerouslySetInnerHTML={{ __html: question.description }} />
+          <QuestionHtml html={question.description} className="mt-2 text-sm text-gray-600" />
           {question.constraints && (
             <div className="mt-3 whitespace-pre-wrap rounded-md bg-gray-100 px-3 py-2 text-xs text-gray-600" dangerouslySetInnerHTML={{ __html: question.constraints }} />
           )}

@@ -33,6 +33,7 @@ import {
   searchQuestions,
   adminSearchQuestionsById,
 } from '../../../common/services/api';
+import AddStudentsToClassPanel from '../components/AddStudentsToClassPanel';
 
 const AdminClassDetails = () => {
   const { classId } = useParams();
@@ -929,16 +930,44 @@ const AdminClassDetails = () => {
                         </button>
                       )}
                     </div>
-                    <p className="text-xs text-gray-500 mb-2">
-                      Search and select one or more students. They are added when you save the class.
-                    </p>
-                    <input
-                      type="text"
-                      value={studentSearchQuery}
-                      onChange={(e) => setStudentSearchQuery(e.target.value)}
-                      className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm pl-3 py-2 mb-2"
-                      placeholder="Search students..."
+                    <AddStudentsToClassPanel
+                      classId={classId}
+                      onAdded={async () => {
+                        await Promise.all([fetchClassDetails(classId), fetchAllUsers()]);
+                      }}
+                      onMessage={(text) => {
+                        setMessage(text);
+                        setError('');
+                      }}
+                      onError={(text) => {
+                        setError(text);
+                        setMessage('');
+                      }}
                     />
+                    <p className="text-xs text-gray-500 mt-3 mb-2">
+                      Optional: search and tick a few students. Prefer Excel or paste emails for 70+ students.
+                    </p>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={studentSearchQuery}
+                        onChange={(e) => setStudentSearchQuery(e.target.value)}
+                        className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm pl-3 py-2"
+                        placeholder="Search students..."
+                      />
+                      {studentsAvailableToAdd.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const ids = studentsAvailableToAdd.map((student) => String(student._id));
+                            setPendingStudentIds((prev) => [...new Set([...prev, ...ids])]);
+                          }}
+                          className="shrink-0 text-xs font-medium text-indigo-600 hover:text-indigo-500"
+                        >
+                          Select all shown
+                        </button>
+                      )}
+                    </div>
                     <div className="max-h-60 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-sm">
                       {studentsAvailableToAdd.length > 0 ? (
                         <ul className="divide-y divide-gray-100">
@@ -2023,6 +2052,22 @@ const AdminClassDetails = () => {
             <Tab.Panel className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 p-6 dark:bg-gray-800 dark:border-gray-700">
           {/* Students List */}
           <div>
+            <div className="mb-4">
+              <AddStudentsToClassPanel
+                classId={classId}
+                onAdded={async () => {
+                  await Promise.all([fetchClassDetails(classId), fetchAllUsers()]);
+                }}
+                onMessage={(text) => {
+                  setMessage(text);
+                  setError('');
+                }}
+                onError={(text) => {
+                  setError(text);
+                  setMessage('');
+                }}
+              />
+            </div>
             <div className="flex justify-between items-center mb-4">
               <h4 className="text-md font-semibold text-gray-800">Students ({filteredStudentsTable.length})</h4>
               <div className="flex gap-3 items-center">

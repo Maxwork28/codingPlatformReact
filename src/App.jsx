@@ -415,9 +415,12 @@ const MainContent = () => {
 function App() {
   const dispatch = useDispatch();
   const { user, token, status } = useSelector((state) => state.auth);
-  const hasToken = token || localStorage.getItem('token');
+  const hasToken = Boolean(token || localStorage.getItem('token'));
+  const sessionReady = Boolean(user?.name && hasToken);
+  const restoringSession = hasToken && !user?.name && status !== 'failed';
 
-  // Automatically fetch user details when app loads with a valid token
+  // Restore the session before mounting the dashboard so a stale token cannot
+  // mark classes as unauthorized and leave that error after a fresh login.
   useEffect(() => {
     if (hasToken && token && !user?.name && status === 'idle') {
       console.log('App: Auto-fetching user details');
@@ -425,8 +428,21 @@ function App() {
     }
   }, [dispatch, hasToken, token, user?.name, status]);
 
+  if (restoringSession) {
+    return (
+      <ThemeProvider>
+        <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: 'var(--background-content)' }}>
+          <div
+            className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin"
+            style={{ borderColor: 'var(--text-primary)', borderTopColor: 'transparent' }}
+          />
+        </div>
+      </ThemeProvider>
+    );
+  }
+
   // If not authenticated, show login page
-  if (!hasToken || !user) {
+  if (!sessionReady) {
     return (
       <ThemeProvider>
         <Routes>

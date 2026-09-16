@@ -118,7 +118,7 @@ const TestSolutionLimitControls = ({
         payload.answer,
         payload.classId || null,
         payload.language,
-        { runs: 10, timeLimit: 5, memoryLimit: 1024 }
+        { runs: 10, timeLimit: 2, memoryLimit: 1024 }
       );
       const bench = response.data?.benchmark;
       if (!bench) {

@@ -4,6 +4,7 @@ import { getQuestion, submitAnswer } from '../../../common/services/api';
 import CodeEditor from '../../student/components/CodeEditor';
 import TestCaseResultsList from '../../student/components/TestCaseResultsList';
 import parse from 'html-react-parser';
+import QuestionHtml from '../../../common/components/QuestionHtml';
 
 const QUESTION_TYPE_LABELS = {
   singleCorrectMcq: 'Single choice',
@@ -398,9 +399,11 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion }) => {
       <div className="space-y-6 mb-8">
         <div>
           <h3 className="text-lg font-semibold text-gray-800 mb-2">Description</h3>
-          <div className="text-sm text-gray-700 prose prose-sm max-w-none rounded-xl border border-gray-100 bg-gray-50/80 p-4">
-            {parse(question.description || 'No description available')}
-          </div>
+          <QuestionHtml
+            html={question.description}
+            className="text-sm text-gray-700 rounded-xl border border-gray-100 bg-gray-50/80 p-4"
+            empty={<div className="text-sm text-gray-700">No description available</div>}
+          />
         </div>
 
         {RUNNABLE_CODING_TYPES.includes(question.type) && question.inputFormat && (

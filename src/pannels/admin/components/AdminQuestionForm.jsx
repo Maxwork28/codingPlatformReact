@@ -17,9 +17,11 @@ import {
   withQuestionImages,
   serializeImageHtml,
   deserializeImgNode,
+  appendImageElements,
 } from '../../../common/utils/questionRichTextImages';
 import QuestionImageElement from '../../../common/components/QuestionImageElement';
 import InsertQuestionImageButton from '../../../common/components/InsertQuestionImageButton';
+import QuestionImageAttach from '../../../common/components/QuestionImageAttach';
 
 // Enhanced withFormatting to properly handle formatting and multi-line paste
 const withFormatting = editor => {
@@ -1214,6 +1216,12 @@ const AdminQuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId
               placeholder="Provide detailed question description"
               className="w-full"
               allowImages
+            />
+            <QuestionImageAttach
+              onUploaded={(items) => {
+                setDescription((prev) => appendImageElements(prev, items));
+                setEditorPasteKey((k) => k + 1);
+              }}
             />
           </div>
           <div>

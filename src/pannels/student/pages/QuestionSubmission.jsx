@@ -13,6 +13,7 @@ import CodeEditor from '../components/CodeEditor';
 import TestCaseResultsList, { parseTestCaseResultsList } from '../components/TestCaseResultsList';
 import RunMetricsBadges from '../../../common/components/RunMetricsBadges';
 import StudentBackNav from '../components/StudentBackNav';
+import QuestionHtml from '../../../common/components/QuestionHtml';
 
 // Socket.IO initialization
 const socket = io('https://api.algosutra.co.in/', {
@@ -835,7 +836,7 @@ const QuestionSubmission = () => {
           <div className="px-6 py-6">
           <div className="prose max-w-none">
             <h3 className="text-lg font-semibold text-gray-800">Description</h3>
-            <div className="text-gray-600 mt-2 leading-relaxed" dangerouslySetInnerHTML={{ __html: question.description }} />
+            <QuestionHtml html={question.description} className="text-gray-600 mt-2 leading-relaxed" />
 
             {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding' || question.type === 'codingWithDriver') && question.inputFormat && (
               <>

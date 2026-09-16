@@ -16,7 +16,7 @@ import { useTheme } from '../../../common/context/ThemeContext';
 /** Normalize newlines so parent/child string compare matches (fixes echo + unwanted Ace resets). */
 const norm = (s) => (s == null ? '' : String(s)).replace(/\r\n/g, '\n');
 
-const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px', disabled, isFillInTheBlanks = false, copyPasteDisabled = true }) => {
+const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px', disabled, isFillInTheBlanks = false, copyPasteDisabled = true, fontSize = 14 }) => {
   const { isDark } = useTheme();
   const aceTheme = isDark ? 'monokai' : 'github';
   const languageModeMap = {
@@ -435,7 +435,7 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
           value={editorValue}
           onChange={handleChange}
           onLoad={handleEditorLoad}
-          fontSize={14}
+          fontSize={fontSize}
           showPrintMargin={false}
           showGutter={true}
           highlightActiveLine={!disabled}
@@ -459,7 +459,7 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
           defaultValue={displayForDefault}
           onChange={handleChange}
           onLoad={handleEditorLoad}
-          fontSize={14}
+          fontSize={fontSize}
           showPrintMargin={false}
           showGutter={true}
           highlightActiveLine={!disabled}
@@ -533,6 +533,7 @@ CodeEditor.propTypes = {
   disabled: PropTypes.bool,
   isFillInTheBlanks: PropTypes.bool,
   copyPasteDisabled: PropTypes.bool,
+  fontSize: PropTypes.number,
 };
 
 export default CodeEditor;

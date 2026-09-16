@@ -4,6 +4,7 @@ import { getStudentExamResults } from '../../../common/services/api';
 import StudentBackNav from '../components/StudentBackNav';
 import TestCaseResultsList from '../components/TestCaseResultsList';
 import RunMetricsBadges, { summarizeRunMetrics } from '../../../common/components/RunMetricsBadges';
+import QuestionHtml from '../../../common/components/QuestionHtml';
 
 const StudentExamResults = () => {
   const { examId } = useParams();
@@ -238,10 +239,10 @@ const StudentExamResults = () => {
                       />
                     )}
                     {isQuestionObject && question.description && (
-                      <div
+                      <QuestionHtml
+                        html={question.description}
                         className="mb-4 text-sm"
                         style={{ color: 'var(--text-secondary)' }}
-                        dangerouslySetInnerHTML={{ __html: question.description }}
                       />
                     )}
                     {!isQuestionObject && (

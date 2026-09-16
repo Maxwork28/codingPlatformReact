@@ -125,6 +125,17 @@ export const createClass = async (data, file) => {
  * @param {Object} data - Updated class data
  * @returns {Promise} Axios response
  */
+export const addStudentsToClass = async (classId, { file, emails } = {}) => {
+  const formData = new FormData();
+  if (file) formData.append('file', file);
+  if (emails) formData.append('emails', emails);
+  try {
+    return await api.post(`/admin/classes/${classId}/students`, formData);
+  } catch (err) {
+    throw err.response?.data?.error || 'Failed to add students to class';
+  }
+};
+
 export const editClass = async (classId, data) => {
   console.log('editClass called', { classId, data });
   try {
@@ -1323,7 +1334,10 @@ export const teacherTestQuestion = async (questionId, answer, classId, language,
     console.error('[API] Full error:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
     console.error('========================================');
     
-    const errorMessage = err.response?.data?.error || err.message || 'Failed to test question';
+    const errorMessage = err.response?.data?.error
+      || ((err.code === 'ERR_NETWORK' || err.message === 'Network Error')
+        ? 'The test request was cut off before it finished. This usually looks like a CORS error when the API proxy times out. After deploying the faster teacher-test, try again.'
+        : (err.message || 'Failed to test question'));
     throw new Error(errorMessage);
   }
 };

@@ -117,7 +117,11 @@ const Login = () => {
           </div>
 
           {/* Error Message */}
-          {error && <p className="text-red-500 text-sm">{error}</p>}
+          {error && (
+            <p className="text-red-500 text-sm">
+              {typeof error === 'string' ? error : error.message || 'Login failed'}
+            </p>
+          )}
 
           {/* Forgot Password Link */}
           <div className="text-right">

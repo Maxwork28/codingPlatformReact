@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSelector } from 'react-redux';
+import { ClockIcon } from '@heroicons/react/24/outline';
 import { io } from 'socket.io-client';
 import { getQuestionsByClass, runCode, runCodeWithCustomInput, submitAnswer } from '../../../common/services/api';
 import { API_BASE_URL } from '../../../common/constants';
@@ -11,6 +12,8 @@ import { DiJavascript } from "react-icons/di";
 import { FaJava, FaPython, FaDatabase, FaBookOpen } from "react-icons/fa";
 import { GiNotebook } from "react-icons/gi";
 import { MdDataObject, MdDataArray } from "react-icons/md";
+import QuestionHtml from '../../../common/components/QuestionHtml';
+import { makeRunHistoryEntry, historyKindLabel, formatHistoryTime, loadRunHistory, saveRunHistory } from '../../../common/utils/runOutputHistory';
 
 /** Plain text only — avoids showing raw tags like &lt;p&gt;1&lt;/p&gt; in the UI */
 const stripHtml = (html) => {
@@ -73,6 +76,8 @@ const StudentTakeClass = () => {
   const [testResults, setTestResults] = useState(null);
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [resultsModalKind, setResultsModalKind] = useState(null); // 'run' | 'submit'
+  const [runHistory, setRunHistory] = useState([]);
+  const [resultsView, setResultsView] = useState('detail');
   const [isRunning, setIsRunning] = useState(false);
   const [isRunningCustom, setIsRunningCustom] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -143,6 +148,10 @@ const StudentTakeClass = () => {
       fetchQuestions();
     }
   }, [selectedClass]);
+
+  useEffect(() => {
+    setRunHistory(loadRunHistory('student', selectedClass?._id));
+  }, [selectedClass?._id]);
 
   // Update code when question or language changes (not on every parent re-fetch of the same question)
   useEffect(() => {
@@ -483,6 +492,45 @@ const StudentTakeClass = () => {
 
   const closeResultsModal = () => setShowResultsModal(false);
 
+  const recordAndShowResults = (kind, payload) => {
+    setTestResults(kind === 'submit' ? null : payload);
+    if (kind === 'submit') {
+      setSubmissionFeedback(payload);
+    }
+    if (selectedQuestion?._id) {
+      setRunHistory((prev) => {
+        const next = [makeRunHistoryEntry(selectedQuestion._id, kind, payload), ...prev].slice(0, 30);
+        saveRunHistory('student', selectedClass?._id, next);
+        return next;
+      });
+    }
+    setResultsView('detail');
+    openResultsModal(kind === 'submit' ? 'submit' : 'run');
+  };
+
+  const questionRunHistory = runHistory.filter(
+    (entry) => entry.questionId === String(selectedQuestion?._id || '')
+  );
+
+  const openRunHistory = () => {
+    if (!questionRunHistory.length) return;
+    setResultsView('list');
+    setShowResultsModal(true);
+  };
+
+  const openHistoryEntry = (entry) => {
+    if (entry.kind === 'submit') {
+      setSubmissionFeedback(entry.results);
+      setTestResults(null);
+      setResultsModalKind('submit');
+    } else {
+      setTestResults(entry.results);
+      setResultsModalKind('run');
+    }
+    setResultsView('detail');
+    setShowResultsModal(true);
+  };
+
   const renderTestResultsBody = () => {
     if (!testResults) return null;
 
@@ -677,7 +725,7 @@ const StudentTakeClass = () => {
 
       const tr = response.data.testResults || [];
       const sub = response.data.submission || {};
-      setTestResults({
+      recordAndShowResults('run', {
         message: response.data.message,
         testResults: tr,
         passedTestCases: response.data.passedTestCases ?? sub.passedTestCases ?? tr.filter((t) => t.passed).length,
@@ -687,14 +735,12 @@ const StudentTakeClass = () => {
         isCorrect: response.data.isCorrect ?? (tr.length > 0 && tr.every((t) => t.passed)),
         explanation: response.data.explanation,
       });
-      openResultsModal('run');
     } catch (err) {
       console.error('Failed to run code:', err);
-      setTestResults({
+      recordAndShowResults('run', {
         error: true,
         message: typeof err === 'string' ? err : err.response?.data?.error || 'Failed to execute code. Please try again.',
       });
-      openResultsModal('run');
     } finally {
       setIsRunning(false);
     }
@@ -735,7 +781,7 @@ const StudentTakeClass = () => {
       );
 
       const customRow = response.data.testResult || response.data.testResults;
-      setTestResults({
+      recordAndShowResults('custom', {
         message: response.data.message,
         testResult: customRow,
         customInput: response.data.customInput ?? customInput,
@@ -747,14 +793,12 @@ const StudentTakeClass = () => {
         isCustomTest: true,
         explanation: response.data.explanation,
       });
-      openResultsModal('run');
     } catch (err) {
       console.error('Failed to run with custom input:', err);
-      setTestResults({
+      recordAndShowResults('custom', {
         error: true,
         message: typeof err === 'string' ? err : err.response?.data?.error || 'Failed to execute code with custom input. Please try again.',
       });
-      openResultsModal('run');
     } finally {
       setIsRunningCustom(false);
     }
@@ -789,15 +833,13 @@ const StudentTakeClass = () => {
       const data = response?.data ?? {};
       const sub = data.submission ?? {};
       const tr = data.testResults ?? [];
-      setSubmissionFeedback({
+      recordAndShowResults('submit', {
         isCorrect: Boolean(sub.isCorrect ?? data.isCorrect),
         explanation: data.explanation ?? sub.explanation,
         passedTestCases: data.passedTestCases ?? sub.passedTestCases,
         totalTestCases: data.totalTestCases ?? sub.totalTestCases,
         testResults: tr,
       });
-      setTestResults(null);
-      openResultsModal('submit');
       await reloadQuestionsForClass();
     } catch (err) {
       console.error('Failed to submit solution:', err);
@@ -849,13 +891,12 @@ const StudentTakeClass = () => {
       const response = await submitAnswer(selectedQuestion._id, payload, selectedClass._id, undefined);
       const data = response?.data ?? {};
       const sub = data.submission ?? {};
-      setSubmissionFeedback({
+      recordAndShowResults('submit', {
         isCorrect: Boolean(sub.isCorrect ?? data.isCorrect),
         explanation: data.explanation ?? sub.explanation,
         passedTestCases: data.passedTestCases ?? sub.passedTestCases,
         totalTestCases: data.totalTestCases ?? sub.totalTestCases,
       });
-      openResultsModal('submit');
       await reloadQuestionsForClass();
     } catch (err) {
       console.error('Failed to submit answer:', err);
@@ -1123,12 +1164,12 @@ const StudentTakeClass = () => {
                   <h3 className="text-base sm:text-lg font-semibold mb-2" style={{ color: 'var(--text-heading)' }}>
                     Problem Statement
                   </h3>
-                  <div 
-                    className="text-xs sm:text-sm leading-relaxed whitespace-pre-wrap" 
+                  <QuestionHtml
+                    html={selectedQuestion.description}
+                    className="text-xs sm:text-sm leading-relaxed"
                     style={{ color: 'var(--text-primary)' }}
-                  >
-                    {stripHtml(selectedQuestion.description) || "—"}
-                  </div>
+                    empty={<span className="text-xs sm:text-sm">—</span>}
+                  />
                 </div>
 
                 {selectedQuestion.constraints && (
@@ -1331,66 +1372,77 @@ const StudentTakeClass = () => {
                 }}
               >
               {/* Editor Controls */}
-              <div className="border-b p-3 sm:p-4 flex-shrink-0" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
-                     <div className="w-full sm:w-auto">
-                       <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                         Language
-                       </label>
-                       {(() => {
-                         const availableLanguages = getAvailableLanguages(selectedQuestion);
-                         return availableLanguages.length > 0 ? (
-                           <select
-                             value={selectedLanguage || availableLanguages[0] || ''}
-                             onChange={(e) => {
-                               const newLanguage = e.target.value;
-                               if (newLanguage) {
-                                 setSelectedLanguage(newLanguage);
-                               }
-                             }}
-                             disabled={questionInteractionLocked}
-                             className="w-full sm:w-auto rounded-lg border shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-1.5"
-                             style={{ 
-                               borderColor: 'var(--card-border)', 
-                               backgroundColor: 'var(--background-light)', 
-                               color: 'var(--text-primary)',
-                               cursor: questionInteractionLocked ? 'not-allowed' : 'pointer',
-                               minWidth: '120px'
-                             }}
-                           >
-                             {availableLanguages.map((lang) => (
-                               <option key={lang} value={lang}>
-                                 {lang.charAt(0).toUpperCase() + lang.slice(1)}
-                               </option>
-                             ))}
-                           </select>
-                         ) : (
-                           <div className="text-xs text-gray-500 px-3 py-1.5">
-                             No languages available
-                           </div>
-                         );
-                       })()}
-                     </div>
-                    <div className="hidden sm:flex items-center gap-3">
-                      <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                        Time: 2s
-                      </span>
-                      <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                        Memory: 256MB
-                      </span>
+              <div className="border-b px-3 py-2.5 sm:px-4 flex-shrink-0" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
+                    <div className="inline-flex items-center gap-2">
+                      <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>
+                        Language
+                      </label>
+                      {(() => {
+                        const availableLanguages = getAvailableLanguages(selectedQuestion);
+                        return availableLanguages.length > 0 ? (
+                          <select
+                            value={selectedLanguage || availableLanguages[0] || ''}
+                            onChange={(e) => {
+                              const newLanguage = e.target.value;
+                              if (newLanguage) {
+                                setSelectedLanguage(newLanguage);
+                              }
+                            }}
+                            disabled={questionInteractionLocked}
+                            className="rounded-lg border shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-1.5 min-w-[7.5rem]"
+                            style={{
+                              borderColor: 'var(--card-border)',
+                              backgroundColor: 'var(--background-light)',
+                              color: 'var(--text-primary)',
+                              cursor: questionInteractionLocked ? 'not-allowed' : 'pointer',
+                            }}
+                          >
+                            {availableLanguages.map((lang) => (
+                              <option key={lang} value={lang}>
+                                {lang.charAt(0).toUpperCase() + lang.slice(1)}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div className="text-xs text-gray-500 px-3 py-1.5">
+                            No languages available
+                          </div>
+                        );
+                      })()}
+                    </div>
+                    <div className="hidden sm:inline-flex items-center gap-3 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                      <span>Time: 2s</span>
+                      <span>Memory: 256MB</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                    {questionRunHistory.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={openRunHistory}
+                        className="inline-flex items-center gap-1 h-8 px-3 text-xs font-semibold rounded-lg border transition-all duration-200 hover:shadow"
+                        style={{
+                          backgroundColor: 'var(--accent-indigo)',
+                          borderColor: 'var(--accent-indigo)',
+                          color: '#fff',
+                        }}
+                        title="Reopen past runs and outputs"
+                      >
+                        <ClockIcon className="w-4 h-4" />
+                        History ({questionRunHistory.length})
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={toggleFullscreen}
                       disabled={questionInteractionLocked && !isFullscreen}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all duration-200 hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{ 
-                        backgroundColor: 'var(--card-white)', 
-                        borderColor: 'var(--card-border)', 
-                        color: 'var(--text-primary)' 
+                      className="inline-flex items-center justify-center h-8 w-8 rounded-lg border transition-all duration-200 hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{
+                        backgroundColor: 'var(--card-white)',
+                        borderColor: 'var(--card-border)',
+                        color: 'var(--text-primary)',
                       }}
                       title="Fullscreen (F11)"
                     >
@@ -1402,22 +1454,22 @@ const StudentTakeClass = () => {
                       type="button"
                       onClick={handleResetCode}
                       disabled={questionInteractionLocked}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all duration-200 hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{ 
-                        backgroundColor: 'var(--card-white)', 
-                        borderColor: 'var(--card-border)', 
-                        color: 'var(--text-primary)' 
+                      className="inline-flex items-center h-8 px-3 text-xs font-semibold rounded-lg border transition-all duration-200 hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{
+                        backgroundColor: 'var(--card-white)',
+                        borderColor: 'var(--card-border)',
+                        color: 'var(--text-primary)',
                       }}
                     >
                       Reset
                     </button>
                     <button
                       onClick={handleCopyCode}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all duration-200 hover:shadow"
-                      style={{ 
-                        backgroundColor: 'var(--card-white)', 
-                        borderColor: 'var(--card-border)', 
-                        color: 'var(--text-primary)' 
+                      className="inline-flex items-center h-8 px-3 text-xs font-semibold rounded-lg border transition-all duration-200 hover:shadow"
+                      style={{
+                        backgroundColor: 'var(--card-white)',
+                        borderColor: 'var(--card-border)',
+                        color: 'var(--text-primary)',
                       }}
                     >
                       Copy
@@ -1517,6 +1569,32 @@ const StudentTakeClass = () => {
                     </div>
                   </div>
 
+                  {questionRunHistory.length > 0 && !showResultsModal && (
+                    <button
+                      type="button"
+                      onClick={openRunHistory}
+                      className="w-full flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left"
+                      style={{
+                        borderColor: 'var(--card-border)',
+                        backgroundColor: 'var(--background-light)',
+                        color: 'var(--text-primary)',
+                      }}
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
+                          Last run / history
+                        </span>
+                        <span className={`block text-sm font-medium truncate ${questionRunHistory[0].failed ? 'text-rose-600' : 'text-emerald-600'}`}>
+                          {historyKindLabel(questionRunHistory[0].kind)} · {questionRunHistory[0].summary}
+                        </span>
+                      </span>
+                      <span className="shrink-0 inline-flex items-center text-xs font-semibold text-indigo-600">
+                        <ClockIcon className="h-4 w-4 mr-1" />
+                        Open
+                      </span>
+                    </button>
+                  )}
+
                   {/* Action Buttons */}
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -1573,6 +1651,17 @@ const StudentTakeClass = () => {
                         </>
                       ) : 'Submit Solution'}
                     </button>
+                    {questionRunHistory.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={openRunHistory}
+                        className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold border"
+                        style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--card-white)', color: 'var(--text-primary)' }}
+                      >
+                        <ClockIcon className="h-4 w-4 mr-1.5" />
+                        Run history ({questionRunHistory.length})
+                      </button>
+                    )}
                   </div>
 
                   {submissionFeedback && isCodingQuestion(selectedQuestion) && renderSubmissionFeedbackCard(true)}
@@ -1686,6 +1775,17 @@ const StudentTakeClass = () => {
                   </>
                 ) : 'Submit Solution'}
               </button>
+              {questionRunHistory.length > 0 && (
+                <button
+                  type="button"
+                  onClick={openRunHistory}
+                  className="inline-flex items-center px-3 py-2 rounded-lg text-sm font-semibold border"
+                  style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--card-white)', color: 'var(--text-primary)' }}
+                >
+                  <ClockIcon className="h-4 w-4 mr-1.5" />
+                  History
+                </button>
+              )}
               <button
                 type="button"
                 onClick={toggleFullscreen}
@@ -1739,7 +1839,7 @@ const StudentTakeClass = () => {
         </div>
       )}
 
-      {showResultsModal && (resultsModalKind === 'submit' ? submissionFeedback : testResults) && (
+      {showResultsModal && (resultsView === 'list' || (resultsModalKind === 'submit' ? submissionFeedback : testResults)) && (
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center p-4"
           role="dialog"
@@ -1756,42 +1856,106 @@ const StudentTakeClass = () => {
             className="relative w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-lg shadow-xl border p-5 z-10"
             style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
           >
-            <div className="flex items-start justify-between gap-3 mb-4">
-              <h2 id="results-modal-title" className="text-lg font-semibold" style={{ color: 'var(--text-heading)' }}>
-                {resultsModalKind === 'submit'
-                  ? 'Submission Result'
-                  : testResults?.error
-                    ? 'Error'
-                    : testResults?.isCustomTest
-                      ? 'Custom Test Results'
-                      : 'Test Results'}
-              </h2>
-              <button
-                type="button"
-                onClick={closeResultsModal}
-                className="shrink-0 p-1 rounded hover:opacity-70 text-lg leading-none"
-                style={{ color: 'var(--text-secondary)' }}
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
-            {resultsModalKind === 'submit' ? (
-              renderSubmissionFeedbackBody(Boolean(selectedQuestion && isCodingQuestion(selectedQuestion)))
-            ) : (
+            {resultsView === 'list' ? (
               <>
-                {!testResults?.error && !testResults?.isCustomTest && testResults?.totalTestCases != null && (
-                  <div className="mb-3">
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                        testResults.isCorrect ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                      }`}
-                    >
-                      {testResults.passedTestCases}/{testResults.totalTestCases} Passed
-                    </span>
+                <div className="flex items-start justify-between gap-3 mb-4">
+                  <h2 id="results-modal-title" className="text-lg font-semibold" style={{ color: 'var(--text-heading)' }}>
+                    Run history
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={closeResultsModal}
+                    className="shrink-0 p-1 rounded hover:opacity-70 text-lg leading-none"
+                    style={{ color: 'var(--text-secondary)' }}
+                    aria-label="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+                <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
+                  This session for the current question. Open a run to see failed cases and output.
+                </p>
+                {questionRunHistory.length === 0 ? (
+                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>No runs yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {questionRunHistory.map((entry) => (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        onClick={() => openHistoryEntry(entry)}
+                        className="w-full text-left rounded-lg border px-3 py-2 hover:border-indigo-400 transition-colors"
+                        style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--background-light)' }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
+                            {historyKindLabel(entry.kind)}
+                          </span>
+                          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                            {formatHistoryTime(entry.at)}
+                          </span>
+                        </div>
+                        <div className={`text-sm font-medium mt-0.5 ${entry.failed ? 'text-rose-600' : 'text-emerald-600'}`}>
+                          {entry.summary}
+                        </div>
+                      </button>
+                    ))}
                   </div>
                 )}
-                {renderTestResultsBody()}
+              </>
+            ) : (
+              <>
+                <div className="flex items-start justify-between gap-3 mb-4">
+                  <h2 id="results-modal-title" className="text-lg font-semibold" style={{ color: 'var(--text-heading)' }}>
+                    {resultsModalKind === 'submit'
+                      ? 'Submission Result'
+                      : testResults?.error
+                        ? 'Error'
+                        : testResults?.isCustomTest
+                          ? 'Custom Test Results'
+                          : 'Test Results'}
+                  </h2>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {questionRunHistory.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setResultsView('list')}
+                        className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold border"
+                        style={{ borderColor: 'var(--card-border)', color: 'var(--text-primary)' }}
+                      >
+                        <ClockIcon className="h-3.5 w-3.5 mr-1" />
+                        History
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={closeResultsModal}
+                      className="p-1 rounded hover:opacity-70 text-lg leading-none"
+                      style={{ color: 'var(--text-secondary)' }}
+                      aria-label="Close"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+                {resultsModalKind === 'submit' ? (
+                  renderSubmissionFeedbackBody(Boolean(selectedQuestion && isCodingQuestion(selectedQuestion)))
+                ) : (
+                  <>
+                    {!testResults?.error && !testResults?.isCustomTest && testResults?.totalTestCases != null && (
+                      <div className="mb-3">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                            testResults.isCorrect ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                          }`}
+                        >
+                          {testResults.passedTestCases}/{testResults.totalTestCases} Passed
+                        </span>
+                      </div>
+                    )}
+                    {renderTestResultsBody()}
+                  </>
+                )}
               </>
             )}
           </div>

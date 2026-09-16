@@ -14,6 +14,7 @@ import {
   autoSubmitExam
 } from '../../../common/services/api';
 import parse from 'html-react-parser';
+import QuestionHtml from '../../../common/components/QuestionHtml';
 
 const ExamTaking = () => {
   const { examId } = useParams();
@@ -687,9 +688,7 @@ const ExamTaking = () => {
                 </div>
                 
                 <h3 className="text-xl font-semibold mb-2">{currentQuestion.title}</h3>
-                <div className="prose dark:prose-invert max-w-none">
-                  {parse(currentQuestion.description || '')}
-                </div>
+                <QuestionHtml html={currentQuestion.description} className="prose dark:prose-invert max-w-none" />
               </div>
 
               {/* Answer Area */}
