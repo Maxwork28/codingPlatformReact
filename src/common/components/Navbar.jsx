@@ -6,6 +6,7 @@ import ThemeToggle from './ThemeToggle';
 import HeaderNavigationMenu from './HeaderNavigationMenu';
 import { uploadProfilePicture } from '../services/api';
 import { API_BASE_URL } from '../constants';
+import BrandLogo from './BrandLogo';
 
 const DefaultAvatarIcon = () => (
   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -117,7 +118,7 @@ const Navbar = () => {
       <div className="max-w-7xl mx-auto pl-0 pr-4 sm:pr-6 lg:pr-8">
         <div className="flex items-center justify-between h-16 w-full">
           <div className="flex items-center gap-3 pl-4">
-            <img src="/AlgoSutra Header.png" alt="AlgoSutra Logo" className="h-10 w-auto" />
+            <BrandLogo className="h-10 w-auto max-w-[180px]" />
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">

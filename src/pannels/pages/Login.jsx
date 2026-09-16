@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { login } from '../../common/components/redux/authSlice';
 import { Link, useNavigate } from 'react-router-dom';
 import ThemeToggle from '../../common/components/ThemeToggle';
+import BrandLogo from '../../common/components/BrandLogo';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -38,11 +39,7 @@ const Login = () => {
             <ThemeToggle variant="card" />
           </div>
           <div className="text-center">
-            <img
-              src="/AlgoSutra Header.png"
-              alt="AlgoSutra Logo"
-              className="h-10 w-auto mx-auto"
-            />
+            <BrandLogo className="h-10 w-auto mx-auto" />
             <p className="text-sm mt-2 text-white/70">Simpler Learning</p>
           </div>
         </div>
