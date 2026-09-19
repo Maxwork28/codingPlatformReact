@@ -1072,7 +1072,17 @@ const StudentTakeClass = () => {
                         }}
                         className="flex items-start gap-2 p-3 text-left w-full h-full overflow-hidden"
                       >
-                        <span className={`flex-shrink-0 flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${colors.badge}`}>
+                        <span
+                          className="flex-shrink-0 flex h-8 min-w-8 w-8 items-center justify-center rounded-full text-sm font-extrabold tabular-nums leading-none shadow-sm text-white"
+                          style={{
+                            backgroundColor:
+                              attemptStatus === 'attempted'
+                                ? '#059669'
+                                : attemptStatus === 'wrong'
+                                  ? '#e11d48'
+                                  : '#4f46e5',
+                          }}
+                        >
                           {idx + 1}
                         </span>
                         <div className="flex-1 min-w-0 h-full flex flex-col justify-between overflow-hidden">

@@ -504,7 +504,8 @@ input:focus {
 
 /* Question description images (create form + student/teacher views) */
 img.question-inline-image,
-img[src*="/uploads/questions/"] {
+img[src*="/uploads/questions/"],
+img[src*=".amazonaws.com/"] {
   max-width: min(100%, 40rem);
   height: auto;
   display: block;

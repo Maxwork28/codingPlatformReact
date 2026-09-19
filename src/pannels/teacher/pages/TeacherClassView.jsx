@@ -25,7 +25,9 @@ import {
   adminSearchQuestionsById,
   getClassStudents,
   getQuestionSummary,
+  getQuestionPerspectiveReport,
 } from '../../../common/services/api';
+import { downloadQuestionStatsReport } from '../../../common/utils/downloadCsv';
 import TeacherQuestionCard from '../components/TeacherQuestionCard';
 import TestCaseResultsList from '../../student/components/TestCaseResultsList';
 import RunMetricsBadges, { summarizeRunMetrics } from '../../../common/components/RunMetricsBadges';
@@ -60,6 +62,7 @@ const TeacherClassView = () => {
   const [assignmentLoading, setAssignmentLoading] = useState(false);
   const [assignmentError, setAssignmentError] = useState('');
   const [assignmentMessage, setAssignmentMessage] = useState('');
+  const [reportLoadingId, setReportLoadingId] = useState(null);
   const [assignmentQuestionSearchQuery, setAssignmentQuestionSearchQuery] = useState('');
   const [allQuestionsForAssignment, setAllQuestionsForAssignment] = useState([]);
 
@@ -448,6 +451,21 @@ const TeacherClassView = () => {
       setTimeout(() => setAssignmentError(''), 5000);
     } finally {
       setAssignmentLoading(false);
+    }
+  };
+
+  const handleDownloadAssignmentReport = async (questionId) => {
+    if (!classId || !questionId) return;
+    setReportLoadingId(String(questionId));
+    try {
+      const response = await getQuestionPerspectiveReport(classId, questionId);
+      downloadQuestionStatsReport(response.data.report);
+    } catch (err) {
+      const errorMsg = typeof err === 'string' ? err : (err.error || 'Failed to download report');
+      setAssignmentError(errorMsg);
+      showToast(errorMsg, 'error');
+    } finally {
+      setReportLoadingId(null);
     }
   };
 
@@ -1547,12 +1565,22 @@ const TeacherClassView = () => {
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                               <div className="flex items-center justify-end gap-3">
                                 {assignment.questionId?._id || assignment.questionId ? (
-                                  <Link
-                                    to={`/teacher/take-class/${classId}/questions/${assignment.questionId?._id || assignment.questionId}/statistics`}
-                                    className="text-indigo-600 hover:text-indigo-900"
-                                  >
-                                    Question statistics
-                                  </Link>
+                                  <>
+                                    <Link
+                                      to={`/teacher/take-class/${classId}/questions/${assignment.questionId?._id || assignment.questionId}/statistics`}
+                                      className="text-indigo-600 hover:text-indigo-900"
+                                    >
+                                      Question statistics
+                                    </Link>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDownloadAssignmentReport(assignment.questionId?._id || assignment.questionId)}
+                                      disabled={reportLoadingId === String(assignment.questionId?._id || assignment.questionId)}
+                                      className="text-indigo-600 hover:text-indigo-900 disabled:opacity-50"
+                                    >
+                                      {reportLoadingId === String(assignment.questionId?._id || assignment.questionId) ? 'Downloading…' : 'Report'}
+                                    </button>
+                                  </>
                                 ) : null}
                                 <button
                                   onClick={() => handleDeleteAssignment(assignment._id)}

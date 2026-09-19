@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { ArrowLeftIcon, PlayIcon, XMarkIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, PlayIcon, XMarkIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
 import { format } from 'date-fns';
 import { io } from 'socket.io-client';
 import { API_BASE_URL } from '../../../common/constants';
 import { getQuestionPerspectiveReport, blockUser, teacherTestQuestion } from '../../../common/services/api';
+import { downloadQuestionStatsReport } from '../../../common/utils/downloadCsv';
 import CodeEditor from '../../student/components/CodeEditor';
 import TestCaseResultsList from '../../student/components/TestCaseResultsList';
 
@@ -84,6 +85,8 @@ const QuestionStatistics = () => {
   const [boardMode, setBoardMode] = useState(false);
   const [runLoading, setRunLoading] = useState(false);
   const [runResults, setRunResults] = useState(null);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const [timerRunning, setTimerRunning] = useState(true);
 
   const questionType = report?.question?.type;
   const isCodingQuestion = CODING_TYPES.includes(questionType);
@@ -128,6 +131,14 @@ const QuestionStatistics = () => {
       socket.disconnect();
     };
   }, [classId, loadReport]);
+
+  useEffect(() => {
+    if (!timerRunning) return undefined;
+    const id = setInterval(() => setElapsedSec((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [timerRunning]);
+
+  const timerLabel = `${String(Math.floor(elapsedSec / 3600)).padStart(2, '0')}:${String(Math.floor((elapsedSec % 3600) / 60)).padStart(2, '0')}:${String(elapsedSec % 60).padStart(2, '0')}`;
 
   const handleBack = () => {
     if (backState.fromTakeClass) {
@@ -274,6 +285,44 @@ const QuestionStatistics = () => {
               {report?.class?.name}
             </p>
           </div>
+          <div
+            className="flex items-center gap-2 rounded-lg border px-3 py-1.5"
+            style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--background-light)' }}
+          >
+            <span className="font-mono text-base font-semibold tabular-nums" style={{ color: 'var(--text-heading)' }}>
+              {timerLabel}
+            </span>
+            <button
+              type="button"
+              onClick={() => setTimerRunning((v) => !v)}
+              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+            >
+              {timerRunning ? 'Pause' : 'Start'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTimerRunning(false);
+                setElapsedSec(0);
+              }}
+              className="text-xs font-semibold text-slate-600 hover:text-slate-800"
+            >
+              Reset
+            </button>
+          </div>
+          <button
+            type="button"
+            disabled={!report}
+            onClick={() => {
+              if (!report) return;
+              downloadQuestionStatsReport(report);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+            style={{ borderColor: 'var(--card-border)', color: 'var(--text-primary)' }}
+          >
+            <ArrowDownTrayIcon className="w-4 h-4" />
+            Report
+          </button>
         </div>
       </div>
 
@@ -497,7 +546,7 @@ const QuestionStatistics = () => {
                 className="inline-flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
               >
                 <PlayIcon className="w-4 h-4" />
-                {runLoading ? 'Running…' : 'Run corrected code'}
+                {runLoading ? 'Submitting…' : 'Submit corrected code'}
               </button>
             )}
             <button

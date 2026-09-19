@@ -10,7 +10,7 @@ const AddStudentsToClassPanel = ({ classId, onAdded, onError, onMessage }) => {
   const handleAdd = async (event) => {
     event?.preventDefault();
     if (!file && !emails.trim()) {
-      onError?.('Upload an Excel or paste the 70 emails/names. You do not need to tick students one by one.');
+      onError?.('Upload an Excel file or paste student emails/names.');
       return;
     }
     setAdding(true);
@@ -31,11 +31,7 @@ const AddStudentsToClassPanel = ({ classId, onAdded, onError, onMessage }) => {
   return (
     <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-4 space-y-3">
       <div>
-        <p className="text-sm font-semibold text-gray-800">Add 70 students without ticking</p>
-        <p className="text-xs text-gray-600 mt-0.5">
-          Do not search the 250-student list. Open this class → Students tab, then either
-          upload an Excel of those 70 (Email or Name column) or paste their emails/names below.
-        </p>
+        <p className="text-sm font-semibold text-gray-800">Add students</p>
       </div>
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1">Excel (Email or Name column)</label>
@@ -49,7 +45,7 @@ const AddStudentsToClassPanel = ({ classId, onAdded, onError, onMessage }) => {
         {file && <p className="mt-1 text-xs text-gray-500">{file.name}</p>}
       </div>
       <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1">Or paste the 70 emails or names</label>
+        <label className="block text-xs font-medium text-gray-700 mb-1">Or paste emails or names</label>
         <textarea
           value={emails}
           onChange={(e) => setEmails(e.target.value)}

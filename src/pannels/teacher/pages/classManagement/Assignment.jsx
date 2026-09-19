@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { fetchClasses } from '../../../../common/components/redux/classSlice';
-import { createAssignment, getAssignments, deleteAssignment, getQuestionsByClass } from '../../../../common/services/api';
+import { createAssignment, getAssignments, deleteAssignment, getQuestionsByClass, getQuestionPerspectiveReport } from '../../../../common/services/api';
+import { downloadQuestionStatsReport } from '../../../../common/utils/downloadCsv';
 import { Link } from 'react-router-dom';
 
 const Assignment = () => {
@@ -20,6 +21,7 @@ const Assignment = () => {
     maxPoints: '',
     dueDate: '',
   });
+  const [reportLoadingId, setReportLoadingId] = useState(null);
 
   // Fetch classes on mount
   useEffect(() => {
@@ -89,6 +91,20 @@ const Assignment = () => {
       console.error('[Assignment] Create assignment error:', err.message || err.error, err);
       setAssignmentError(err.error || 'Failed to create assignment');
       setAssignmentMessage('');
+    }
+  };
+
+  const handleDownloadReport = async (questionId) => {
+    if (!selectedClassId || !questionId) return;
+    setReportLoadingId(String(questionId));
+    setAssignmentError('');
+    try {
+      const response = await getQuestionPerspectiveReport(selectedClassId, questionId);
+      downloadQuestionStatsReport(response.data.report);
+    } catch (err) {
+      setAssignmentError(typeof err === 'string' ? err : err?.error || 'Failed to download report');
+    } finally {
+      setReportLoadingId(null);
     }
   };
 
@@ -359,12 +375,22 @@ const Assignment = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                           <div className="flex items-center justify-end gap-3">
                             {(assignment.questionId?._id || assignment.questionId) && selectedClassId ? (
-                              <Link
-                                to={`/teacher/take-class/${selectedClassId}/questions/${assignment.questionId?._id || assignment.questionId}/statistics`}
-                                className="text-indigo-600 hover:text-indigo-900"
-                              >
-                                Question statistics
-                              </Link>
+                              <>
+                                <Link
+                                  to={`/teacher/take-class/${selectedClassId}/questions/${assignment.questionId?._id || assignment.questionId}/statistics`}
+                                  className="text-indigo-600 hover:text-indigo-900"
+                                >
+                                  Question statistics
+                                </Link>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDownloadReport(assignment.questionId?._id || assignment.questionId)}
+                                  disabled={reportLoadingId === String(assignment.questionId?._id || assignment.questionId)}
+                                  className="text-indigo-600 hover:text-indigo-900 disabled:opacity-50"
+                                >
+                                  {reportLoadingId === String(assignment.questionId?._id || assignment.questionId) ? 'Downloading…' : 'Report'}
+                                </button>
+                              </>
                             ) : null}
                             <button
                               onClick={() => handleDeleteAssignment(assignment._id)}

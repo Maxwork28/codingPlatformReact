@@ -5,8 +5,8 @@ import { ArrowLeftIcon, ClockIcon } from '@heroicons/react/24/outline';
 import { Menu, Transition, Portal } from '@headlessui/react';
 import parse from 'html-react-parser';
 import { io } from 'socket.io-client';
-import { getQuestionsByClass, getQuestion, teacherTestQuestion, teacherTestWithCustomInput, publishQuestion, unpublishQuestion, disableQuestion, enableQuestion, viewSolution } from '../../../common/services/api';
-import { API_BASE_URL, CUSTOM_STDIN_PLACEHOLDER, CUSTOM_STDOUT_PLACEHOLDER } from '../../../common/constants';
+import { getQuestionsByClass, getQuestion, teacherTestQuestion, publishQuestion, unpublishQuestion, disableQuestion, enableQuestion, viewSolution } from '../../../common/services/api';
+import { API_BASE_URL } from '../../../common/constants';
 import CodeEditor from '../../student/components/CodeEditor';
 import TestCaseResultsList from '../../student/components/TestCaseResultsList';
 import RunMetricsBadges, { summarizeRunMetrics } from '../../../common/components/RunMetricsBadges';
@@ -35,6 +35,17 @@ const QUESTION_TYPE_LABELS = {
 
 const RUNNABLE_CODING_TYPES = ['coding', 'fillInTheBlanksCoding', 'codingWithDriver'];
 const FULL_CODE_EDITOR_TYPES = ['coding', 'codingWithDriver'];
+
+function formatQuestionPublishedAt(classEntry, question) {
+  const raw =
+    classEntry?.publishedAt ||
+    question?.publishedAt ||
+    (classEntry?.isPublished ? question?.updatedAt || question?.createdAt : null);
+  if (!raw) return '';
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
 
 function stripHtml(html) {
   if (!html) return '';
@@ -135,8 +146,6 @@ const TakeClass = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   
   // Test data
-  const [customInput, setCustomInput] = useState('');
-  const [customOutput, setCustomOutput] = useState('');
   const [testResults, setTestResults] = useState(null);
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [resultsModalKind, setResultsModalKind] = useState(null); // 'run'
@@ -387,78 +396,6 @@ const TakeClass = () => {
       recordAndShowResults('submit', {
         error: true,
         message: typeof err === 'string' ? err : 'Failed to submit code. Please try again.'
-      });
-    } finally {
-      setRunBusy(null);
-    }
-  };
-
-  const handleRunWithCustomInput = async () => {
-    if (!selectedQuestion) {
-      alert('Please select a question first');
-      return;
-    }
-
-    if (!RUNNABLE_CODING_TYPES.includes(selectedQuestion.type)) {
-      alert('Custom run is only available for coding and fill-in-the-blanks (code) questions.');
-      return;
-    }
-
-    const answerPayload = getTeacherTestAnswer();
-    if (!answerPayload || answerPayload.trim() === '') {
-      alert(
-        selectedQuestion.type === 'fillInTheBlanksCoding'
-          ? 'Enter the line of code for the blank'
-          : 'Please write some code to test'
-      );
-      return;
-    }
-
-    if (!customInput || customInput.trim() === '') {
-      alert('Please provide custom input');
-      return;
-    }
-
-    try {
-      setRunBusy('custom');
-      setTestResults(null);
-      
-      console.log('Teacher running with custom input...', { 
-        questionId: selectedQuestion._id, 
-        classId: selectedClass._id,
-        language: selectedLanguage,
-        customInput,
-        expectedOutput: customOutput
-      });
-
-      const response = await teacherTestWithCustomInput(
-        selectedQuestion._id,
-        answerPayload,
-        selectedClass._id,
-        selectedLanguage,
-        customInput,
-        customOutput
-      );
-
-      console.log('Custom test result received:', response.data);
-      
-      recordAndShowResults('custom', {
-        message: response.data.message,
-        testResult: response.data.testResult,
-        customInput: response.data.customInput,
-        expectedOutput: response.data.expectedOutput,
-        actualOutput: response.data.actualOutput,
-        passed: response.data.passed,
-        timeMs: response.data.timeMs ?? response.data.testResult?.timeMs,
-        memoryKb: response.data.memoryKb ?? response.data.testResult?.memoryKb,
-        isCustomTest: true,
-      });
-
-    } catch (err) {
-      console.error('Failed to run with custom input:', err);
-      recordAndShowResults('custom', {
-        error: true,
-        message: typeof err === 'string' ? err : 'Failed to execute code with custom input. Please try again.'
       });
     } finally {
       setRunBusy(null);
@@ -1130,6 +1067,7 @@ const TakeClass = () => {
                       (c) => c.classId?.toString() === selectedClass._id || c.classId?._id?.toString() === selectedClass._id
                     );
                     const isPublished = classEntry?.isPublished || false;
+                    const publishedDate = formatQuestionPublishedAt(classEntry, q);
                     const plainTitle = q.title?.replace(/<[^>]*>/g, '') || 'Untitled';
                     return (
                     <div
@@ -1154,9 +1092,12 @@ const TakeClass = () => {
                           className="flex-1 min-w-0 flex items-center gap-2.5 text-left px-1 py-0.5"
                         >
                           <span
-                            className={`flex-shrink-0 flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
-                              isSelected ? 'bg-white text-indigo-700' : 'bg-indigo-100 text-indigo-700'
-                            }`}
+                            className="flex-shrink-0 flex h-8 min-w-8 w-8 items-center justify-center rounded-full text-sm font-extrabold tabular-nums leading-none shadow-sm"
+                            style={
+                              isSelected
+                                ? { backgroundColor: '#ffffff', color: '#312e81' }
+                                : { backgroundColor: '#4f46e5', color: '#ffffff' }
+                            }
                           >
                             {idx + 1}
                           </span>
@@ -1172,7 +1113,9 @@ const TakeClass = () => {
                               className="text-[11px] truncate leading-4 mt-0.5"
                               style={{ color: isSelected ? 'rgba(255,255,255,0.8)' : 'var(--text-secondary)' }}
                             >
-                              {isPublished ? 'Published' : 'Unpublished'}
+                              {isPublished
+                                ? (publishedDate ? `Published ${publishedDate}` : 'Published')
+                                : 'Unpublished'}
                             </p>
                           </div>
                         </button>
@@ -1398,13 +1341,16 @@ const TakeClass = () => {
                     );
                     const isPublished = classEntry?.isPublished || false;
                     const isDisabled = classEntry?.isDisabled || false;
+                    const publishedDate = formatQuestionPublishedAt(classEntry, selectedQuestion);
                     
                     return (
                       <>
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
                           isPublished ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
                         }`}>
-                          {isPublished ? 'Published' : 'Unpublished'}
+                          {isPublished
+                            ? (publishedDate ? `Published ${publishedDate}` : 'Published')
+                            : 'Unpublished'}
                         </span>
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
                           isDisabled ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
@@ -1850,44 +1796,6 @@ const TakeClass = () => {
                       {presentedReveal.text}
                     </div>
                   )}
-                  {isRunnableCoding && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                        Custom Input
-                      </label>
-                      <textarea
-                        value={customInput}
-                        onChange={(e) => setCustomInput(e.target.value)}
-                        rows={2}
-                        className="block w-full mt-1 rounded-lg border shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-xs p-2"
-                        style={{ 
-                          borderColor: 'var(--card-border)', 
-                          backgroundColor: 'var(--card-white)', 
-                          color: 'var(--text-primary)' 
-                        }}
-                        placeholder={CUSTOM_STDIN_PLACEHOLDER}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                        Expected Output
-                      </label>
-                      <textarea
-                        value={customOutput}
-                        onChange={(e) => setCustomOutput(e.target.value)}
-                        rows={2}
-                        className="block w-full mt-1 rounded-lg border shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-xs p-2"
-                        style={{ 
-                          borderColor: 'var(--card-border)', 
-                          backgroundColor: 'var(--card-white)', 
-                          color: 'var(--text-primary)' 
-                        }}
-                        placeholder={CUSTOM_STDOUT_PLACEHOLDER}
-                      />
-                    </div>
-                  </div>
-                  )}
 
                   {questionRunHistory.length > 0 && !showResultsModal && (
                     <button
@@ -1948,21 +1856,6 @@ const TakeClass = () => {
                               Submitting...
                             </>
                           ) : 'Submit'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleRunWithCustomInput}
-                          disabled={!customInput.trim() || Boolean(runBusy)}
-                          className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-200 ${
-                            customInput.trim() && !runBusy ? 'bg-green-600 hover:bg-green-700 focus:ring-green-500' : 'bg-gray-400 cursor-not-allowed'
-                          }`}
-                        >
-                          {runBusy === 'custom' ? (
-                            <>
-                              <ButtonSpinner />
-                              Running...
-                            </>
-                          ) : 'Run Custom'}
                         </button>
                       </>
                     )}

@@ -16,7 +16,6 @@ import {
   assignTeacherToClass,
   removeTeacherFromClass,
   removeStudentFromClass,
-  getStudents,
   getTeachers,
   getParticipantStats,
   getRunSubmitStats,
@@ -125,19 +124,12 @@ const AdminClassDetails = () => {
   const fetchAllUsers = async () => {
     console.log('fetchAllUsers called');
     try {
-      console.log('fetchAllUsers: Calling getStudents() and getTeachers()');
-      const [studentsRes, teachersRes] = await Promise.all([getStudents(), getTeachers()]);
-      console.log('fetchAllUsers: Raw responses:', {
-        studentsRes: studentsRes,
-        teachersRes: teachersRes,
-      });
+      console.log('fetchAllUsers: Calling getTeachers()');
+      const teachersRes = await getTeachers();
       console.log('fetchAllUsers success', {
-        students: studentsRes.data.students,
         teachers: teachersRes.data.teachers,
       });
-      console.log('Setting allStudents:', studentsRes.data.students);
       console.log('Setting allTeachers:', teachersRes.data.teachers);
-      setAllStudents(studentsRes.data.students);
       setAllTeachers(teachersRes.data.teachers);
     } catch (err) {
       console.error('fetchAllUsers error', err);
@@ -920,15 +912,6 @@ const AdminClassDetails = () => {
                       <label className="block text-sm font-medium text-gray-700">
                         Add students
                       </label>
-                      {pendingStudentIds.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setPendingStudentIds([])}
-                          className="text-xs font-medium text-indigo-600 hover:text-indigo-500"
-                        >
-                          Clear ({pendingStudentIds.length})
-                        </button>
-                      )}
                     </div>
                     <AddStudentsToClassPanel
                       classId={classId}
@@ -944,63 +927,6 @@ const AdminClassDetails = () => {
                         setMessage('');
                       }}
                     />
-                    <p className="text-xs text-gray-500 mt-3 mb-2">
-                      Optional: search and tick a few students. Prefer Excel or paste emails for 70+ students.
-                    </p>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <input
-                        type="text"
-                        value={studentSearchQuery}
-                        onChange={(e) => setStudentSearchQuery(e.target.value)}
-                        className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm pl-3 py-2"
-                        placeholder="Search students..."
-                      />
-                      {studentsAvailableToAdd.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const ids = studentsAvailableToAdd.map((student) => String(student._id));
-                            setPendingStudentIds((prev) => [...new Set([...prev, ...ids])]);
-                          }}
-                          className="shrink-0 text-xs font-medium text-indigo-600 hover:text-indigo-500"
-                        >
-                          Select all shown
-                        </button>
-                      )}
-                    </div>
-                    <div className="max-h-60 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-sm">
-                      {studentsAvailableToAdd.length > 0 ? (
-                        <ul className="divide-y divide-gray-100">
-                          {studentsAvailableToAdd.map((student) => {
-                            const sid = String(student._id);
-                            const checked = pendingStudentIds.includes(sid);
-                            return (
-                              <li key={sid}>
-                                <label className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-gray-50">
-                                  <input
-                                    type="checkbox"
-                                    className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                                    checked={checked}
-                                    onChange={() => togglePendingStudent(sid)}
-                                  />
-                                  <span className="text-sm text-gray-900 truncate">
-                                    {student.name || 'No Name'} ({student.email || 'No Email'})
-                                  </span>
-                                </label>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      ) : (
-                        <div className="px-3 py-6 text-center text-sm text-gray-500">
-                          {allStudents.length === 0
-                            ? 'No students available'
-                            : studentSearchQuery
-                              ? 'No matching students to add (they may already be in this class)'
-                              : 'All students are already in this class'}
-                        </div>
-                      )}
-                    </div>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
