@@ -11,6 +11,7 @@ const BulkIoPairsEditor = ({
   emptyItem,
   inputKey = 'input',
   outputKey = 'output',
+  explanationKey = '',
   showFlags = false,
   minItems = 1,
   addLabel = 'Add row',
@@ -122,6 +123,9 @@ const BulkIoPairsEditor = ({
               <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider w-10" style={{ color: 'var(--text-secondary)' }}>#</th>
               <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>Input</th>
               <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>Output</th>
+              {explanationKey && (
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>Explanation</th>
+              )}
               {showFlags && (
                 <>
                   <th className="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wider w-20" style={{ color: 'var(--text-secondary)' }}>Public</th>
@@ -156,6 +160,18 @@ const BulkIoPairsEditor = ({
                     placeholder="expected stdout"
                   />
                 </td>
+                {explanationKey && (
+                  <td className="px-3 py-2">
+                    <textarea
+                      value={item[explanationKey] || ''}
+                      onChange={(e) => updateItem(idx, explanationKey, e.target.value)}
+                      rows={3}
+                      className={fieldClass}
+                      style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)', color: 'var(--text-primary)' }}
+                      placeholder="Why this input produces this output"
+                    />
+                  </td>
+                )}
                 {showFlags && (
                   <>
                     <td className="px-3 py-2 text-center">

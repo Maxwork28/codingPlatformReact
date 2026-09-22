@@ -71,8 +71,8 @@ const AdminQuestionEdit = () => {
           inputFormat: question.inputFormat || '',
           outputFormat: question.outputFormat || '',
           sampleIo: Array.isArray(question.sampleIo) && question.sampleIo.length > 0
-            ? question.sampleIo.map((p) => ({ input: p.input ?? '', output: p.output ?? '' }))
-            : [{ input: '', output: '' }],
+            ? question.sampleIo.map((p) => ({ input: p.input ?? '', output: p.output ?? '', explanation: p.explanation ?? '' }))
+            : [{ input: '', output: '', explanation: '' }],
           functionSignature: question.functionSignature || '',
           languages: Array.isArray(question.languages) ? question.languages : (question.language ? [question.language] : ['javascript']),
           options: question.options?.length >= 2 ? question.options : ['', '', '', ''],

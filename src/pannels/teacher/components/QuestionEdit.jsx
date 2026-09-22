@@ -88,8 +88,8 @@ const QuestionEdit = () => {
           tags: Array.isArray(question.tags) ? question.tags.join(', ') : (typeof question.tags === 'string' ? question.tags : ''),
           constraints: question.constraints || '',
           sampleIo: Array.isArray(question.sampleIo) && question.sampleIo.length > 0
-            ? question.sampleIo.map((p) => ({ input: p.input ?? '', output: p.output ?? '' }))
-            : [{ input: '', output: '' }],
+            ? question.sampleIo.map((p) => ({ input: p.input ?? '', output: p.output ?? '', explanation: p.explanation ?? '' }))
+            : [{ input: '', output: '', explanation: '' }],
           functionSignature: question.functionSignature || '',
           languages: Array.isArray(question.languages) ? question.languages : (question.language ? [question.language] : ['javascript']),
           options: question.options?.length >= 2 ? question.options : ['', '', '', ''],

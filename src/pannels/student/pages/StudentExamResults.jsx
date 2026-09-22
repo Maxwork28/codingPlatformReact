@@ -5,6 +5,7 @@ import StudentBackNav from '../components/StudentBackNav';
 import TestCaseResultsList from '../components/TestCaseResultsList';
 import RunMetricsBadges, { summarizeRunMetrics } from '../../../common/components/RunMetricsBadges';
 import QuestionHtml from '../../../common/components/QuestionHtml';
+import CodingQuestionDetails from '../../../common/components/CodingQuestionDetails';
 
 const StudentExamResults = () => {
   const { examId } = useParams();
@@ -244,6 +245,11 @@ const StudentExamResults = () => {
                         className="mb-4 text-sm"
                         style={{ color: 'var(--text-secondary)' }}
                       />
+                    )}
+                    {isQuestionObject && (
+                      <div className="mb-4">
+                        <CodingQuestionDetails question={question} tone="theme" publicTests={question.testCases} />
+                      </div>
                     )}
                     {!isQuestionObject && (
                       <div className="mb-4 text-sm" style={{ color: 'var(--text-primary)' }}>Question {idx + 1}</div>

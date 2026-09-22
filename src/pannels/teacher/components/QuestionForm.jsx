@@ -480,9 +480,9 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
   const [constraints, setConstraints] = useState(deserializeFromHTML(initialData?.constraints || ''));
   const [sampleIo, setSampleIo] = useState(() => {
     if (Array.isArray(initialData?.sampleIo) && initialData.sampleIo.length > 0) {
-      return initialData.sampleIo.map((p) => ({ input: p.input ?? '', output: p.output ?? '' }));
+      return initialData.sampleIo.map((p) => ({ input: p.input ?? '', output: p.output ?? '', explanation: p.explanation ?? '' }));
     }
-    return [{ input: '', output: '' }];
+    return [{ input: '', output: '', explanation: '' }];
   });
   const [options, setOptions] = useState(
     (Array.isArray(initialData?.options) ? initialData.options : ['', '', '', '']).map(opt => deserializeFromHTML(opt))
@@ -585,8 +585,8 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
       setConstraints(deserializeFromHTML(initialData.constraints || ''));
       setSampleIo(
         Array.isArray(initialData.sampleIo) && initialData.sampleIo.length > 0
-          ? initialData.sampleIo.map((p) => ({ input: p.input ?? '', output: p.output ?? '' }))
-          : [{ input: '', output: '' }]
+          ? initialData.sampleIo.map((p) => ({ input: p.input ?? '', output: p.output ?? '', explanation: p.explanation ?? '' }))
+          : [{ input: '', output: '', explanation: '' }]
       );
       setOptions((Array.isArray(initialData.options) ? initialData.options : ['', '', '', '']).map(opt => deserializeFromHTML(opt)));
       setCorrectOption(initialData.correctOption || 0);
@@ -758,7 +758,7 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
   };
 
   const handleAddSampleIo = () => {
-    setSampleIo([...sampleIo, { input: '', output: '' }]);
+    setSampleIo([...sampleIo, { input: '', output: '', explanation: '' }]);
   };
 
   const handleRemoveSampleIo = (index) => {
@@ -807,7 +807,7 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
     setExplanation(plainTextToSlate(parsed.explanation));
     setDifficulty(parsed.difficulty || 'easy');
     if (parsed.points !== '' && parsed.points != null) setPoints(parsed.points);
-    setSampleIo(parsed.sampleIo?.length ? parsed.sampleIo : [{ input: '', output: '' }]);
+    setSampleIo(parsed.sampleIo?.length ? parsed.sampleIo : [{ input: '', output: '', explanation: '' }]);
     setTestCases(
       parsed.testCases?.length
         ? parsed.testCases
@@ -1002,7 +1002,12 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
       questionData.outputFormat = serializeToHTML(outputFormat);
       questionData.sampleIo = sampleIo
         .filter((p) => (p.input || '').trim() !== '' || (p.output || '').trim() !== '')
-        .map((p) => ({ input: p.input || '', output: p.output || '' }));
+        .map((p) => ({
+          input: p.input || '',
+          output: p.output || '',
+          explanation: String(p.explanation || '').trim(),
+        }));
+      questionData.explanation = '';
       questionData.examples = [];
     } else {
       questionData.inputFormat = '';
@@ -1176,6 +1181,7 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
               }}
             />
           </div>
+          {!['coding', 'fillInTheBlanksCoding', 'codingWithDriver'].includes(type) && (
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Explanation</label>
             <RichTextEditor
@@ -1186,6 +1192,7 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
               className="w-full"
             />
           </div>
+          )}
         </div>
       </CollapsibleSection>
 
@@ -1343,13 +1350,14 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Sample input / output</label>
-                <p className="text-xs text-gray-500 mb-2">Shown to students. Paste many pairs at once, or edit the compact table.</p>
+                <p className="text-xs text-gray-500 mb-2">Shown to students. Each sample has its own explanation, next to that input and output.</p>
                 <BulkIoPairsEditor
                   items={sampleIo}
                   onChange={setSampleIo}
-                  emptyItem={{ input: '', output: '' }}
+                  emptyItem={{ input: '', output: '', explanation: '' }}
                   inputKey="input"
                   outputKey="output"
+                  explanationKey="explanation"
                   minItems={1}
                   addLabel="Add sample"
                 />

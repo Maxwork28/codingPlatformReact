@@ -13,19 +13,12 @@ const stripHtml = (html) => {
   }
 };
 
-const CODING_TYPES = ['coding', 'fillInTheBlanksCoding', 'codingWithDriver'];
-
 const StudentQuestionCard = ({ question, assignment }) => {
   const titleText = useMemo(() => stripHtml(question.title), [question.title]);
   const descriptionText = useMemo(
     () => stripHtml(question.description),
     [question.description]
   );
-  const explanationText = useMemo(
-    () => stripHtml(question.explanation),
-    [question.explanation]
-  );
-  const isCodingQuestion = CODING_TYPES.includes(question.type);
 
   console.log('StudentQuestionCard: Rendered with question', {
     id: question._id,
@@ -46,12 +39,6 @@ const StudentQuestionCard = ({ question, assignment }) => {
           <p className="mt-2 text-sm text-gray-600 leading-relaxed line-clamp-3 min-h-[3.75rem]">
             {descriptionText || 'No Description'}
           </p>
-          {isCodingQuestion && explanationText && (
-            <div className="mt-3">
-              <p className="text-xs font-semibold text-gray-700">Explanation</p>
-              <p className="mt-1 text-sm text-gray-600 leading-relaxed line-clamp-2 min-h-[2.5rem]">{explanationText}</p>
-            </div>
-          )}
           <div className="mt-3 flex flex-wrap gap-2">
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 shadow-sm">
               {question.difficulty}

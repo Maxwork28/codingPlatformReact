@@ -5,6 +5,7 @@ import CodeEditor from '../../student/components/CodeEditor';
 import TestCaseResultsList from '../../student/components/TestCaseResultsList';
 import parse from 'html-react-parser';
 import QuestionHtml from '../../../common/components/QuestionHtml';
+import CodingQuestionDetails from '../../../common/components/CodingQuestionDetails';
 
 const QUESTION_TYPE_LABELS = {
   singleCorrectMcq: 'Single choice',
@@ -406,68 +407,28 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion }) => {
           />
         </div>
 
-        {RUNNABLE_CODING_TYPES.includes(question.type) && question.inputFormat && (
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">Input format</h3>
-            <div className="text-sm text-gray-700 prose prose-sm max-w-none rounded-xl border border-gray-100 bg-gray-50/80 p-4">
-              {parse(question.inputFormat)}
-            </div>
-          </div>
-        )}
-
-        {RUNNABLE_CODING_TYPES.includes(question.type) && question.outputFormat && (
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">Output format</h3>
-            <div className="text-sm text-gray-700 prose prose-sm max-w-none rounded-xl border border-gray-100 bg-gray-50/80 p-4">
-              {parse(question.outputFormat)}
-            </div>
-          </div>
-        )}
-
-        {question.explanation && (
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">Explanation</h3>
-            <div className="text-sm text-gray-700 prose prose-sm max-w-none rounded-xl border border-gray-100 bg-gray-50/80 p-4">
-              {parse(question.explanation)}
-            </div>
-          </div>
-        )}
-
-        {question.constraints && (
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">Constraints</h3>
-            <div className="text-sm text-gray-700 prose prose-sm max-w-none rounded-xl border border-gray-100 p-4">
-              {parse(question.constraints)}
-            </div>
-          </div>
-        )}
-
-        {RUNNABLE_CODING_TYPES.includes(question.type) &&
-          question.sampleIo?.some((p) => (p.input || '').trim() || (p.output || '').trim()) && (
-            <div>
-              <h3 className="text-lg font-semibold text-gray-800 mb-2">Sample input / output</h3>
-              <div className="space-y-3">
-                {question.sampleIo
-                  .filter((p) => (p.input || '').trim() || (p.output || '').trim())
-                  .map((pair, index) => (
-                    <div key={index} className="bg-gray-50 p-4 rounded-xl border border-gray-100 space-y-2">
-                      <div>
-                        <span className="text-xs font-semibold text-gray-500 uppercase">Input</span>
-                        <pre className="mt-1 text-sm text-gray-800 font-mono whitespace-pre-wrap break-all bg-white p-3 rounded-lg border border-gray-100">
-                          {pair.input || '—'}
-                        </pre>
-                      </div>
-                      <div>
-                        <span className="text-xs font-semibold text-gray-500 uppercase">Output</span>
-                        <pre className="mt-1 text-sm text-gray-800 font-mono whitespace-pre-wrap break-all bg-white p-3 rounded-lg border border-gray-100">
-                          {pair.output || '—'}
-                        </pre>
-                      </div>
-                    </div>
-                  ))}
+        {RUNNABLE_CODING_TYPES.includes(question.type) ? (
+          <CodingQuestionDetails question={question} tone="statement" publicTests={publicTests} />
+        ) : (
+          <>
+            {question.explanation && (
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-2">Explanation</h3>
+                <div className="text-sm text-gray-700 prose prose-sm max-w-none rounded-xl border border-gray-100 bg-gray-50/80 p-4">
+                  {parse(question.explanation)}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+            {question.constraints && (
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-2">Constraints</h3>
+                <div className="text-sm text-gray-700 prose prose-sm max-w-none rounded-xl border border-gray-100 p-4">
+                  {parse(question.constraints)}
+                </div>
+              </div>
+            )}
+          </>
+        )}
 
         {question.functionSignature && (
           <div>
@@ -478,25 +439,6 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion }) => {
           </div>
         )}
 
-        {publicTests.length > 0 && RUNNABLE_CODING_TYPES.includes(question.type) && (
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">Public sample tests</h3>
-            <div className="space-y-2">
-              {publicTests.map((tc, i) => (
-                <div key={i} className="text-xs sm:text-sm rounded-xl border border-gray-200 bg-white p-3 font-mono space-y-1">
-                  <div>
-                    <span className="font-semibold text-gray-600">In:</span>{' '}
-                    <code className="text-gray-800 break-all">{tc.input}</code>
-                  </div>
-                  <div>
-                    <span className="font-semibold text-gray-600">Out:</span>{' '}
-                    <code className="text-gray-800 break-all">{tc.expectedOutput}</code>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {(isPreview || !isTeacherView) && (

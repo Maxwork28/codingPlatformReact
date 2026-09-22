@@ -14,6 +14,7 @@ import TestCaseResultsList, { parseTestCaseResultsList } from '../components/Tes
 import RunMetricsBadges from '../../../common/components/RunMetricsBadges';
 import StudentBackNav from '../components/StudentBackNav';
 import QuestionHtml from '../../../common/components/QuestionHtml';
+import CodingQuestionDetails from '../../../common/components/CodingQuestionDetails';
 
 // Socket.IO initialization
 const socket = io('https://api.algosutra.co.in/', {
@@ -838,28 +839,11 @@ const QuestionSubmission = () => {
             <h3 className="text-lg font-semibold text-gray-800">Description</h3>
             <QuestionHtml html={question.description} className="text-gray-600 mt-2 leading-relaxed" />
 
-            {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding' || question.type === 'codingWithDriver') && question.inputFormat && (
-              <>
-                <h3 className="text-lg font-semibold text-gray-800 mt-6">Input format</h3>
-                <div className="text-gray-600 mt-2 leading-relaxed" dangerouslySetInnerHTML={{ __html: question.inputFormat }} />
-              </>
-            )}
-
-            {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding' || question.type === 'codingWithDriver') && question.outputFormat && (
-              <>
-                <h3 className="text-lg font-semibold text-gray-800 mt-6">Output format</h3>
-                <div className="text-gray-600 mt-2 leading-relaxed" dangerouslySetInnerHTML={{ __html: question.outputFormat }} />
-              </>
-            )}
-
-            {isCodingQuestionType(question.type) && question.explanation && (
-              <>
-                <h3 className="text-lg font-semibold text-gray-800 mt-6">Explanation</h3>
-                <div className="text-gray-600 mt-2 leading-relaxed" dangerouslySetInnerHTML={{ __html: question.explanation }} />
-              </>
-            )}
-
-            {question.constraints && (
+            {isCodingQuestionType(question.type) ? (
+              <div className="mt-6 space-y-6">
+                <CodingQuestionDetails question={question} tone="statement" publicTests={question.testCases} />
+              </div>
+            ) : question.constraints && (
               <>
                 <h3 className="text-lg font-semibold text-gray-800 mt-6">Constraints</h3>
                 <div className="text-gray-600 mt-2 leading-relaxed" dangerouslySetInnerHTML={{ __html: question.constraints }} />
@@ -884,28 +868,6 @@ const QuestionSubmission = () => {
               </>
             )}
 
-            {(question.type === 'coding' || question.type === 'fillInTheBlanksCoding' || question.type === 'codingWithDriver') &&
-              question.sampleIo?.some((p) => (p.input || '').trim() || (p.output || '').trim()) && (
-              <>
-                <h3 className="text-lg font-semibold text-gray-800 mt-6">Sample input / output</h3>
-                <div className="space-y-4 mt-2">
-                  {question.sampleIo
-                    .filter((p) => (p.input || '').trim() || (p.output || '').trim())
-                    .map((pair, index) => (
-                    <div key={index} className="bg-gray-50 p-4 rounded-lg border border-gray-100 shadow-sm space-y-2">
-                      <div>
-                        <span className="text-xs font-semibold text-gray-500 uppercase">Input</span>
-                        <pre className="text-sm overflow-x-auto whitespace-pre-wrap font-mono text-gray-800 mt-1">{pair.input || '—'}</pre>
-                      </div>
-                      <div>
-                        <span className="text-xs font-semibold text-gray-500 uppercase">Output</span>
-                        <pre className="text-sm overflow-x-auto whitespace-pre-wrap font-mono text-gray-800 mt-1">{pair.output || '—'}</pre>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
           </div>
         </div>
         </div>

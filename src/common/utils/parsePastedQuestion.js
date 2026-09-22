@@ -59,14 +59,16 @@ function matchHeading(line) {
     ['inputFormat', /^input\s*format$/i],
     ['outputFormat', /^output\s*format$/i],
     ['constraints', /^constraints?$/i],
-    ['explanation', /^explanations?$/i],
     ['solutionLink', /^solution\s*links?$/i],
   ];
   for (const [key, re] of simple) {
     if (re.test(t)) return { key };
   }
 
-  let m = t.match(/^sample\s*input(?:\s*(\d+))?$/i);
+  let m = t.match(/^(?:sample\s+)?explanations?(?:\s+(\d+))?$/i);
+  if (m) return { key: 'sampleExplanation', index: m[1] || null };
+
+  m = t.match(/^sample\s*input(?:\s*(\d+))?$/i);
   if (m) return { key: 'sampleInput', index: m[1] || null };
   m = t.match(/^sample\s*output(?:\s*(\d+))?$/i);
   if (m) return { key: 'sampleOutput', index: m[1] || null };
@@ -140,13 +142,14 @@ function parseDifficultyBlock(body) {
   return { difficulty, points, leftover };
 }
 
-function pairIndexed(inputs, outputs) {
-  const keys = [...new Set([...Object.keys(inputs), ...Object.keys(outputs)])]
+function pairIndexed(inputs, outputs, explanations = {}) {
+  const keys = [...new Set([...Object.keys(inputs), ...Object.keys(outputs), ...Object.keys(explanations)])]
     .sort((a, b) => Number(a) - Number(b));
   return keys
     .map((k) => ({
       input: String(inputs[k] || '').replace(/\s+$/, ''),
       output: String(outputs[k] || '').replace(/\s+$/, ''),
+      explanation: String(explanations[k] || '').replace(/\s+$/, ''),
     }))
     .filter((p) => p.input.trim() || p.output.trim());
 }
@@ -161,8 +164,10 @@ function emptyQuestion() {
     outputFormat: '',
     constraints: '',
     explanation: '',
+    pendingExplanation: '',
     sampleInputs: {},
     sampleOutputs: {},
+    sampleExplanations: {},
     testInputs: {},
     testOutputs: {},
     sampleAuto: 0,
@@ -172,7 +177,10 @@ function emptyQuestion() {
 }
 
 function finalizeQuestion(q) {
-  const sampleIo = pairIndexed(q.sampleInputs, q.sampleOutputs);
+  const sampleIo = pairIndexed(q.sampleInputs, q.sampleOutputs, q.sampleExplanations);
+  if (q.pendingExplanation && sampleIo.length && !String(sampleIo[0].explanation || '').trim()) {
+    sampleIo[0].explanation = q.pendingExplanation;
+  }
   const hiddenTests = pairIndexed(q.testInputs, q.testOutputs);
   const publicFromSamples = sampleIo.map((p) => ({
     input: p.input,
@@ -206,7 +214,7 @@ function finalizeQuestion(q) {
     outputFormat: q.outputFormat.trim(),
     constraints: q.constraints.trim(),
     explanation: q.explanation.trim(),
-    sampleIo: sampleIo.length ? sampleIo : [{ input: '', output: '' }],
+    sampleIo: sampleIo.length ? sampleIo : [{ input: '', output: '', explanation: '' }],
     testCases: testCases.length
       ? testCases
       : [{ input: '', expectedOutput: '', isPublic: true, isLargeTestCase: false }],
@@ -242,9 +250,16 @@ function applySection(q, section) {
     case 'constraints':
       q.constraints = body;
       break;
-    case 'explanation':
-      q.explanation = q.explanation ? `${q.explanation}\n${body}` : body;
+    case 'sampleExplanation': {
+      const idx = section.index || (q.sampleAuto ? String(q.sampleAuto) : '');
+      if (!idx) {
+        q.pendingExplanation = q.pendingExplanation ? `${q.pendingExplanation}\n${body}` : body;
+        break;
+      }
+      const prev = q.sampleExplanations[idx];
+      q.sampleExplanations[idx] = prev ? `${prev}\n${body}` : body;
       break;
+    }
     case 'solutionLink':
       break;
     case 'sampleInput': {

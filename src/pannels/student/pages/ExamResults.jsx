@@ -5,6 +5,7 @@ import parse from 'html-react-parser';
 import StudentBackNav from '../components/StudentBackNav';
 import TestCaseResultsList from '../components/TestCaseResultsList';
 import QuestionHtml from '../../../common/components/QuestionHtml';
+import CodingQuestionDetails from '../../../common/components/CodingQuestionDetails';
 
 const ExamResults = () => {
   const { examId } = useParams();
@@ -184,6 +185,11 @@ const ExamResults = () => {
                     {question && question.description && (
                       <div className="mt-2 mb-4">
                         <QuestionHtml html={question.description} className="prose dark:prose-invert max-w-none text-sm" />
+                      </div>
+                    )}
+                    {question && (
+                      <div className="mb-4 space-y-4">
+                        <CodingQuestionDetails question={question} tone="statement" publicTests={question.testCases} />
                       </div>
                     )}
 

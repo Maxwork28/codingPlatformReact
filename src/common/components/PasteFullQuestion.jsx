@@ -11,7 +11,7 @@ const PasteFullQuestion = ({ onApply }) => {
     const questions = parsePastedQuestions(text);
     setParsed(questions);
     if (questions.length === 0) {
-      setMessage('No question found. Use labels like Title, Difficulty, Problem Statement, Input Format, Sample Input 1, Test Case Input 1, Python Code.');
+      setMessage('No question found. Use labels like Title, Difficulty, Problem Statement, Sample Input 1, Sample Output 1, Explanation 1, Python Code.');
       return;
     }
     if (questions.length === 1 && applyFirst) {
@@ -33,7 +33,7 @@ const PasteFullQuestion = ({ onApply }) => {
             Paste full question
           </h3>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-            Copy the whole dump (title, statement, samples, tests, Python/C++/Java). Numbers, strings, arrays, and multi-line I/O all work. Same box on admin and teacher create/edit.
+            Copy the whole dump (title, statement, samples, tests, Python/C++/Java). Put Explanation 1 under Sample Output 1, Explanation 2 under the next sample, and so on.
           </p>
         </div>
         <button
@@ -56,7 +56,7 @@ const PasteFullQuestion = ({ onApply }) => {
             rows={10}
             className="w-full px-3 py-2 rounded-lg border font-mono text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)', color: 'var(--text-primary)' }}
-            placeholder={'Title\nAll Armstrongs\nDifficulty\nEasy\nProblem Statement\n...\nInput Format\n...\nSample Input 1\n100\n999\nSample Output 1\n153 370 371 407\nTest Case Input 1\n1\n100\nTest Case Output 1\n1 2 3 4 5 6 7 8 9\nPython Code\n...'}
+            placeholder={'Title\nSum of Two Numbers\nDifficulty\nEasy\nProblem Statement\n...\nSample Input 1\n2 3\nSample Output 1\n5\nExplanation 1\n2 + 3 = 5\nSample Input 2\n-1 4\nSample Output 2\n3\nExplanation 2\n-1 + 4 = 3\nPython Code\n...'}
           />
           <div className="flex flex-wrap items-center gap-3">
             <button

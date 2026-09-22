@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import CodeEditor from './CodeEditor';
 import TestCaseResultsList from './TestCaseResultsList';
 import QuestionHtml from '../../../common/components/QuestionHtml';
+import CodingQuestionDetails from '../../../common/components/CodingQuestionDetails';
 
 const QuestionWorkspace = ({
   question,
@@ -199,7 +200,7 @@ const QuestionWorkspace = ({
         <div className="border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white px-6 py-5">
           <h2 className="text-2xl font-bold text-gray-900" dangerouslySetInnerHTML={{ __html: question.title }} />
           <QuestionHtml html={question.description} className="mt-2 text-sm text-gray-600" />
-          {question.constraints && (
+          {!isCodingQuestion && question.constraints && (
             <div className="mt-3 whitespace-pre-wrap rounded-md bg-gray-100 px-3 py-2 text-xs text-gray-600" dangerouslySetInnerHTML={{ __html: question.constraints }} />
           )}
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-500">
@@ -213,57 +214,8 @@ const QuestionWorkspace = ({
           </div>
         </div>
 
-        {isCodingQuestion && question.inputFormat && (
-          <div className="border-b border-gray-100 px-6 py-4">
-            <h3 className="text-sm font-semibold text-gray-900">Input format</h3>
-            <div
-              className="mt-2 text-sm text-gray-600 leading-relaxed prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: question.inputFormat }}
-            />
-          </div>
-        )}
-
-        {isCodingQuestion && question.outputFormat && (
-          <div className="border-b border-gray-100 px-6 py-4">
-            <h3 className="text-sm font-semibold text-gray-900">Output format</h3>
-            <div
-              className="mt-2 text-sm text-gray-600 leading-relaxed prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: question.outputFormat }}
-            />
-          </div>
-        )}
-
-        {isCodingQuestion && question.explanation && (
-          <div className="border-b border-gray-100 px-6 py-4">
-            <h3 className="text-sm font-semibold text-gray-900">Explanation</h3>
-            <div
-              className="mt-2 text-sm text-gray-600 leading-relaxed prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: question.explanation }}
-            />
-          </div>
-        )}
-
-        {isCodingQuestion &&
-          question.sampleIo?.some((p) => (p.input || '').trim() || (p.output || '').trim()) && (
-          <div className="border-b border-gray-100 px-6 py-4">
-            <div className="text-sm font-semibold text-gray-900">Sample input / output</div>
-            <div className="mt-2 space-y-3">
-              {question.sampleIo
-                .filter((p) => (p.input || '').trim() || (p.output || '').trim())
-                .map((pair, idx) => (
-                  <div key={idx} className="rounded-md border border-gray-200 bg-white p-3 text-xs space-y-2">
-                    <div>
-                      <span className="font-semibold text-gray-600">Input</span>
-                      <pre className="mt-1 overflow-x-auto rounded bg-gray-900 px-3 py-2 font-mono text-gray-100 whitespace-pre-wrap">{pair.input || '—'}</pre>
-                    </div>
-                    <div>
-                      <span className="font-semibold text-gray-600">Output</span>
-                      <pre className="mt-1 overflow-x-auto rounded bg-gray-900 px-3 py-2 font-mono text-gray-100 whitespace-pre-wrap">{pair.output || '—'}</pre>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
+        {isCodingQuestion && (
+          <CodingQuestionDetails question={question} tone="workspace" publicTests={question.testCases} />
         )}
 
         {isCodingQuestion

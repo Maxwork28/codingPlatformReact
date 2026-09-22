@@ -15,6 +15,7 @@ import { FaJava,  FaPython, FaDatabase, FaBookOpen } from "react-icons/fa";
 import { GiNotebook } from "react-icons/gi";
 import { MdDataObject, MdDataArray } from "react-icons/md";
 import QuestionHtml from '../../../common/components/QuestionHtml';
+import CodingQuestionDetails, { isCodingQuestionType } from '../../../common/components/CodingQuestionDetails';
 import { makeRunHistoryEntry, historyKindLabel, formatHistoryTime, loadRunHistory, saveRunHistory } from '../../../common/utils/runOutputHistory';
 
 const ButtonSpinner = () => (
@@ -1374,83 +1375,18 @@ const TakeClass = () => {
                   />
                 </div>
 
-                {['fillInTheBlanksCoding', 'coding', 'codingWithDriver'].includes(selectedQuestion.type) &&
-                  selectedQuestion.inputFormat && (
-                  <div className="mb-4 sm:mb-6">
-                    <h3 className="text-base sm:text-lg font-semibold mb-2" style={{ color: 'var(--text-heading)' }}>
-                      Input Format
-                    </h3>
-                    <div 
-                      className="text-xs sm:text-sm leading-relaxed" 
-                      style={{ color: 'var(--text-primary)' }}
-                      dangerouslySetInnerHTML={{ __html: selectedQuestion.inputFormat }}
-                    />
-                  </div>
-                )}
-
-                {['fillInTheBlanksCoding', 'coding', 'codingWithDriver'].includes(selectedQuestion.type) &&
-                  selectedQuestion.outputFormat && (
-                  <div className="mb-4 sm:mb-6">
-                    <h3 className="text-base sm:text-lg font-semibold mb-2" style={{ color: 'var(--text-heading)' }}>
-                      Output Format
-                    </h3>
-                    <div 
-                      className="text-xs sm:text-sm leading-relaxed" 
-                      style={{ color: 'var(--text-primary)' }}
-                      dangerouslySetInnerHTML={{ __html: selectedQuestion.outputFormat }}
-                    />
-                  </div>
-                )}
-
-                {selectedQuestion.constraints && (
+                {isCodingQuestionType(selectedQuestion.type) ? (
+                  <CodingQuestionDetails question={selectedQuestion} tone="theme" publicTests={selectedQuestion.testCases} />
+                ) : selectedQuestion.constraints && (
                   <div className="mb-4 sm:mb-6">
                     <h3 className="text-base sm:text-lg font-semibold mb-2" style={{ color: 'var(--text-heading)' }}>
                       Constraints
                     </h3>
-                    <div 
-                      className="text-xs sm:text-sm leading-relaxed" 
+                    <div
+                      className="text-xs sm:text-sm leading-relaxed"
                       style={{ color: 'var(--text-primary)' }}
                       dangerouslySetInnerHTML={{ __html: selectedQuestion.constraints }}
                     />
-                  </div>
-                )}
-
-                {['fillInTheBlanksCoding', 'coding', 'codingWithDriver'].includes(selectedQuestion.type) &&
-                  selectedQuestion.sampleIo?.some((p) => (p.input || '').trim() || (p.output || '').trim()) && (
-                  <div className="mb-4 sm:mb-6">
-                    <h3 className="text-base sm:text-lg font-semibold mb-2" style={{ color: 'var(--text-heading)' }}>
-                      Sample input / output
-                    </h3>
-                    <div className="space-y-2 sm:space-y-3">
-                      {selectedQuestion.sampleIo
-                        .filter((p) => (p.input || '').trim() || (p.output || '').trim())
-                        .map((pair, index) => (
-                        <div 
-                          key={index} 
-                          className="p-2 sm:p-3 rounded-lg border space-y-2" 
-                          style={{ backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }}
-                        >
-                          <div>
-                            <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Input</span>
-                            <pre 
-                              className="text-xs sm:text-sm whitespace-pre-wrap mt-1" 
-                              style={{ color: 'var(--text-primary)' }}
-                            >
-                              {pair.input || '—'}
-                            </pre>
-                          </div>
-                          <div>
-                            <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Output</span>
-                            <pre 
-                              className="text-xs sm:text-sm whitespace-pre-wrap mt-1" 
-                              style={{ color: 'var(--text-primary)' }}
-                            >
-                              {pair.output || '—'}
-                            </pre>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
                   </div>
                 )}
               </div>
