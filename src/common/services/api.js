@@ -1162,6 +1162,17 @@ export const markSubmissionCorrect = async (submissionId) => {
  * @param {string} questionId - Question ID
  * @returns {Promise} Axios response
  */
+export const getClassSheetReport = async (classId, { scope = 'class', questionId } = {}) => {
+  const params = { scope };
+  if (questionId) params.questionId = questionId;
+  try {
+    const response = await api.get(`/questions/classes/${classId}/sheet-report`, { params });
+    return response;
+  } catch (err) {
+    throw err.response?.data?.error || 'Failed to download report';
+  }
+};
+
 export const getQuestionPerspectiveReport = async (classId, questionId) => {
   console.log('getQuestionPerspectiveReport called', { classId, questionId });
   try {

@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { Dialog } from '@headlessui/react';
 import { ArrowLeftIcon, PlayIcon, XMarkIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
 import { format } from 'date-fns';
 import { io } from 'socket.io-client';
 import { API_BASE_URL } from '../../../common/constants';
-import { getQuestionPerspectiveReport, blockUser, teacherTestQuestion } from '../../../common/services/api';
-import { downloadQuestionStatsReport } from '../../../common/utils/downloadCsv';
+import { getQuestionPerspectiveReport, blockUser, blockAllUsers, teacherTestQuestion, getClassSheetReport } from '../../../common/services/api';
+import { downloadSheetReport, shareSheetReport } from '../../../common/utils/downloadCsv';
 import CodeEditor from '../../student/components/CodeEditor';
 import TestCaseResultsList from '../../student/components/TestCaseResultsList';
 
@@ -77,6 +78,8 @@ const QuestionStatistics = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [blocking, setBlocking] = useState(false);
   const [search, setSearch] = useState('');
+  const [classReport, setClassReport] = useState(null);
+  const [shareNote, setShareNote] = useState('');
 
   const [codeStudent, setCodeStudent] = useState(null);
   const [editorCode, setEditorCode] = useState('');
@@ -159,17 +162,25 @@ const QuestionStatistics = () => {
 
   const chartData = useMemo(() => {
     if (!summary) return null;
+    const attempted = summary.correct + summary.incorrect;
+    if (!attempted) return null;
     return {
-      labels: ['Correct', 'Wrong', 'Inactive'],
+      labels: ['Correct', 'Wrong'],
       datasets: [
         {
-          data: [summary.correct, summary.incorrect, summary.notAttempted],
-          backgroundColor: ['#10b981', '#f43f5e', '#94a3b8'],
+          data: [summary.correct, summary.incorrect],
+          backgroundColor: ['#10b981', '#f43f5e'],
           borderWidth: 0,
         },
       ],
     };
   }, [summary]);
+
+  const inactiveStudents = useMemo(
+    () => (report?.studentData ?? []).filter((student) => student.status === 'not_attempted'),
+    [report?.studentData]
+  );
+  const unblockedInactive = inactiveStudents.filter((student) => !student.isBlocked);
 
   const filteredStudents = useMemo(() => {
     let list = report?.studentData ?? [];
@@ -223,6 +234,68 @@ const QuestionStatistics = () => {
       });
     } finally {
       setRunLoading(false);
+    }
+  };
+
+  const handleBlockAllInactive = async () => {
+    const targets = unblockedInactive.length ? unblockedInactive : inactiveStudents;
+    const shouldBlock = unblockedInactive.length > 0;
+    const ids = targets.map((student) => String(student.studentId)).filter(Boolean);
+    if (!ids.length) return;
+    setBlocking(true);
+    setActionMsg('');
+    setError('');
+    try {
+      const response = await blockAllUsers(classId, shouldBlock, { studentIds: ids });
+      const updated = response?.data?.updated ?? ids.length;
+      setActionMsg(
+        shouldBlock
+          ? `${updated} inactive student(s) blocked`
+          : `${updated} inactive student(s) unblocked`
+      );
+      await loadReport({ silent: true });
+    } catch (err) {
+      setError(typeof err === 'string' ? err : err?.error || 'Failed to update inactive students');
+    } finally {
+      setBlocking(false);
+    }
+  };
+
+  const openClassReport = async () => {
+    if (!classId) return;
+    setShareNote('');
+    setClassReport({ loading: true, error: '', columns: [], rows: [], title: report?.class?.name || 'Class report' });
+    try {
+      const response = await getClassSheetReport(classId, { scope: 'class' });
+      setClassReport({
+        loading: false,
+        error: '',
+        scope: 'class',
+        title: `${response.data.className || report?.class?.name || 'Class'} report`,
+        className: response.data.className || report?.class?.name || '',
+        columns: response.data.columns || [],
+        rows: response.data.rows || [],
+      });
+    } catch (err) {
+      setClassReport({
+        loading: false,
+        error: typeof err === 'string' ? err : err?.error || 'Failed to load class report',
+        columns: [],
+        rows: [],
+        title: 'Class report',
+      });
+    }
+  };
+
+  const handleShareClassReport = async () => {
+    if (!classReport || classReport.loading || classReport.error) return;
+    setShareNote('');
+    try {
+      const result = await shareSheetReport(classReport);
+      setShareNote(result === 'copied' ? 'Report copied. Paste it to share.' : 'Report shared.');
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+      setShareNote('Could not share the report.');
     }
   };
 
@@ -313,10 +386,7 @@ const QuestionStatistics = () => {
           <button
             type="button"
             disabled={!report}
-            onClick={() => {
-              if (!report) return;
-              downloadQuestionStatsReport(report);
-            }}
+            onClick={openClassReport}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
             style={{ borderColor: 'var(--card-border)', color: 'var(--text-primary)' }}
           >
@@ -337,20 +407,26 @@ const QuestionStatistics = () => {
           </div>
         )}
 
-        {summary && chartData && (
+        {summary && (
           <div
             className="rounded-xl border p-4 grid grid-cols-1 sm:grid-cols-4 gap-4 items-center"
             style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
           >
             <div className="w-36 mx-auto sm:mx-0">
-              <Doughnut
-                data={chartData}
-                plugins={[doughnutPercentPlugin]}
-                options={{
-                  plugins: { legend: { display: false }, tooltip: { enabled: true } },
-                  cutout: '58%',
-                }}
-              />
+              {chartData ? (
+                <Doughnut
+                  data={chartData}
+                  plugins={[doughnutPercentPlugin]}
+                  options={{
+                    plugins: { legend: { display: false }, tooltip: { enabled: true } },
+                    cutout: '58%',
+                  }}
+                />
+              ) : (
+                <div className="aspect-square rounded-full border-[14px] border-slate-200 flex items-center justify-center text-center text-xs font-medium text-slate-500">
+                  No attempts
+                </div>
+              )}
             </div>
             {[
               { label: 'Correct', value: summary.correct, color: 'text-emerald-700' },
@@ -397,6 +473,18 @@ const QuestionStatistics = () => {
                 {opt.label} {opt.count != null ? `(${opt.count})` : ''}
               </button>
             ))}
+            <button
+              type="button"
+              disabled={blocking || inactiveStudents.length === 0}
+              onClick={handleBlockAllInactive}
+              className="px-2.5 py-1 rounded-full text-xs font-semibold border border-slate-800 bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {inactiveStudents.length === 0
+                ? 'Block all inactive'
+                : unblockedInactive.length > 0
+                  ? `Block all inactive (${unblockedInactive.length})`
+                  : 'Unblock all inactive'}
+            </button>
             <input
               type="text"
               value={search}
@@ -475,6 +563,84 @@ const QuestionStatistics = () => {
           </div>
         </div>
       </div>
+
+      <Dialog open={Boolean(classReport)} onClose={() => setClassReport(null)} className="relative z-50">
+        <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <Dialog.Panel className="mx-auto flex max-h-[85vh] w-full max-w-6xl flex-col rounded-2xl bg-white shadow-xl">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 p-5">
+              <Dialog.Title className="text-lg font-semibold text-gray-900">
+                {classReport?.title || 'Class report'}
+              </Dialog.Title>
+              <div className="flex items-center gap-2">
+                {classReport && !classReport.loading && !classReport.error && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleShareClassReport}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                    >
+                      Share
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => downloadSheetReport(classReport)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700"
+                    >
+                      Download
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setClassReport(null)}
+                  className="text-gray-500 hover:text-gray-700 p-1 rounded"
+                  aria-label="Close"
+                >
+                  <XMarkIcon className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+            <div className="overflow-auto p-5">
+              {shareNote && <p className="mb-3 text-sm text-indigo-700">{shareNote}</p>}
+              {classReport?.loading && <p className="text-sm text-gray-600">Loading report…</p>}
+              {classReport?.error && <p className="text-sm text-red-600">{classReport.error}</p>}
+              {classReport && !classReport.loading && !classReport.error && (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        {(classReport.columns || []).map((column) => (
+                          <th key={column} className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                            {column}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {(classReport.rows || []).length === 0 ? (
+                        <tr>
+                          <td colSpan={classReport.columns?.length || 1} className="px-3 py-4 text-sm text-gray-500">
+                            No students in this class.
+                          </td>
+                        </tr>
+                      ) : classReport.rows.map((row, rowIndex) => (
+                        <tr key={rowIndex}>
+                          {row.map((cell, cellIndex) => (
+                            <td key={cellIndex} className="px-3 py-2 whitespace-nowrap text-gray-700">
+                              {cell == null || cell === '' ? '—' : String(cell)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </Dialog.Panel>
+        </div>
+      </Dialog>
 
       {codeStudent && (
         <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: boardMode ? '#0f172a' : 'var(--background-content)' }}>

@@ -589,17 +589,6 @@ const StudentTakeClass = () => {
             className="pt-1"
           />
         )}
-
-        {testResults.explanation && (
-          <div className="mt-3 p-3 bg-blue-50 rounded border" style={{ borderColor: 'var(--card-border)' }}>
-            <div className="text-xs font-semibold mb-1" style={{ color: 'var(--text-heading)' }}>
-              💡 Explanation:
-            </div>
-            <div className="text-xs" style={{ color: 'var(--text-primary)' }}>
-              {stripHtml(testResults.explanation)}
-            </div>
-          </div>
-        )}
       </div>
     );
   };
@@ -642,6 +631,7 @@ const StudentTakeClass = () => {
           <TestCaseResultsList
             results={submissionFeedback.testResults}
             className="mb-2"
+            showPublicIo={false}
           />
           {typeof submissionFeedback.passedTestCases === 'number' &&
           typeof submissionFeedback.totalTestCases === 'number' &&
@@ -650,28 +640,16 @@ const StudentTakeClass = () => {
               {submissionFeedback.passedTestCases}/{submissionFeedback.totalTestCases} test cases passed
             </p>
           ) : null}
-          {submissionFeedback.explanation ? (
-            <div className="text-xs sm:text-sm mt-2 leading-relaxed" style={{ color: 'var(--text-primary)' }}>
-              {stripHtml(submissionFeedback.explanation)}
-            </div>
-          ) : null}
         </>
       );
     }
 
     return (
-      <>
-        <p
-          className={`text-sm font-semibold ${submissionFeedback.isCorrect ? 'text-green-800' : 'text-red-800'}`}
-        >
-          {submissionFeedback.isCorrect ? 'Correct' : 'Incorrect'}
-        </p>
-        {submissionFeedback.explanation ? (
-          <div className="text-xs sm:text-sm mt-2 leading-relaxed" style={{ color: 'var(--text-primary)' }}>
-            {stripHtml(submissionFeedback.explanation)}
-          </div>
-        ) : null}
-      </>
+      <p
+        className={`text-sm font-semibold ${submissionFeedback.isCorrect ? 'text-green-800' : 'text-red-800'}`}
+      >
+        {submissionFeedback.isCorrect ? 'Correct' : 'Incorrect'}
+      </p>
     );
   };
 
@@ -927,18 +905,23 @@ const StudentTakeClass = () => {
     >
       {/* Top Bar */}
       <div className="border-b px-2 py-1.5 flex-shrink-0" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-        <div className="max-w-full mx-auto flex items-center gap-1.5 min-h-[1.75rem]">
-          <StudentBackNav
-            compact
-            label="Back"
+        <div className="max-w-full mx-auto flex items-center gap-2 min-h-[1.75rem]">
+          <button
+            type="button"
             onClick={handleBackToClassSelection}
-            fallbackTo="/student/take-class"
-          />
-          <span className="shrink-0 text-[10px] leading-none" style={{ color: 'var(--text-secondary)' }} aria-hidden>
+            className="inline-flex shrink-0 items-center gap-0.5 text-[11px] leading-none hover:underline"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back
+          </button>
+          <span className="shrink-0 text-[11px] leading-none" style={{ color: 'var(--text-secondary)' }} aria-hidden>
             |
           </span>
           <h2
-            className="flex-1 min-w-0 truncate text-[11px] font-medium leading-none"
+            className="flex-1 min-w-0 truncate text-sm font-semibold leading-none"
             style={{ color: 'var(--text-heading)' }}
             title={selectedClass.name}
           >
@@ -1029,73 +1012,61 @@ const StudentTakeClass = () => {
               ) : (
                 <div className="space-y-2">
                   {questions.map((q, idx) => {
+                    const isSelected = selectedQuestion?._id === q._id;
                     const attemptStatus = q.studentAttemptStatus || 'not_viewed';
-                    const statusColors = {
-                      attempted: {
-                        bg: selectedQuestion?._id === q._id ? '#059669' : '#d1fae5',
-                        border: '#059669',
-                        badge: 'bg-emerald-600 text-white',
-                        label: 'Attempted',
-                        labelColor: '#047857',
-                      },
-                      wrong: {
-                        bg: selectedQuestion?._id === q._id ? '#e11d48' : '#ffe4e6',
-                        border: '#e11d48',
-                        badge: 'bg-rose-600 text-white',
-                        label: 'Wrong',
-                        labelColor: '#be123c',
-                      },
-                      not_viewed: {
-                        bg: selectedQuestion?._id === q._id ? 'var(--accent-indigo)' : 'var(--background-light)',
-                        border: selectedQuestion?._id === q._id ? 'var(--accent-indigo)' : 'var(--card-border)',
-                        badge: 'bg-slate-400 text-white',
-                        label: 'Not viewed',
-                        labelColor: 'var(--text-secondary)',
-                      },
-                    };
-                    const colors = statusColors[attemptStatus] || statusColors.not_viewed;
+                    const statusLabel =
+                      attemptStatus === 'attempted' ? 'Attempted' : attemptStatus === 'wrong' ? 'Wrong' : 'Not viewed';
+                    const statusColor = isSelected
+                      ? 'rgba(255,255,255,0.8)'
+                      : attemptStatus === 'attempted'
+                        ? '#059669'
+                        : attemptStatus === 'wrong'
+                          ? '#e11d48'
+                          : 'var(--text-secondary)';
+                    const plainTitle = q.title?.replace(/<[^>]*>/g, '') || 'Untitled';
                     return (
                     <div
                       key={q._id}
-                      className={`rounded-lg h-24 min-h-24 max-h-24 overflow-hidden flex-shrink-0 transition-all duration-200 hover:z-50 ${
-                        selectedQuestion?._id === q._id ? 'shadow-lg z-50' : 'hover:shadow'
+                      className={`rounded-xl transition-all duration-200 ${
+                        isSelected ? 'shadow-md' : 'hover:shadow-sm'
                       }`}
-                      style={{ 
-                        backgroundColor: colors.bg,
-                        border: `2px solid ${colors.border}`,
-                        position: 'relative'
+                      style={{
+                        backgroundColor: isSelected ? 'var(--accent-indigo)' : 'var(--card-white)',
+                        border: isSelected ? '1px solid var(--accent-indigo)' : '1px solid var(--card-border)',
                       }}
                     >
                       <button
+                        type="button"
                         onClick={() => {
                           setSelectedQuestion(q);
                           setShowQuestionsList(false);
                         }}
-                        className="flex items-start gap-2 p-3 text-left w-full h-full overflow-hidden"
+                        className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left"
                       >
                         <span
-                          className="flex-shrink-0 flex h-8 min-w-8 w-8 items-center justify-center rounded-full text-sm font-extrabold tabular-nums leading-none shadow-sm text-white"
-                          style={{
-                            backgroundColor:
-                              attemptStatus === 'attempted'
-                                ? '#059669'
+                          className="flex-shrink-0 flex h-8 min-w-8 w-8 items-center justify-center rounded-full text-sm font-extrabold tabular-nums leading-none shadow-sm"
+                          style={
+                            isSelected
+                              ? { backgroundColor: '#ffffff', color: '#312e81' }
+                              : attemptStatus === 'attempted'
+                                ? { backgroundColor: '#059669', color: '#ffffff' }
                                 : attemptStatus === 'wrong'
-                                  ? '#e11d48'
-                                  : '#4f46e5',
-                          }}
+                                  ? { backgroundColor: '#e11d48', color: '#ffffff' }
+                                  : { backgroundColor: '#4f46e5', color: '#ffffff' }
+                          }
                         >
                           {idx + 1}
                         </span>
-                        <div className="flex-1 min-w-0 h-full flex flex-col justify-between overflow-hidden">
-                          <p 
-                            className="text-sm font-medium line-clamp-2 leading-tight" 
-                            style={{ color: selectedQuestion?._id === q._id && (attemptStatus === 'attempted' || attemptStatus === 'wrong') ? '#fff' : 'var(--text-primary)' }}
-                            title={q.title?.replace(/<[^>]*>/g, '') || 'Untitled'}
+                        <div className="flex-1 min-w-0">
+                          <p
+                            className="text-sm font-medium truncate leading-5"
+                            style={{ color: isSelected ? '#ffffff' : 'var(--text-heading)' }}
+                            title={plainTitle}
                           >
-                            {q.title?.replace(/<[^>]*>/g, '') || 'Untitled'}
+                            {plainTitle}
                           </p>
-                          <p className="text-xs mt-1 font-medium truncate" style={{ color: selectedQuestion?._id === q._id && (attemptStatus === 'attempted' || attemptStatus === 'wrong') ? 'rgba(255,255,255,0.9)' : colors.labelColor }}>
-                            {colors.label}
+                          <p className="text-[11px] truncate leading-4 mt-0.5 font-medium" style={{ color: statusColor }}>
+                            {statusLabel}
                           </p>
                         </div>
                       </button>

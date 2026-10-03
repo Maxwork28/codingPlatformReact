@@ -25,13 +25,113 @@ import {
   adminSearchQuestionsById,
   getClassStudents,
   getQuestionSummary,
-  getQuestionPerspectiveReport,
+  getClassSheetReport,
 } from '../../../common/services/api';
-import { downloadQuestionStatsReport } from '../../../common/utils/downloadCsv';
+import { downloadSheetReport, shareSheetReport } from '../../../common/utils/downloadCsv';
 import TeacherQuestionCard from '../components/TeacherQuestionCard';
 import TestCaseResultsList from '../../student/components/TestCaseResultsList';
 import RunMetricsBadges, { summarizeRunMetrics } from '../../../common/components/RunMetricsBadges';
 import { getStudentQuestionProgress } from '../../../common/utils/studentQuestionProgress';
+
+function QuestionSheetPanel({ report, onClose }) {
+  const [shareNote, setShareNote] = useState('');
+  const statusIndex = (report?.columns || []).indexOf('Status');
+  const handleShare = async () => {
+    if (!report || report.loading || report.error) return;
+    setShareNote('');
+    try {
+      const result = await shareSheetReport(report);
+      setShareNote(result === 'copied' ? 'Report copied. Paste it to share.' : 'Report shared.');
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+      setShareNote('Could not share the report.');
+    }
+  };
+  return (
+    <Dialog open={Boolean(report)} onClose={onClose} className="relative z-50">
+      <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+      <div className="fixed inset-0 flex items-center justify-center p-4">
+        <Dialog.Panel className="mx-auto flex max-h-[85vh] w-full max-w-6xl flex-col rounded-2xl bg-white shadow-xl">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 p-5">
+            <Dialog.Title className="text-lg font-semibold text-gray-900">
+              Report: {report?.title || 'Question'}
+            </Dialog.Title>
+            <div className="flex items-center gap-2">
+              {report && !report.loading && !report.error && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleShare}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                  >
+                    Share
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => downloadSheetReport(report)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700"
+                  >
+                    Download
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-gray-500 hover:text-gray-700 p-1 rounded"
+                aria-label="Close"
+              >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+          </div>
+          <div className="overflow-auto p-5">
+      {shareNote && <p className="mb-3 text-sm text-indigo-700">{shareNote}</p>}
+      {report?.loading && <p className="text-sm text-gray-600">Loading report…</p>}
+      {report?.error && <p className="text-sm text-red-600">{report.error}</p>}
+      {report && !report.loading && !report.error && (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                {(report.columns || []).map((column) => (
+                  <th key={column} className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                    {column}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {(report.rows || []).length === 0 ? (
+                <tr>
+                  <td colSpan={report.columns?.length || 1} className="px-3 py-4 text-sm text-gray-500">
+                    No students in this class.
+                  </td>
+                </tr>
+              ) : report.rows.map((row, rowIndex) => (
+                <tr key={rowIndex}>
+                  {row.map((cell, cellIndex) => {
+                    const text = cell == null || cell === '' ? '—' : String(cell);
+                    const isStatus = cellIndex === statusIndex;
+                    const color = text === 'Correct' ? 'text-green-700' : text === 'Wrong' ? 'text-red-700' : text === 'Not Submitted' ? 'text-gray-500' : 'text-gray-800';
+                    return (
+                      <td key={cellIndex} className={`px-3 py-2 whitespace-nowrap ${isStatus ? `font-semibold ${color}` : 'text-gray-700'}`}>
+                        {text}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+          </div>
+        </Dialog.Panel>
+      </div>
+    </Dialog>
+  );
+}
 
 const TeacherClassView = () => {
   const { classId } = useParams();
@@ -63,6 +163,8 @@ const TeacherClassView = () => {
   const [assignmentError, setAssignmentError] = useState('');
   const [assignmentMessage, setAssignmentMessage] = useState('');
   const [reportLoadingId, setReportLoadingId] = useState(null);
+  const [sheetLoading, setSheetLoading] = useState('');
+  const [visibleReport, setVisibleReport] = useState(null);
   const [assignmentQuestionSearchQuery, setAssignmentQuestionSearchQuery] = useState('');
   const [allQuestionsForAssignment, setAllQuestionsForAssignment] = useState([]);
 
@@ -454,18 +556,84 @@ const TeacherClassView = () => {
     }
   };
 
-  const handleDownloadAssignmentReport = async (questionId) => {
+  const handleViewQuestionReport = async (scope, questionId, title) => {
     if (!classId || !questionId) return;
-    setReportLoadingId(String(questionId));
+    setVisibleReport({ scope, questionId: String(questionId), title: title || 'Question', loading: true, error: '', columns: [], rows: [] });
     try {
-      const response = await getQuestionPerspectiveReport(classId, questionId);
-      downloadQuestionStatsReport(response.data.report);
+      const response = await getClassSheetReport(classId, { scope, questionId });
+      setVisibleReport({
+        scope,
+        questionId: String(questionId),
+        title: title || 'Question',
+        loading: false,
+        error: '',
+        columns: response.data.columns || [],
+        rows: response.data.rows || [],
+        className: response.data.className || '',
+      });
+    } catch (err) {
+      const errorMsg = typeof err === 'string' ? err : (err.error || 'Failed to load report');
+      setVisibleReport({
+        scope,
+        questionId: String(questionId),
+        title: title || 'Question',
+        loading: false,
+        error: errorMsg,
+        columns: [],
+        rows: [],
+      });
+    }
+  };
+
+  const handleViewClassReport = async () => {
+    if (!classId) return;
+    setVisibleReport({
+      scope: 'class',
+      title: classDetails?.name || 'Class report',
+      loading: true,
+      error: '',
+      columns: [],
+      rows: [],
+    });
+    try {
+      const response = await getClassSheetReport(classId, { scope: 'class' });
+      setVisibleReport({
+        scope: 'class',
+        title: `${response.data.className || classDetails?.name || 'Class'} report`,
+        loading: false,
+        error: '',
+        columns: response.data.columns || [],
+        rows: response.data.rows || [],
+        className: response.data.className || '',
+      });
+    } catch (err) {
+      const errorMsg = typeof err === 'string' ? err : (err.error || 'Failed to load report');
+      setVisibleReport({
+        scope: 'class',
+        title: 'Class report',
+        loading: false,
+        error: errorMsg,
+        columns: [],
+        rows: [],
+      });
+    }
+  };
+
+  const handleDownloadSheet = async (scope, questionId) => {
+    if (!classId) return;
+    const loadingKey = questionId ? String(questionId) : scope;
+    if (questionId) setReportLoadingId(loadingKey);
+    else setSheetLoading(scope);
+    try {
+      const response = await getClassSheetReport(classId, { scope, questionId });
+      downloadSheetReport(response.data);
     } catch (err) {
       const errorMsg = typeof err === 'string' ? err : (err.error || 'Failed to download report');
       setAssignmentError(errorMsg);
       showToast(errorMsg, 'error');
     } finally {
-      setReportLoadingId(null);
+      if (questionId) setReportLoadingId(null);
+      else setSheetLoading('');
     }
   };
 
@@ -1490,6 +1658,15 @@ const TeacherClassView = () => {
                 <h3 className="text-lg font-semibold" style={{ color: 'var(--text-heading)' }}>
                   Assignments ({filteredAssignments.length})
                 </h3>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadSheet('assignment')}
+                    disabled={sheetLoading === 'assignment' || filteredAssignments.length === 0}
+                    className="px-3 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    {sheetLoading === 'assignment' ? 'Downloading…' : 'Assignment report'}
+                  </button>
                 <div className="relative">
                   <input
                     type="text"
@@ -1514,6 +1691,7 @@ const TeacherClassView = () => {
                       d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
                     />
                   </svg>
+                </div>
                 </div>
               </div>
               {filteredAssignments.length === 0 ? (
@@ -1574,11 +1752,16 @@ const TeacherClassView = () => {
                                     </Link>
                                     <button
                                       type="button"
-                                      onClick={() => handleDownloadAssignmentReport(assignment.questionId?._id || assignment.questionId)}
-                                      disabled={reportLoadingId === String(assignment.questionId?._id || assignment.questionId)}
-                                      className="text-indigo-600 hover:text-indigo-900 disabled:opacity-50"
+                                      onClick={() => handleViewQuestionReport(
+                                        'assignment',
+                                        assignment.questionId?._id || assignment.questionId,
+                                        stripHtml(assignment.questionId?.title)
+                                      )}
+                                      className="text-indigo-600 hover:text-indigo-900"
                                     >
-                                      {reportLoadingId === String(assignment.questionId?._id || assignment.questionId) ? 'Downloading…' : 'Report'}
+                                      {visibleReport?.scope === 'assignment' && visibleReport?.questionId === String(assignment.questionId?._id || assignment.questionId) && visibleReport.loading
+                                        ? 'Loading…'
+                                        : 'View report'}
                                     </button>
                                   </>
                                 ) : null}
@@ -1749,9 +1932,19 @@ const TeacherClassView = () => {
 
             {/* Assigned Questions */}
             <div className="backdrop-blur-sm rounded-2xl shadow-lg border p-6 transition-all duration-300 hover:shadow-2xl overflow-visible" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-              <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>
-                Assigned Questions ({questions.length})
-              </h3>
+              <div className="flex justify-between items-center gap-3 mb-4">
+                <h3 className="text-lg font-semibold" style={{ color: 'var(--text-heading)' }}>
+                  Assigned Questions ({questions.length})
+                </h3>
+                <button
+                  type="button"
+                  onClick={handleViewClassReport}
+                  disabled={questions.length === 0}
+                  className="px-3 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  Class report
+                </button>
+              </div>
 
               {questions.length === 0 ? (
                 <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>No questions assigned to this class</p>
@@ -1764,6 +1957,7 @@ const TeacherClassView = () => {
                       classId={classId}
                       onQuestionUpdate={() => fetchData(true)}
                       summary={questionSummary.find(s => String(s.questionId) === String(question._id))}
+                      onViewReport={(item) => handleViewQuestionReport('class', item._id, stripHtml(item.title))}
                     />
                   ))}
                 </div>
@@ -1772,6 +1966,7 @@ const TeacherClassView = () => {
           </Tab.Panel>
         </Tab.Panels>
       </Tab.Group>
+      <QuestionSheetPanel report={visibleReport} onClose={() => setVisibleReport(null)} />
     </div>
   );
 };

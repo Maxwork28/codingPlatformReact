@@ -1,4 +1,5 @@
 import React, { useState, Fragment } from 'react';
+import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 import { Menu, Transition, Portal } from '@headlessui/react';
 import { publishQuestion, unpublishQuestion, disableQuestion, enableQuestion } from '../../../common/services/api';
@@ -8,7 +9,9 @@ import parse from 'html-react-parser';
 const getApiErrorMessage = (err, fallback) =>
   (typeof err === 'string' && err) || err?.response?.data?.error || fallback;
 
-const TeacherQuestionCard = ({ question, classId, onQuestionUpdate, summary }) => {
+const TeacherQuestionCard = ({ question, classId, onQuestionUpdate, summary, onViewReport }) => {
+  const { user, role } = useSelector((state) => state.auth);
+  const canEditQuestion = role === 'admin' || (role === 'teacher' && Boolean(user?.canCreateQuestion));
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const linkState = classId ? { classId } : undefined;
@@ -173,8 +176,9 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate, summary }) =
                 )}
               </div>
               <div className="py-1">
-                <Menu.Item>
+                <Menu.Item disabled={!canEditQuestion}>
                   {({ active, close }) => (
+                    canEditQuestion ? (
                     <Link
                       to={`/teacher/questions/${question._id}/edit`}
                       state={linkState}
@@ -187,6 +191,20 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate, summary }) =
                       </svg>
                       Edit Question
                     </Link>
+                    ) : (
+                    <button
+                      type="button"
+                      disabled
+                      title="You need permission to create or edit questions"
+                      className="group flex w-full items-center px-4 py-2 text-sm opacity-40 cursor-not-allowed"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
+                      <svg className="mr-3 h-5 w-5" style={{ color: 'var(--text-secondary)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      Edit Question
+                    </button>
+                    )
                   )}
                 </Menu.Item>
                 <Menu.Item>
@@ -300,6 +318,15 @@ const TeacherQuestionCard = ({ question, classId, onQuestionUpdate, summary }) =
           </>
         )}
         
+        {onViewReport && (
+          <button
+            type="button"
+            onClick={() => onViewReport(question)}
+            className="mb-3 text-sm font-semibold text-indigo-600 hover:text-indigo-800"
+          >
+            View report
+          </button>
+        )}
         <div className="flex flex-wrap gap-2">
           {!isPublished && (
             <>

@@ -17,6 +17,41 @@ export function downloadCsv(filename, rows) {
   URL.revokeObjectURL(url);
 }
 
+export function sheetReportFilename(report) {
+  const className = String(report?.className || 'class').replace(/[^\w\-]+/g, '_').slice(0, 40);
+  const scope = report?.scope === 'assignment' ? 'assignment-report' : 'class-report';
+  return `${scope}-${className || 'class'}.csv`;
+}
+
+export function sheetReportCsv(report) {
+  const columns = report?.columns || [];
+  const rows = report?.rows || [];
+  const lines = [columns, ...rows].map((row) => (Array.isArray(row) ? row.map(csvCell).join(',') : ''));
+  return lines.join('\n');
+}
+
+export function downloadSheetReport(report, filename) {
+  const name = filename || sheetReportFilename(report).replace(/\.csv$/, '');
+  const columns = report?.columns || [];
+  const rows = report?.rows || [];
+  downloadCsv(name, [columns, ...rows]);
+}
+
+export async function shareSheetReport(report) {
+  const csv = sheetReportCsv(report);
+  const title = report?.title || report?.className || 'Class report';
+  const file = new File([`\uFEFF${csv}`], sheetReportFilename(report), { type: 'text/csv' });
+  if (navigator.share) {
+    const payload = navigator.canShare?.({ files: [file] })
+      ? { title, files: [file] }
+      : { title, text: csv.slice(0, 3500) };
+    await navigator.share(payload);
+    return 'shared';
+  }
+  await navigator.clipboard.writeText(csv);
+  return 'copied';
+}
+
 export function downloadQuestionStatsReport(report, { filename } = {}) {
   const questionTitle = String(report?.question?.title || 'question').replace(/<[^>]*>/g, '').trim() || 'question';
   const className = report?.class?.name || '';

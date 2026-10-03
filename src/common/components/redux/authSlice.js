@@ -135,6 +135,7 @@ const authSlice = createSlice({
           email: action.payload.email,
           role: action.payload.role,
           profilePicture: action.payload.profilePicture || null,
+          canCreateQuestion: Boolean(action.payload.canCreateQuestion),
         };
         state.error = null;
         if (!action.payload.id) {
@@ -163,6 +164,7 @@ const authSlice = createSlice({
           email: action.payload.email,
           role: action.payload.role,
           profilePicture: action.payload.profilePicture || null,
+          canCreateQuestion: Boolean(action.payload.canCreateQuestion),
         };
         state.error = null;
       })
