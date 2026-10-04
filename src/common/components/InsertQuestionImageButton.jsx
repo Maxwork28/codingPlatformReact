@@ -1,7 +1,8 @@
 import React, { useRef, useState } from 'react';
 import { useSlate } from 'slate-react';
-import { PhotoIcon } from '@heroicons/react/24/outline';
 import { insertImageFile } from '../utils/questionRichTextImages';
+import { ImageIcon } from 'lucide-react';
+import { notify } from '../ui/Toast';
 
 const InsertQuestionImageButton = () => {
   const editor = useSlate();
@@ -14,7 +15,7 @@ const InsertQuestionImageButton = () => {
     try {
       await insertImageFile(editor, file);
     } catch (err) {
-      window.alert(err.message || 'Failed to add image');
+      notify(err.message || 'Failed to add image');
     } finally {
       setUploading(false);
     }
@@ -41,12 +42,12 @@ const InsertQuestionImageButton = () => {
           if (!uploading) inputRef.current?.click();
         }}
         className={`px-2 py-1 rounded inline-flex items-center gap-1 ${
-          uploading ? 'opacity-60 cursor-wait' : 'bg-white hover:bg-indigo-100'
+          uploading ? 'opacity-60 cursor-wait' : 'bg-surface hover:bg-accent-soft'
         } transition-colors`}
         aria-label="Insert image"
         title="Insert image"
       >
-        <PhotoIcon className="h-4 w-4" />
+        <ImageIcon className="h-4 w-4" />
         <span className="text-xs">{uploading ? 'Uploading…' : 'Image'}</span>
       </button>
     </>

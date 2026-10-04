@@ -1,394 +1,266 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Check, CheckCircle2, Clock, Hourglass, Minus, Trophy, X } from 'lucide-react';
 import { getStudentExamResults } from '../../../common/services/api';
-import StudentBackNav from '../components/StudentBackNav';
-import TestCaseResultsList from '../components/TestCaseResultsList';
-import RunMetricsBadges, { summarizeRunMetrics } from '../../../common/components/RunMetricsBadges';
+import { Button, Card, EmptyState, StatusChip } from '../../../common/ui/primitives';
+import { type } from '../../../common/ui/format';
 import QuestionHtml from '../../../common/components/QuestionHtml';
-import CodingQuestionDetails from '../../../common/components/CodingQuestionDetails';
+import { ATTEMPT_LABELS, formatDateTime, isCoding, LANGUAGE_LABELS, TYPE_LABELS } from '../components/exam/examUtils';
+
+const FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'correct', label: 'Correct' },
+  { id: 'wrong', label: 'Incorrect' },
+  { id: 'skipped', label: 'Skipped' },
+];
+
+const outcomeOf = (q) => {
+  if (!q.response) return 'skipped';
+  if (q.response.isCorrect) return 'correct';
+  return q.response.score > 0 ? 'partial' : 'wrong';
+};
+
+const OUTCOME = {
+  correct: { icon: Check, tone: 'bg-ok-soft text-ok border-ok-line', label: 'Correct' },
+  partial: { icon: Minus, tone: 'bg-warn-soft text-warn border-warn-line', label: 'Partly correct' },
+  wrong: { icon: X, tone: 'bg-bad-soft text-bad border-bad-line', label: 'Incorrect' },
+  skipped: { icon: Minus, tone: 'bg-inset text-muted border-line', label: 'Not answered' },
+};
+
+const durationText = (start, end) => {
+  if (!start || !end) return '—';
+  const minutes = Math.max(1, Math.round((new Date(end) - new Date(start)) / 60000));
+  return minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes} min`;
+};
+
+function OptionList({ q }) {
+  const picked = new Set((Array.isArray(q.response?.answer) ? q.response.answer : [q.response?.answer]).filter((v) => v !== undefined && v !== null).map(Number));
+  const correct = new Set(q.type === 'multipleCorrectMcq' ? q.correctOptions || [] : [q.correctOption]);
+  return (
+    <div className="space-y-1.5">
+      {q.options.map((option, idx) => {
+        const isPicked = picked.has(idx);
+        const isRight = correct.has(idx);
+        const tone = isRight ? 'border-ok-line bg-ok-soft' : isPicked ? 'border-bad-line bg-bad-soft' : 'border-line bg-surface';
+        return (
+          <div key={idx} className={`flex items-start gap-2.5 rounded-xl border px-3 py-2 ${tone}`}>
+            <span className="text-[11px] font-bold text-muted mt-0.5 w-4">{String.fromCharCode(65 + idx)}</span>
+            <QuestionHtml html={option} className="text-xs text-fg flex-1 min-w-0" />
+            {isPicked && <span className="text-[10px] font-bold uppercase text-muted shrink-0">Your answer</span>}
+            {isRight && <Check className="w-3.5 h-3.5 text-ok shrink-0" />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function QuestionResult({ q, number }) {
+  const [open, setOpen] = useState(false);
+  const outcome = OUTCOME[outcomeOf(q)];
+  const Icon = outcome.icon;
+  const coding = isCoding(q);
+  return (
+    <div className="border-b border-line last:border-b-0">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-hover" aria-expanded={open}>
+        <span className={`h-7 w-7 rounded-lg border flex items-center justify-center shrink-0 ${outcome.tone}`}>
+          <Icon className="w-3.5 h-3.5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-fg truncate">
+            {number}. <span dangerouslySetInnerHTML={{ __html: q.title }} />
+          </p>
+          <p className={type.meta}>
+            {TYPE_LABELS[q.type] || q.type}
+            {q.section ? ` · ${q.section}` : ''}
+            {coding && q.response ? ` · ${q.response.passedTestCases}/${q.response.totalTestCases} tests` : ''}
+          </p>
+        </div>
+        <span className="text-sm font-bold tabular-nums text-fg shrink-0">
+          {q.response?.score ?? 0}
+          <span className="text-muted font-normal">/{q.points}</span>
+        </span>
+      </button>
+      {open && (
+        <div className="px-4 pb-4 pl-14 space-y-3">
+          <QuestionHtml html={q.description} className="text-xs text-body prose prose-sm max-w-none" />
+          {(q.type === 'singleCorrectMcq' || q.type === 'multipleCorrectMcq') && <OptionList q={q} />}
+          {q.type === 'fillInTheBlanks' && (
+            <div className="grid sm:grid-cols-2 gap-2 text-xs">
+              <div className="rounded-xl border border-line bg-inset p-3">
+                <p className="text-[10px] font-bold uppercase text-muted mb-1">Your answer</p>
+                <p className="text-fg whitespace-pre-wrap">{q.response?.answer || '—'}</p>
+              </div>
+              <div className="rounded-xl border border-ok-line bg-ok-soft p-3">
+                <p className="text-[10px] font-bold uppercase text-muted mb-1">Correct answer</p>
+                <p className="text-fg whitespace-pre-wrap">{q.correctAnswer || '—'}</p>
+              </div>
+            </div>
+          )}
+          {coding && (
+            <div className="rounded-xl border border-line bg-inset overflow-hidden">
+              <p className="px-3 py-1.5 border-b border-line text-[10px] font-bold uppercase text-muted">
+                Your code {q.response?.language ? `· ${LANGUAGE_LABELS[q.response.language] || q.response.language}` : ''}
+              </p>
+              <pre className="p-3 text-xs font-mono text-fg whitespace-pre-wrap break-words max-h-80 overflow-auto">{q.response?.answer || 'No code submitted.'}</pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const StudentExamResults = () => {
   const { examId } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
-  const classIdFromState = location.state?.classId;
-
-  const [exam, setExam] = useState(null);
-  const [attempt, setAttempt] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [selectedQuestion, setSelectedQuestion] = useState(null);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  const [filter, setFilter] = useState('all');
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const resultsData = await getStudentExamResults(examId);
-
-        setExam(resultsData.data.exam);
-        setAttempt(resultsData.data.attempt);
-      } catch (err) {
-        // Extract error message - handle both Error objects and axios errors
-        const errorMessage = err.response?.data?.error || err.message || 'Failed to load exam results';
-        setError(errorMessage);
-        // Only log detailed error in development
-        if (process.env.NODE_ENV === 'development') {
-          console.error('[ExamResults] Error fetching data:', err);
-        }
-      } finally {
-        setLoading(false);
-      }
+    let cancelled = false;
+    getStudentExamResults(examId)
+      .then((res) => !cancelled && setData(res.data))
+      .catch((err) => !cancelled && setError(typeof err === 'string' ? err : 'Failed to load results'));
+    return () => {
+      cancelled = true;
     };
-
-    if (examId) {
-      fetchData();
-    }
   }, [examId]);
 
-  const questionAnswerMap = useMemo(() => {
-    const map = new Map();
-    if (attempt?.answers) {
-      attempt.answers.forEach((ans) => {
-        if (ans.questionId) {
-          const questionIdStr = ans.questionId.toString ? ans.questionId.toString() : String(ans.questionId);
-          map.set(questionIdStr, ans);
-        }
-      });
-    }
-    return map;
-  }, [attempt?.answers]);
+  const questions = useMemo(() => data?.questions || [], [data]);
+  const counts = useMemo(() => {
+    const c = { all: questions.length, correct: 0, wrong: 0, skipped: 0 };
+    questions.forEach((q) => {
+      const o = outcomeOf(q);
+      if (o === 'correct') c.correct += 1;
+      else if (o === 'skipped') c.skipped += 1;
+      else c.wrong += 1;
+    });
+    return c;
+  }, [questions]);
+  const shown = questions
+    .map((q, i) => ({ q, number: i + 1 }))
+    .filter(({ q }) => {
+      const o = outcomeOf(q);
+      if (filter === 'all') return true;
+      if (filter === 'wrong') return o === 'wrong' || o === 'partial';
+      return o === filter;
+    });
 
-  const totalCorrect = useMemo(() => {
-    if (!attempt?.answers) return 0;
-    return attempt.answers.filter((ans) => ans.isCorrect).length;
-  }, [attempt?.answers]);
-
-  const totalQuestions = useMemo(() => {
-    return exam?.questions?.length || 0;
-  }, [exam?.questions]);
-
-  const totalScore = attempt?.totalScore || 0;
-  const maxScore = attempt?.maxScore || 0;
-
-  if (loading) {
-    return (
-      <div className="flex h-screen flex-col items-center justify-center gap-4 p-6" style={{ backgroundColor: 'var(--background-content)' }}>
-        <StudentBackNav fallbackTo="/student/exams" label="Back to Exams" />
-        <div className="text-lg" style={{ color: 'var(--text-secondary)' }}>Loading exam results...</div>
-      </div>
-    );
-  }
+  const back = () => navigate('/student/exams');
 
   if (error) {
-    const isNotReleased = error.toLowerCase().includes('not released') || error.toLowerCase().includes('not available');
-    
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-6" style={{ backgroundColor: 'var(--background-content)' }}>
-        <div className="w-full max-w-2xl">
-          <div className="mb-4">
-            <StudentBackNav fallbackTo="/student/exams" label="Back to Exams" />
-          </div>
-          <div className="rounded-xl border-2 border-yellow-200 bg-gradient-to-br from-yellow-50 to-orange-50 p-8 shadow-xl">
-            <div className="flex flex-col items-center text-center space-y-4">
-              <div className="w-20 h-20 rounded-full bg-yellow-100 flex items-center justify-center">
-                <svg className="w-12 h-12 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              
-              <div className="space-y-2">
-                <h2 className="text-2xl font-bold text-gray-900">
-                  {isNotReleased ? 'Results Not Released Yet' : 'Unable to Load Results'}
-                </h2>
-                <div className="h-1 w-24 bg-yellow-400 mx-auto rounded"></div>
-              </div>
-              
-              <div className="bg-white rounded-lg p-6 shadow-sm max-w-lg w-full">
-                <p className="text-base text-gray-700 leading-relaxed">
-                  {isNotReleased ? (
-                    <>
-                      The exam results have not been released by your instructor yet. 
-                      <br className="hidden sm:block" />
-                      <span className="block mt-2 text-sm text-gray-600">
-                        Results will be available once your instructor releases them. Please check back later or contact your instructor for more information.
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-gray-700">{error}</span>
-                  )}
-                </p>
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto pt-4">
-                <StudentBackNav fallbackTo="/student/exams" label="Back to Exams" />
-                {isNotReleased && (
-                  <button
-                    onClick={() => window.location.reload()}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 rounded-lg px-6 py-3 text-sm font-semibold text-gray-700 bg-white border-2 border-gray-300 hover:bg-gray-50 transition-all shadow-sm hover:shadow"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    Refresh Page
-                  </button>
-                )}
-              </div>
-
-              {isNotReleased && (
-                <div className="mt-4 pt-4 border-t border-yellow-200 w-full">
-                  <p className="text-xs text-gray-500">
-                    <svg className="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Tip: Results are typically released after the exam period ends or when your instructor manually releases them.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+      <div className="px-4 sm:px-5 py-6">
+        <EmptyState icon={Trophy} title="Results unavailable" message={error} action={<Button variant="secondary" onClick={back}>Back to exams</Button>} />
       </div>
     );
   }
 
-  return (
-    <div className="space-y-6 p-6" style={{ backgroundColor: 'var(--background-content)', minHeight: '100vh' }}>
-      <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          <div className="mb-3">
-            <StudentBackNav fallbackTo="/student/exams" label="Back to Exams" />
-          </div>
-          <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>{exam?.title}</h1>
-          <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>{exam?.description}</p>
-        </div>
+  if (!data) {
+    return (
+      <div className="px-4 sm:px-5 py-6 max-w-3xl mx-auto space-y-3">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="h-24 rounded-2xl bg-hover animate-pulse" />
+        ))}
       </div>
-
-      {/* Overall Score Summary */}
-      <div className="rounded-xl border p-6 shadow-sm" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-        <h2 className="mb-4 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Overall Score</h2>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="rounded-lg border p-4" style={{ backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }}>
-            <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Correct Answers</div>
-            <div className="mt-1 text-2xl font-bold text-green-600">
-              {totalCorrect} / {totalQuestions}
-            </div>
-          </div>
-          <div className="rounded-lg border p-4" style={{ backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }}>
-            <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Total Score</div>
-            <div className="mt-1 text-2xl font-bold text-blue-600">
-              {totalScore} / {maxScore}
-            </div>
-          </div>
-          <div className="rounded-lg border p-4" style={{ backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }}>
-            <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Status</div>
-            <div className="mt-1 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-              {attempt?.status === 'auto_submitted' ? 'Auto Submitted' : 'Submitted'}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Question-wise Breakdown */}
-      <div className="rounded-xl border shadow-sm" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-        <div className="border-b px-6 py-4" style={{ backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }}>
-          <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Question Review</h2>
-        </div>
-        <div className="divide-y" style={{ borderColor: 'var(--card-border)' }}>
-          {exam?.questions?.map((qItem, idx) => {
-            const question = qItem.questionId;
-            if (!question) return null;
-            
-            // Handle both ObjectId and string/question object
-            const questionId = question._id?.toString() || (typeof question === 'object' && question.toString ? question.toString() : String(question));
-            const answerData = questionAnswerMap.get(questionId);
-            const isCorrect = answerData?.isCorrect || false;
-            const score = answerData?.score || 0;
-            const maxScoreForQ = answerData?.maxScore || qItem.points || 0;
-            
-            // Check if question is a populated object or just an ID
-            const isQuestionObject = typeof question === 'object' && question !== null && 'title' in question;
-
-            return (
-              <div
-                key={questionId || idx}
-                className="p-6"
-                style={{ backgroundColor: isCorrect ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)' }}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="mb-2 flex items-center gap-3">
-                      <span className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Question {idx + 1}</span>
-                      <span
-                        className="rounded-full px-3 py-1 text-xs font-semibold"
-                        style={{
-                          backgroundColor: isCorrect ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                          color: isCorrect ? '#16a34a' : '#dc2626'
-                        }}
-                      >
-                        {isCorrect ? 'Correct' : 'Incorrect'}
-                      </span>
-                      <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        Score: {score} / {maxScoreForQ}
-                      </span>
-                    </div>
-                    {isQuestionObject && question.title && (
-                      <div
-                        className="mb-4 text-sm"
-                        style={{ color: 'var(--text-primary)' }}
-                        dangerouslySetInnerHTML={{ __html: question.title }}
-                      />
-                    )}
-                    {isQuestionObject && question.description && (
-                      <QuestionHtml
-                        html={question.description}
-                        className="mb-4 text-sm"
-                        style={{ color: 'var(--text-secondary)' }}
-                      />
-                    )}
-                    {isQuestionObject && (
-                      <div className="mb-4">
-                        <CodingQuestionDetails question={question} tone="theme" publicTests={question.testCases} />
-                      </div>
-                    )}
-                    {!isQuestionObject && (
-                      <div className="mb-4 text-sm" style={{ color: 'var(--text-primary)' }}>Question {idx + 1}</div>
-                    )}
-                    <button
-                      onClick={() => setSelectedQuestion(selectedQuestion === questionId ? null : questionId)}
-                      className="rounded-md px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-                      style={{ backgroundColor: 'var(--primary-blue)' }}
-                    >
-                      {selectedQuestion === questionId ? 'Hide Details' : 'View Question & Your Answer'}
-                    </button>
-                  </div>
-                </div>
-
-                {selectedQuestion === questionId && (
-                  <div className="mt-4 space-y-4 rounded-lg border p-4" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-                    <div>
-                      <h3 className="mb-2 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Your Answer:</h3>
-                      {answerData?.submission ? (
-                        <div className="rounded-md p-3 text-sm" style={{ backgroundColor: 'var(--background-light)' }}>
-                          <SubmissionDisplay
-                            submission={answerData.submission}
-                            questionType={isQuestionObject ? (question?.type || 'unknown') : 'unknown'}
-                            question={isQuestionObject ? question : null}
-                          />
-                        </div>
-                      ) : answerData?.submissionId ? (
-                        <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Submission data loading...</div>
-                      ) : (
-                        <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>No answer submitted</div>
-                      )}
-                    </div>
-                    {!isCorrect && isQuestionObject && (
-                      <div>
-                        <h3 className="mb-2 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Correct Answer:</h3>
-                        <div className="rounded-md p-3 text-sm" style={{ backgroundColor: 'rgba(34, 197, 94, 0.1)' }}>
-                          {question.type === 'singleCorrectMcq' || question.type === 'multipleCorrectMcq' ? (
-                            Array.isArray(question.correctOptions) ? (
-                              <div>
-                                {question.correctOptions.map((opt, i) => (
-                                  <div key={i} style={{ color: 'var(--text-primary)' }}>
-                                    Option {opt + 1}: <span dangerouslySetInnerHTML={{ __html: question.options?.[opt] || `Option ${opt + 1}` }} />
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div style={{ color: 'var(--text-primary)' }}>
-                                Option {question.correctOptions + 1}: <span dangerouslySetInnerHTML={{ __html: question.options?.[question.correctOptions] || `Option ${question.correctOptions + 1}` }} />
-                              </div>
-                            )
-                          ) : question.correctAnswer ? (
-                            <div className="whitespace-pre-wrap" style={{ color: 'var(--text-primary)' }}>{question.correctAnswer}</div>
-                          ) : (
-                            <div style={{ color: 'var(--text-secondary)' }}>Correct answer not available</div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Component to display submission details
-const SubmissionDisplay = ({ submission, questionType, question }) => {
-  if (!submission) {
-    return <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>No submission data available</div>;
+    );
   }
 
+  const { exam, attempt, released } = data;
+  const percent = released && attempt.maxScore ? Math.round((attempt.totalScore / attempt.maxScore) * 100) : null;
+
   return (
-    <div style={{ color: 'var(--text-primary)' }}>
-      {['coding', 'fillInTheBlanksCoding', 'codingWithDriver'].includes(questionType) ? (
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>Code Submission</div>
-            {submission.passedTestCases !== undefined && submission.totalTestCases !== undefined && (
-              <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                Test Cases: {submission.passedTestCases} / {submission.totalTestCases} passed
-              </div>
-            )}
+    <div className="px-4 sm:px-5 py-6">
+      <div className="max-w-3xl mx-auto space-y-4">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" icon={ArrowLeft} className="h-9 w-9 justify-center p-0!" onClick={back} aria-label="Back to exams" title="Back to exams" />
+          <div className="min-w-0">
+            <h1 className={`${type.pageTitle} truncate`}>{exam.title}</h1>
+            {exam.className && <p className={type.meta}>{exam.className}</p>}
           </div>
-          <div className="mt-2 rounded p-3 text-xs font-mono whitespace-pre-wrap overflow-x-auto" style={{ backgroundColor: '#1e293b', color: '#e2e8f0' }}>
-            {submission.answer || 'No code submitted'}
-          </div>
-          {submission.language && (
-            <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>Language: {submission.language}</div>
-          )}
-          {(submission.testResults?.length > 0 || submission.output) && (
-            <div className="mt-3">
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                <div className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Time / memory</div>
-                <RunMetricsBadges
-                  timeMs={summarizeRunMetrics(submission.testResults).maxTimeMs}
-                  memoryKb={summarizeRunMetrics(submission.testResults).maxMemoryKb}
-                />
+          <StatusChip kind={attempt.status === 'terminated' ? 'fail' : 'pass'} className="ml-auto">
+            {ATTEMPT_LABELS[attempt.status] || attempt.status}
+          </StatusChip>
+        </div>
+
+        <Card className="flex flex-wrap items-center gap-5">
+          {released ? (
+            <div className="flex items-center gap-4">
+              <div
+                className="h-20 w-20 rounded-full grid place-items-center"
+                style={{ background: `conic-gradient(var(--accent) ${percent * 3.6}deg, var(--border) 0deg)` }}
+              >
+                <div className="h-16 w-16 rounded-full bg-surface grid place-items-center">
+                  <span className="text-lg font-bold text-fg tabular-nums">{percent}%</span>
+                </div>
               </div>
-              <TestCaseResultsList
-                results={submission.testResults?.length ? submission.testResults : submission.output}
-              />
+              <div>
+                <p className="text-2xl font-bold text-fg tabular-nums">
+                  {attempt.totalScore}
+                  <span className="text-base text-muted font-semibold">/{attempt.maxScore}</span>
+                </p>
+                <p className={type.body}>points scored</p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <span className="h-12 w-12 rounded-xl border border-info-line bg-info-soft grid place-items-center">
+                <Hourglass className="w-5 h-5 text-info" />
+              </span>
+              <div>
+                <p className={type.cardTitle}>Your exam is submitted</p>
+                <p className={type.body}>Scores appear here once your instructor releases them.</p>
+              </div>
             </div>
           )}
-        </div>
-      ) : questionType === 'fillInTheBlanks' ? (
-        <div>
-          <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>Text Answer</div>
-          <div className="mt-2 rounded p-3 text-sm" style={{ backgroundColor: 'var(--background-light)' }}>{submission.answer || 'No answer submitted'}</div>
-        </div>
-      ) : questionType === 'singleCorrectMcq' || questionType === 'multipleCorrectMcq' ? (
-        <div>
-          <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>Selected Options</div>
-          <div className="mt-2 space-y-1">
-            {Array.isArray(submission.answer) ? (
-              submission.answer.map((optIdx, i) => (
-                <div key={i} className="rounded p-2 text-sm" style={{ backgroundColor: 'var(--background-light)' }}>
-                  Option {optIdx + 1}: {question?.options?.[optIdx] || `Option ${optIdx + 1}`}
-                </div>
-              ))
-            ) : (
-              <div className="rounded p-2 text-sm" style={{ backgroundColor: 'var(--background-light)' }}>
-                Option {submission.answer + 1}: {question?.options?.[submission.answer] || `Option ${submission.answer + 1}`}
-              </div>
-            )}
+          <div className="sm:ml-auto grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
+            <span className="text-muted flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5" /> Submitted
+            </span>
+            <span className="text-fg">{formatDateTime(attempt.submittedAt)}</span>
+            <span className="text-muted flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5" /> Time taken
+            </span>
+            <span className="text-fg">{durationText(attempt.startedAt, attempt.submittedAt)}</span>
+            <span className="text-muted">Answered</span>
+            <span className="text-fg">
+              {attempt.answeredCount}/{exam.questionCount}
+            </span>
           </div>
-        </div>
-      ) : (
-        <div>
-          <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>Answer</div>
-          <div className="mt-2 rounded p-3 text-sm" style={{ backgroundColor: 'var(--background-light)' }}>{String(submission.answer) || 'No answer submitted'}</div>
-        </div>
-      )}
+          {attempt.remark && <p className="w-full text-xs text-muted">{attempt.remark}</p>}
+        </Card>
+
+        {released && (
+          <Card className="p-0! overflow-hidden">
+            <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-line bg-inset">
+              <h2 className={type.section}>Question breakdown</h2>
+              <div className="ml-auto flex h-8 rounded-xl border border-line bg-surface p-0.5" role="tablist">
+                {FILTERS.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={filter === f.id}
+                    onClick={() => setFilter(f.id)}
+                    className={`px-2.5 rounded-lg text-[11px] font-semibold ${filter === f.id ? 'bg-hover text-fg' : 'text-muted hover:text-fg'}`}
+                  >
+                    {f.label} <span className="text-subtle font-normal">{counts[f.id]}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {shown.length ? (
+              shown.map(({ q, number }) => <QuestionResult key={String(q.questionId)} q={q} number={number} />)
+            ) : (
+              <p className="px-4 py-6 text-center text-xs text-muted">No questions in this group.</p>
+            )}
+          </Card>
+        )}
+      </div>
     </div>
   );
 };
 
 export default StudentExamResults;
-

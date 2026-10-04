@@ -1,37 +1,83 @@
 import React, { Fragment, useEffect, useState } from 'react';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { Menu, Transition, Portal } from '@headlessui/react';
+import {
+  Award,
+  BookOpen,
+  FileSpreadsheet,
+  FileText,
+  GraduationCap,
+  Layers,
+  LayoutDashboard,
+  Play,
+  Users,
+} from 'lucide-react';
 import { fetchClasses } from './redux/classSlice';
 import { getDraftCount } from '../services/api';
+import { DRAFTS_CHANGED_EVENT } from '../ui/events';
+import { inactiveTab, roleOf } from '../ui/format';
+
+const linkIcons = {
+  '/admin': LayoutDashboard,
+  '/admin/classes': Users,
+  '/admin/teachers': BookOpen,
+  '/admin/students': GraduationCap,
+  '/admin/upload': FileSpreadsheet,
+  '/admin/questions': Layers,
+  '/admin/questions/drafts': FileText,
+  '/admin/exams': Award,
+  '/teacher': LayoutDashboard,
+  '/teacher/classes': Users,
+  '/teacher/take-class': Play,
+  '/teacher/questions': FileText,
+  '/teacher/questions/drafts': FileText,
+  '/teacher/exams': Award,
+  '/student': LayoutDashboard,
+  '/student/take-class': Play,
+  '/student/exams': Award,
+};
 
 const adminLinks = [
-  { to: '/admin', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
-  { to: '/admin/classes', label: 'Classes', icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253' },
-  { to: '/admin/teachers', label: 'Teachers', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' },
-  { to: '/admin/students', label: 'Students', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' },
-  { to: '/admin/upload', label: 'Data Import', icon: 'M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12' },
-  { to: '/admin/questions', label: 'Question Bank', icon: 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
-  { to: '/admin/questions/drafts', label: 'Drafts', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
-  { to: '/admin/exams/templates', label: 'Exam Templates', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+  { to: '/admin', label: 'Dashboard' },
+  { to: '/admin/classes', label: 'Classes' },
+  { to: '/admin/teachers', label: 'Teachers' },
+  { to: '/admin/students', label: 'Students' },
+  { to: '/admin/upload', label: 'Data Import' },
+  { to: '/admin/questions', label: 'Question Bank' },
+  { to: '/admin/questions/drafts', label: 'Drafts' },
+  { to: '/admin/exams', label: 'Exams' },
 ];
 
 const teacherLinks = [
-  { to: '/teacher', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
-  { to: '/teacher/classes', label: 'My Classes', icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253' },
-  { to: '/teacher/take-class', label: 'Take Class', icon: 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' },
-  { to: '/teacher/questions', label: 'Questions', icon: 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
-  { to: '/teacher/questions/drafts', label: 'Drafts', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
-  { to: '/teacher/exams', label: 'Exams', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+  { to: '/teacher', label: 'Dashboard' },
+  { to: '/teacher/classes', label: 'My Classes' },
+  { to: '/teacher/take-class', label: 'Take Class' },
+  { to: '/teacher/questions', label: 'Questions' },
+  { to: '/teacher/questions/drafts', label: 'Drafts' },
+  { to: '/teacher/exams', label: 'Exams' },
 ];
 
 const studentLinks = [
-  { to: '/student', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
-  { to: '/student/take-class', label: 'Practice Class', icon: 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' },
-  { to: '/student/exams', label: 'Exams', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
+  { to: '/student', label: 'Dashboard' },
+  { to: '/student/take-class', label: 'Practice Class' },
+  { to: '/student/exams', label: 'Exams' },
 ];
 
-function NavLinkRow({ link, draftCount, close }) {
+const ROLE_HOMES = new Set(['/admin', '/teacher', '/student']);
+
+/**
+ * The single nav link to highlight: the longest `to` that equals or prefixes the current path.
+ * Role dashboards only match exactly, so unlisted pages don't light up Dashboard.
+ */
+function activeLinkFor(pathname, links) {
+  return links
+    .filter((link) => pathname === link.to || (!ROLE_HOMES.has(link.to) && pathname.startsWith(`${link.to}/`)))
+    .reduce((best, link) => (!best || link.to.length > best.length ? link.to : best), null);
+}
+
+function NavLinkRow({ link, active, draftCount, close }) {
+  const Icon = linkIcons[link.to] || Layers;
   const badge =
     (link.to === '/admin/questions/drafts' || link.to === '/teacher/questions/drafts') &&
     draftCount > 0
@@ -41,33 +87,22 @@ function NavLinkRow({ link, draftCount, close }) {
   return (
     <Menu.Item>
       {({ focus }) => (
-        <NavLink
+        <Link
           to={link.to}
-          end={link.to === '/admin' || link.to === '/teacher' || link.to === '/student'}
           onClick={close}
-          className={({ isActive }) => {
-            const base =
-              'flex items-center gap-3 px-4 py-2.5 text-sm transition-colors text-gray-200 ';
-            if (isActive) return `${base} bg-[var(--accent-indigo)]/40 text-white`;
-            if (focus) return `${base} bg-white/10`;
-            return base;
-          }}
+          aria-current={active ? 'page' : undefined}
+          className={`flex items-center gap-3 px-4 py-2.5 text-xs font-semibold transition-colors rounded-xl mx-1 ${
+            active ? 'bg-accent-soft text-accent-ink' : focus ? 'text-fg bg-hover' : 'text-muted'
+          }`}
         >
-          <svg
-            className="h-5 w-5 flex-shrink-0 text-gray-400"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={link.icon} />
-          </svg>
+          <Icon className="h-4 w-4 flex-shrink-0" />
           <span className="flex-1 font-medium">{link.label}</span>
           {badge != null && (
-            <span className="rounded-full bg-red-500 px-2 py-0.5 text-xs font-bold text-white">
+            <span className="rounded-full bg-bad-soft border border-bad-line px-2 py-0.5 text-[10px] font-bold text-bad">
               {badge > 9 ? '9+' : badge}
             </span>
           )}
-        </NavLink>
+        </Link>
       )}
     </Menu.Item>
   );
@@ -103,16 +138,16 @@ function StudentAssignmentsSection({ close }) {
 
   if (status === 'loading') {
     return (
-      <div className="border-t border-white/10 px-4 py-3">
-        <p className="text-sm text-gray-300">Loading assignments…</p>
+      <div className="border-t border-line px-4 py-3">
+        <p className="text-sm text-muted">Loading assignments…</p>
       </div>
     );
   }
 
   if (!cls.assignments || cls.assignments.length === 0) {
     return (
-      <div className="border-t border-white/10 px-4 py-3">
-        <p className="text-sm text-gray-300">No assignments available</p>
+      <div className="border-t border-line px-4 py-3">
+        <p className="text-sm text-muted">No assignments available</p>
       </div>
     );
   }
@@ -121,8 +156,8 @@ function StudentAssignmentsSection({ close }) {
   const activeQ = questionMatch?.groups?.questionId;
 
   return (
-    <div className="border-t border-white/10 pt-2">
-      <p className="px-4 pb-2 text-xs font-semibold uppercase tracking-wide text-white/50">{cls.name}</p>
+    <div className="border-t border-line pt-2">
+      <p className="px-4 pb-2 text-xs font-semibold uppercase tracking-wide text-subtle">{cls.name}</p>
       <div className="max-h-48 overflow-y-auto">
         {cls.assignments.map((a, idx) => {
           const qid = a.questionId?._id || a.questionId;
@@ -142,22 +177,22 @@ function StudentAssignmentsSection({ close }) {
                   }}
                   className={`flex w-full items-start gap-3 px-4 py-2.5 text-left text-sm transition-colors ${
                     isActiveQuestion
-                      ? 'bg-[var(--accent-indigo)]/40 text-white'
+                      ? 'bg-accent-soft text-accent-ink'
                       : focus
-                        ? 'bg-white/10 text-gray-200'
-                        : 'text-gray-200'
+                        ? 'bg-hover text-fg'
+                        : 'text-body'
                   }`}
                 >
                   <span
                     className={`mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                      isActiveQuestion ? 'bg-white text-indigo-600' : 'bg-gray-600 text-white'
+                      isActiveQuestion ? 'bg-accent text-on-accent' : 'bg-hover text-muted'
                     }`}
                   >
                     {idx + 1}
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="font-medium leading-tight">{title}</p>
-                    <p className="mt-0.5 font-mono text-xs text-gray-400">{String(type).toUpperCase()}</p>
+                    <p className="mt-0.5 font-mono text-xs text-muted">{String(type).toUpperCase()}</p>
                   </div>
                 </button>
               )}
@@ -171,7 +206,8 @@ function StudentAssignmentsSection({ close }) {
 
 const HeaderNavigationMenu = () => {
   const { token, role } = useSelector((state) => state.auth);
-  const { classes, status } = useSelector((state) => state.classes || { classes: [], status: 'idle' });
+  const { status } = useSelector((state) => state.classes || { status: 'idle' });
+  const { pathname } = useLocation();
   const dispatch = useDispatch();
   const [draftCount, setDraftCount] = useState(0);
 
@@ -194,20 +230,55 @@ const HeaderNavigationMenu = () => {
       };
       fetchDraftCount();
       const interval = setInterval(fetchDraftCount, 30000);
-      return () => clearInterval(interval);
+      window.addEventListener(DRAFTS_CHANGED_EVENT, fetchDraftCount);
+      return () => {
+        clearInterval(interval);
+        window.removeEventListener(DRAFTS_CHANGED_EVENT, fetchDraftCount);
+      };
     }
   }, [role]);
 
   const links =
     role === 'admin' ? adminLinks : role === 'teacher' ? teacherLinks : studentLinks;
 
+  const tone = roleOf(role);
+  const activeTo = activeLinkFor(pathname, links);
+
   return (
-    <Menu as="div" className="relative inline-block text-left">
+    <>
+    <nav className="hidden lg:flex flex-1 min-w-0 justify-center bg-surface p-1 rounded-xl border border-line items-center gap-0.5">
+      {links.map((link) => {
+        const Icon = linkIcons[link.to] || Layers;
+        const badge =
+          (link.to === '/admin/questions/drafts' || link.to === '/teacher/questions/drafts') && draftCount > 0
+            ? draftCount
+            : null;
+        return (
+          <Link
+            key={link.to}
+            to={link.to}
+            aria-current={activeTo === link.to ? 'page' : undefined}
+            className={`flex items-center gap-1 px-2 py-1.5 rounded-xl text-[11px] font-semibold transition whitespace-nowrap ${
+              activeTo === link.to ? tone.tab : inactiveTab
+            }`}
+          >
+            <Icon className="w-3.5 h-3.5" />
+            {link.label}
+            {badge != null && (
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-bad-soft text-bad border border-bad-line">
+                {badge > 9 ? '9+' : badge}
+              </span>
+            )}
+          </Link>
+        );
+      })}
+    </nav>
+    <Menu as="div" className="relative inline-block text-left lg:hidden">
       {({ open, close }) => (
         <>
           <Menu.Button
             type="button"
-            className="inline-flex items-center justify-center rounded-lg p-2 text-white transition-colors hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+            className="inline-flex items-center justify-center rounded-lg p-2 text-muted transition-colors hover:bg-hover hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             aria-label="Open navigation menu"
           >
             <svg className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -228,18 +299,14 @@ const HeaderNavigationMenu = () => {
             <Portal>
               <Menu.Items
                 anchor="bottom end"
-                className="z-[100] mt-2 w-[min(20rem,calc(100vw-2rem))] max-h-[min(70vh,32rem)] overflow-hidden rounded-xl shadow-2xl ring-1 ring-black/20 focus:outline-none"
-                style={{
-                  background: 'linear-gradient(180deg, var(--primary-navy) 0%, #1a252f 100%)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                }}
+                className="z-[100] mt-2 w-[min(20rem,calc(100vw-2rem))] max-h-[min(70vh,32rem)] overflow-hidden rounded-2xl shadow-2xl border border-line bg-surface focus:outline-none"
               >
-                <div className="border-b border-white/10 px-4 py-3">
-                  <p className="text-sm font-semibold text-white">Navigation</p>
+                <div className="border-b border-line px-4 py-3">
+                  <p className="text-sm font-semibold text-fg">Navigation</p>
                 </div>
                 <div className="max-h-[min(60vh,28rem)] overflow-y-auto py-1">
                   {links.map((link) => (
-                    <NavLinkRow key={link.to} link={link} draftCount={draftCount} close={close} />
+                    <NavLinkRow key={link.to} link={link} active={activeTo === link.to} draftCount={draftCount} close={close} />
                   ))}
                   {role === 'student' && <StudentAssignmentsSection close={close} />}
                 </div>
@@ -249,6 +316,7 @@ const HeaderNavigationMenu = () => {
         </>
       )}
     </Menu>
+    </>
   );
 };
 

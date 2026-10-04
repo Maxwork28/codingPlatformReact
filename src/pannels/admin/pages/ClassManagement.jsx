@@ -1,466 +1,396 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  ClipboardList,
+  ExternalLink,
+  Pencil,
+  Play,
+  Plus,
+  RefreshCw,
+  School,
+  Search,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { fetchClasses } from '../../../common/components/redux/classSlice';
-import { createClass, getStudents, getTeachers, listClassExams } from '../../../common/services/api';
+import { changeClassStatus, deleteClass } from '../../../common/services/api';
+import { Button, EmptyState, Pagination, Switch, Table } from '../../../common/ui/primitives';
+import ActionMenu from '../../../common/ui/ActionMenu';
+import { inputClass, table as tableClass, type } from '../../../common/ui/format';
+import { confirmAction, notify } from '../../../common/ui/Toast';
+import ClassFormModal from '../components/ClassFormModal';
+import { useStaffBase } from '../components/classDetails/helpers';
+
+const PAGE_SIZE = 10;
+
+const STATUS_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'active', label: 'Active' },
+  { id: 'inactive', label: 'Inactive' },
+];
+
+const SORTS = {
+  newest: { label: 'Newest first', compare: (a, b) => new Date(b.createdAt) - new Date(a.createdAt) },
+  name: { label: 'Name A–Z', compare: (a, b) => a.name.localeCompare(b.name) },
+  students: { label: 'Most students', compare: (a, b) => (b.students?.length || 0) - (a.students?.length || 0) },
+};
+
+const HIDE_SM = 'hidden md:table-cell';
+const HIDE_MD = 'hidden lg:table-cell';
+
+const COLUMNS = [
+  { label: 'Class' },
+  { label: 'Teachers', className: HIDE_SM },
+  { label: 'Students', className: 'text-right' },
+  { label: 'Questions', className: `text-right ${HIDE_MD}` },
+  { label: 'Exams', className: `text-right ${HIDE_SM}` },
+  { label: 'Status' },
+  { label: 'Created', className: HIDE_MD },
+  { label: '', key: 'actions' },
+];
+
+const formatDate = (value) =>
+  value ? new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+function TeacherList({ teachers = [] }) {
+  if (teachers.length === 0) return <span className="text-warn">Not assigned</span>;
+  const [first, ...rest] = teachers;
+  return (
+    <span className="text-body" title={teachers.map((t) => t.name).join(', ')}>
+      {first.name}
+      {rest.length > 0 && <span className="text-muted"> +{rest.length}</span>}
+    </span>
+  );
+}
+
+function SkeletonRows() {
+  return Array.from({ length: 5 }, (_, i) => (
+    <tr key={i}>
+      {COLUMNS.map((c, j) => (
+        <td key={j} className={`${tableClass.td} ${c.className || ''}`}>
+          <div className="h-3 rounded bg-hover animate-pulse" style={{ width: j === 0 ? '70%' : '50%' }} />
+        </td>
+      ))}
+    </tr>
+  ));
+}
 
 const ClassManagement = () => {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [file, setFile] = useState(null);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { classes, status } = useSelector((state) => state.classes);
-  const [examCounts, setExamCounts] = useState({});
+  const { base, isTeacher } = useStaffBase();
+  const { classes, status, error } = useSelector((state) => state.classes);
+  const [params, setParams] = useSearchParams();
 
-  // Calculate pagination
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentClasses = classes.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(classes.length / itemsPerPage);
+  const query = params.get('q') || '';
+  const statusFilter = STATUS_FILTERS.some((f) => f.id === params.get('status')) ? params.get('status') : 'all';
+  const sort = SORTS[params.get('sort')] ? params.get('sort') : 'newest';
+  const page = Math.max(1, Number(params.get('page')) || 1);
+
+  const [formState, setFormState] = useState({ open: false, editing: null });
+  const [busyId, setBusyId] = useState(null);
+
+  const updateParams = (changes, { resetPage = true } = {}) => {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        Object.entries(changes).forEach(([key, value]) => {
+          const isDefault = !value || (key === 'status' && value === 'all') || (key === 'sort' && value === 'newest') || (key === 'page' && value === 1);
+          if (isDefault) next.delete(key);
+          else next.set(key, String(value));
+        });
+        if (resetPage && !('page' in changes)) next.delete('page');
+        return next;
+      },
+      { replace: true },
+    );
+  };
+
+  const reload = () => dispatch(fetchClasses(''));
 
   useEffect(() => {
     dispatch(fetchClasses(''));
   }, [dispatch]);
 
-  // Fetch exam counts per class so admin can see how many exams are attached to each class
-  useEffect(() => {
-    const fetchExamCounts = async () => {
-      try {
-        const counts = {};
-        // Avoid spamming if no classes
-        if (!classes || classes.length === 0) {
-          setExamCounts(counts);
-          return;
-        }
+  const stats = useMemo(
+    () => ({
+      total: classes.length,
+      active: classes.filter((c) => c.status === 'active').length,
+      unassigned: classes.filter((c) => !c.teachers?.length).length,
+    }),
+    [classes],
+  );
 
-        // Fetch exams for each class and count them
-        for (const cls of classes) {
-          try {
-            const res = await listClassExams(cls._id);
-            counts[cls._id] = res.data?.exams?.length || 0;
-          } catch (err) {
-            console.error('Failed to fetch exams for class', cls._id, err);
-            counts[cls._id] = 0;
-          }
-        }
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return classes
+      .filter((c) => statusFilter === 'all' || c.status === statusFilter)
+      .filter((c) => {
+        if (!q) return true;
+        return [c.name, c.description, c.createdBy?.name, ...(c.teachers || []).map((t) => t.name)]
+          .filter(Boolean)
+          .some((text) => text.toLowerCase().includes(q));
+      })
+      .sort(SORTS[sort].compare);
+  }, [classes, query, statusFilter, sort]);
 
-        setExamCounts(counts);
-      } catch (err) {
-        console.error('Failed to fetch exam counts', err);
-      }
-    };
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageRows = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const loading = status === 'loading' && classes.length === 0;
+  const hasFilters = Boolean(query) || statusFilter !== 'all';
 
-    fetchExamCounts();
-  }, [classes]);
+  const openClass = (id) => navigate(`${base}/classes/${id}`);
 
-  const handleSearch = (e) => {
-    e.preventDefault();
-    setCurrentPage(1); // Reset to first page on search
-    dispatch(fetchClasses(searchQuery));
+  const handleSaved = (data) => {
+    const wasEdit = Boolean(formState.editing);
+    setFormState({ open: false, editing: null });
+    notify(data?.message || (wasEdit ? 'Class updated' : 'Class created'), 'success');
+    reload();
+    if (!wasEdit && data?.class?._id) openClass(data.class._id);
   };
 
-  const handleClearFilter = () => {
-    setSearchQuery('');
-    setCurrentPage(1); // Reset to first page on clear
-    dispatch(fetchClasses(''));
-  };
-
-  const handlePageChange = (pageNumber) => {
-    setCurrentPage(pageNumber);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleCreateClass = async (e) => {
-    e.preventDefault();
+  const toggleStatus = async (cls) => {
+    const next = cls.status === 'active' ? 'inactive' : 'active';
+    if (next === 'inactive') {
+      const ok = await confirmAction(`Mark "${cls.name}" as inactive? You can reactivate it at any time.`, {
+        title: 'Deactivate class',
+        confirmLabel: 'Deactivate',
+      });
+      if (!ok) return;
+    }
+    setBusyId(cls._id);
     try {
-      const response = await createClass({ name, description }, file);
-      dispatch(fetchClasses(''));
-      setName('');
-      setDescription('');
-      setFile(null);
-      setMessage(response.data?.message || 'Class created successfully');
-      setError('');
-      setShowCreateForm(false);
-      setCurrentPage(1); // Reset to first page after creating
-    } catch (err) {
-      setError(typeof err === 'string' ? err : err.message || 'Failed to create class');
-      setMessage('');
+      await changeClassStatus(cls._id, next);
+      notify(`"${cls.name}" is now ${next}`, 'success');
+      reload();
+          } catch (err) {
+      notify(typeof err === 'string' ? err : 'Failed to change class status', 'error');
+    } finally {
+      setBusyId(null);
     }
   };
 
-  const handleClassClick = (classId) => {
-    navigate(`/admin/classes/${classId}`);
+  const removeClass = async (cls) => {
+    const parts = [plural(cls.examCount || 0, 'exam'), 'all submissions', 'the leaderboard'];
+    const ok = await confirmAction(
+      `"${cls.name}" will be permanently deleted along with ${parts.join(', ')}. ` +
+        `Students, teachers and bank questions are kept. This cannot be undone.`,
+      { title: 'Delete class', confirmLabel: 'Delete class', danger: true },
+    );
+    if (!ok) return;
+    setBusyId(cls._id);
+    try {
+      await deleteClass(cls._id);
+      notify(`"${cls.name}" deleted`, 'success');
+      reload();
+    } catch (err) {
+      notify(typeof err === 'string' ? err : 'Failed to delete class', 'error');
+    } finally {
+      setBusyId(null);
+    }
   };
 
+  const rowActions = (cls) => [
+    { label: 'Open class', icon: ExternalLink, onClick: () => openClass(cls._id) },
+    ...(isTeacher
+      ? [{ label: 'Take class', icon: Play, onClick: () => navigate('/teacher/take-class', { state: { classId: cls._id } }) }]
+      : []),
+    { label: 'Manage exams', icon: ClipboardList, onClick: () => navigate(`${base}/classes/${cls._id}/exams`) },
+    { label: 'Edit details', icon: Pencil, onClick: () => setFormState({ open: true, editing: cls }) },
+    ...(!isTeacher
+      ? [{ divider: true }, { label: 'Delete class', icon: Trash2, tone: 'danger', onClick: () => removeClass(cls) }]
+      : []),
+  ];
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-10 flex justify-between items-center">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
-            Class Management
-          </h2>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">Create and manage your classes.</p>
-        </div>
-        <button
-          onClick={() => setShowCreateForm(!showCreateForm)}
-          className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-all duration-300"
-        >
-          {showCreateForm ? 'Cancel' : 'Create New Class'}
-        </button>
-      </div>
-
-      {/* Messages */}
-      {message && (
-        <div className="mb-6 flex items-center p-4 bg-green-50/80 backdrop-blur-sm rounded-xl shadow-sm border border-green-200">
-          <svg
-            className="h-6 w-6 text-green-500 mr-3"
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-          >
-            <path
-              fillRule="evenodd"
-              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-              clipRule="evenodd"
+    <div className="h-full flex flex-col px-4 sm:px-5 py-5">
+      <section className="flex-1 min-h-0 flex flex-col gap-3">
+        <header className="shrink-0 flex flex-wrap items-center gap-2">
+          <h1 className={`${type.pageTitle} mr-2`}>{isTeacher ? 'My Classes' : 'Classes'}</h1>
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted pointer-events-none" />
+            <input
+              value={query}
+              onChange={(e) => updateParams({ q: e.target.value })}
+              placeholder={isTeacher ? 'Search classes' : 'Search by class, teacher or creator'}
+              className={`${inputClass} h-9 pl-9 pr-8`}
+              aria-label="Search classes"
             />
-          </svg>
-          <p className="text-sm font-semibold text-green-800">{message}</p>
-        </div>
-      )}
-      {error && (
-        <div className="mb-6 flex items-center p-4 bg-red-50/80 backdrop-blur-sm rounded-xl shadow-sm border border-red-200">
-          <svg
-            className="h-6 w-6 text-red-500 mr-3"
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-          >
-            <path
-              fillRule="evenodd"
-              d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-              clipRule="evenodd"
-            />
-          </svg>
-          <p className="ml-3 text-sm font-semibold text-red-800">{error}</p>
-        </div>
-      )}
-
-      {/* Create Class Form */}
-      {showCreateForm && (
-        <div className="mb-8 rounded-2xl shadow-lg border p-6 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-          <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">Create New Class</h3>
-          <form onSubmit={handleCreateClass} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-white">Class Name</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-white">Student Emails (Excel)</label>
-              <input
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={(e) => setFile(e.target.files[0])}
-                className="w-full text-sm text-gray-600 dark:text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-gray-200 file:text-gray-800 hover:file:bg-gray-300 dark:file:bg-white dark:file:text-gray-900 dark:hover:file:bg-gray-100"
-              />
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Email column is enough. Missing students are created automatically.
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-white">Description</label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={3}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
+            {query && (
               <button
                 type="button"
-                onClick={() => setShowCreateForm(false)}
-                className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-all duration-300"
+                onClick={() => updateParams({ q: '' })}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-lg text-muted hover:text-fg"
+                aria-label="Clear search"
               >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-all duration-300"
-              >
-                Create Class
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Search and Filter */}
-      <div className="mb-6 rounded-2xl shadow-lg border p-6 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-        <form onSubmit={handleSearch} className="flex gap-2">
-          <div className="flex-1 relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by class name or created by..."
-              className="w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100"
-            />
-          </div>
-          <button
-            type="submit"
-            className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-all duration-300"
-          >
-            Search
-          </button>
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={handleClearFilter}
-              className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-gray-700 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-all duration-300"
-            >
-              Clear
-            </button>
-          )}
-        </form>
-      </div>
-
-      {/* Classes Table */}
-      <div className="rounded-2xl shadow-lg border p-6 mb-8 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-        <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
-          Your Classes ({classes.length})
-          {searchQuery && <span className="text-sm font-normal text-gray-500 dark:text-gray-400 ml-2">(filtered by "{searchQuery}")</span>}
-        </h3>
-        {status === 'loading' ? (
-          <div className="flex justify-center py-8">
-            <div className="w-12 h-12 border-4 border-gray-500 border-t-transparent rounded-full animate-spin"></div>
-          </div>
-        ) : classes.length === 0 ? (
-          <div className="text-center py-12">
-            <svg
-              className="mx-auto h-14 w-14 text-gray-400"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-            <p className="mt-3 text-sm text-gray-600 dark:text-gray-300">
-              {searchQuery ? `No classes found matching "${searchQuery}"` : 'No classes available'}
-            </p>
-            {searchQuery && (
-              <button
-                onClick={handleClearFilter}
-                className="mt-4 inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-gray-700 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-300"
-              >
-                Clear Search
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-              <thead className="bg-gray-50 dark:bg-gray-900">
-                <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Class Name
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Description
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Exams
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Created By
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {currentClasses.map((cls) => (
-                  <tr 
-                    key={cls._id}
-                    className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200"
-                  >
-                    <td
-                      className="px-6 py-4 whitespace-nowrap cursor-pointer"
-                      onClick={() => handleClassClick(cls._id)}
-                    >
-                      <div className="text-sm font-medium text-gray-900 dark:text-white">{cls.name}</div>
-                    </td>
-                    <td
-                      className="px-6 py-4 cursor-pointer"
-                      onClick={() => handleClassClick(cls._id)}
-                    >
-                      <div className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2 max-w-md">{cls.description}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-200">
-                      {examCounts[cls._id] !== undefined ? examCounts[cls._id] : '...'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                          cls.status === 'active'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-red-100 text-red-800'
-                        }`}
-                      >
-                        {cls.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
-                      {cls.createdBy?.name || 'Unknown'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/admin/classes/${cls._id}/exams`);
-                        }}
-                        className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-500 hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-300"
-                      >
-                        Manage Exams
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleClassClick(cls._id);
-                        }}
-                        className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-700 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-all duration-300"
-                      >
-                        View Details
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+          <div className="flex h-9 rounded-xl border border-line bg-inset p-0.5" role="tablist" aria-label="Filter by status">
+            {STATUS_FILTERS.map((f) => {
+              const count = f.id === 'all' ? stats.total : f.id === 'active' ? stats.active : stats.total - stats.active;
+              return (
+          <button
+                  key={f.id}
+              type="button"
+                  role="tab"
+                  aria-selected={statusFilter === f.id}
+                  onClick={() => updateParams({ status: f.id })}
+                  className={`px-3 rounded-lg text-xs font-semibold transition ${
+                    statusFilter === f.id ? 'bg-surface text-fg shadow-sm' : 'text-muted hover:text-fg'
+                  }`}
+                >
+                  {f.label} <span className="text-subtle font-normal">{count}</span>
+            </button>
+              );
+            })}
           </div>
+
+          <select
+            value={sort}
+            onChange={(e) => updateParams({ sort: e.target.value })}
+            className="ml-auto h-9 bg-inset border border-line rounded-xl px-3 text-fg text-xs outline-none focus:border-accent cursor-pointer"
+            aria-label="Sort classes"
+          >
+            {Object.entries(SORTS).map(([id, s]) => (
+              <option key={id} value={id}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+
+          <Button
+            variant="secondary"
+            icon={RefreshCw}
+            onClick={reload}
+            disabled={status === 'loading'}
+            aria-label="Refresh"
+            title="Refresh"
+            className={`h-9 w-9 justify-center p-0! ${status === 'loading' ? '[&>svg]:animate-spin' : ''}`}
+          />
+
+          {!isTeacher && (
+            <Button icon={Plus} className="h-9" onClick={() => setFormState({ open: true, editing: null })}>
+              New class
+            </Button>
+          )}
+        </header>
+
+        {!isTeacher && stats.unassigned > 0 && (
+          <p className="shrink-0 rounded-xl border border-warn-line bg-warn-soft px-3 py-2 text-xs text-warn">
+            {plural(stats.unassigned, 'class')} {stats.unassigned === 1 ? 'has' : 'have'} no teacher assigned. Open the class to add one.
+          </p>
         )}
 
-        {/* Pagination */}
-        {classes.length > itemsPerPage && (
-          <div className="mt-6 flex items-center justify-between border-t border-gray-200 dark:border-gray-700 pt-4">
-            <div className="flex-1 flex justify-between sm:hidden">
-              <button
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-                className="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
-                className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Next
-              </button>
-            </div>
-            <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm text-gray-700 dark:text-gray-300">
-                  Showing <span className="font-medium">{indexOfFirstItem + 1}</span> to{' '}
-                  <span className="font-medium">{Math.min(indexOfLastItem, classes.length)}</span> of{' '}
-                  <span className="font-medium">{classes.length}</span> results
-                </p>
-              </div>
-              <div>
-                <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-                  <button
-                    onClick={() => handlePageChange(currentPage - 1)}
-                    disabled={currentPage === 1}
-                    className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        {status === 'failed' ? (
+          <EmptyState
+            icon={School}
+            title="Couldn't load classes"
+            message={error || 'Something went wrong while fetching classes.'}
+            action={<Button variant="secondary" onClick={reload}>Try again</Button>}
+          />
+        ) : !loading && filtered.length === 0 ? (
+          <EmptyState
+            icon={School}
+            title={hasFilters ? 'No classes match your filters' : 'No classes yet'}
+            message={
+              hasFilters
+                ? 'Try a different search or status.'
+                : isTeacher
+                  ? 'You have not been assigned to any classes yet.'
+                  : 'Create your first class to start adding students and questions.'
+            }
+            action={
+              hasFilters ? (
+                <Button variant="secondary" onClick={() => updateParams({ q: '', status: 'all' })}>Clear filters</Button>
+              ) : isTeacher ? null : (
+                <Button icon={Plus} onClick={() => setFormState({ open: true, editing: null })}>New class</Button>
+              )
+            }
+          />
+        ) : (
+          <>
+            <Table columns={COLUMNS} fill>
+              {loading ? (
+                <SkeletonRows />
+              ) : (
+                pageRows.map((cls) => (
+                  <tr 
+                    key={cls._id}
+                    onClick={() => openClass(cls._id)}
+                    className={`${tableClass.row} cursor-pointer ${busyId === cls._id ? 'opacity-50 pointer-events-none' : ''}`}
                   >
-                    <span className="sr-only">Previous</span>
-                    <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                  
-                  {[...Array(totalPages)].map((_, index) => {
-                    const pageNumber = index + 1;
-                    // Show first page, last page, current page, and pages around current
-                    if (
-                      pageNumber === 1 ||
-                      pageNumber === totalPages ||
-                      (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 1)
-                    ) {
-                      return (
-                        <button
-                          key={pageNumber}
-                          onClick={() => handlePageChange(pageNumber)}
-                          className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
-                            currentPage === pageNumber
-                              ? 'z-10 bg-gray-600 border-gray-600 text-white'
-                              : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
-                          }`}
+                    <td className={`${tableClass.td} max-w-xs`}>
+                      <p className="text-sm font-semibold text-fg truncate">{cls.name}</p>
+                      {cls.description && <p className={`${type.meta} truncate`}>{cls.description}</p>}
+                    </td>
+                    <td className={`${tableClass.td} whitespace-nowrap ${HIDE_SM}`}>
+                      <TeacherList teachers={cls.teachers} />
+                    </td>
+                    <td className={`${tableClass.td} text-right tabular-nums`}>{cls.students?.length || 0}</td>
+                    <td className={`${tableClass.td} text-right tabular-nums ${HIDE_MD}`}>{cls.questions?.length || 0}</td>
+                    <td className={`${tableClass.td} text-right tabular-nums ${HIDE_SM}`}>{cls.examCount ?? 0}</td>
+                    <td className={tableClass.td}>
+                      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                        <Switch
+                          checked={cls.status === 'active'}
+                          disabled={busyId === cls._id}
+                          onChange={() => toggleStatus(cls)}
+                          label={`${cls.name} is ${cls.status}`}
+                        />
+                        <span className={cls.status === 'active' ? 'text-ok font-semibold' : 'text-muted'}>
+                          {cls.status === 'active' ? 'Active' : 'Inactive'}
+                      </span>
+                      </div>
+                    </td>
+                    <td className={`${tableClass.td} whitespace-nowrap ${HIDE_MD}`}>
+                      <p className="text-body">{formatDate(cls.createdAt)}</p>
+                      <p className={type.meta}>by {cls.createdBy?.name || 'Unknown'}</p>
+                    </td>
+                    <td className={`${tableClass.td} whitespace-nowrap`}>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="soft"
+                          icon={ClipboardList}
+                          className="hidden sm:flex"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`${base}/classes/${cls._id}/exams`);
+                        }}
                         >
-                          {pageNumber}
-                        </button>
-                      );
-                    } else if (
-                      pageNumber === currentPage - 2 ||
-                      pageNumber === currentPage + 2
-                    ) {
-                      return (
-                        <span
-                          key={pageNumber}
-                          className="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300"
-                        >
-                          ...
-                        </span>
-                      );
-                    }
-                    return null;
-                  })}
-                  
-                  <button
-                    onClick={() => handlePageChange(currentPage + 1)}
-                    disabled={currentPage === totalPages}
-                    className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <span className="sr-only">Next</span>
-                    <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </nav>
-              </div>
-            </div>
-          </div>
+                          Exams
+                        </Button>
+                        <ActionMenu label={`Actions for ${cls.name}`} items={rowActions(cls)} />
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </Table>
+            <Pagination
+              page={currentPage}
+              pageSize={PAGE_SIZE}
+              total={filtered.length}
+              onChange={(p) => updateParams({ page: p }, { resetPage: false })}
+            />
+          </>
         )}
-      </div>
+      </section>
+
+      <ClassFormModal
+        open={formState.open}
+        editing={formState.editing}
+        onClose={() => setFormState({ open: false, editing: null })}
+        onSaved={handleSaved}
+      />
     </div>
   );
-};
+}
 
 export default ClassManagement;

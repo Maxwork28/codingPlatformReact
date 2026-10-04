@@ -1,534 +1,459 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { listClassExams, deleteExam, getExamReport } from '../../../common/services/api';
-import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import {
+  Archive,
+  ArchiveRestore,
+  ArrowLeft,
+  Award,
+  BarChart3,
+  ClipboardList,
+  Copy,
+  Eye,
+  EyeOff,
+  Lock,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Save,
+  Send,
+  Trash2,
+  Unlock,
+} from 'lucide-react';
+import {
+  deleteExam,
+  duplicateExam,
+  listClassExams,
+  listStaffExams,
+  releaseExamScores,
+  setExamStatus,
+} from '../../../common/services/api';
+import { Button, EmptyState, Pagination, Table } from '../../../common/ui/primitives';
+import ActionMenu from '../../../common/ui/ActionMenu';
+import Modal from '../../../common/ui/Modal';
+import { labelClass, table as tableClass, type } from '../../../common/ui/format';
+import { confirmAction, notify } from '../../../common/ui/Toast';
+import ClassPicker from '../components/ClassPicker';
+import { RateBar, SearchBox, Segmented } from '../components/classDetails/shared';
+import { HIDE_MD, HIDE_SM, errorText, formatDate, paginate, plural, selectClass, useUrlState } from '../components/classDetails/helpers';
 
-const ExamManagement = () => {
+const PAGE_SIZE = 12;
+const POLL_MS = 30000;
+
+const PHASES = {
+  live: { label: 'Live', dot: 'bg-ok animate-pulse', text: 'text-ok' },
+  scheduled: { label: 'Scheduled', dot: 'bg-info', text: 'text-info' },
+  draft: { label: 'Draft', dot: 'bg-warn', text: 'text-warn' },
+  completed: { label: 'Closed', dot: 'bg-subtle', text: 'text-muted' },
+  archived: { label: 'Archived', dot: 'bg-subtle', text: 'text-subtle' },
+};
+const FILTERS = ['all', 'live', 'scheduled', 'draft', 'completed', 'archived'];
+const DEFAULTS = { q: '', phase: 'all', class: '', page: '1' };
+
+function PhaseLabel({ phase }) {
+  const p = PHASES[phase] || PHASES.draft;
+  return (
+    <span className={`flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider ${p.text}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${p.dot}`} />
+      {p.label}
+    </span>
+  );
+}
+
+function SkeletonRows({ columns }) {
+  return Array.from({ length: 6 }, (_, i) => (
+    <tr key={i}>
+      {columns.map((c, j) => (
+        <td key={j} className={`${tableClass.td} ${c.className || ''}`}>
+          <div className="h-3 rounded bg-hover animate-pulse" style={{ width: j === 0 ? '70%' : '50%' }} />
+        </td>
+      ))}
+    </tr>
+  ));
+}
+
+function NewExamModal({ open, onClose, onPick, onTemplates }) {
+  const [cls, setCls] = useState(null);
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="New exam"
+      icon={Plus}
+      width="max-w-md"
+      footer={
+        <>
+          <Button variant="secondary" icon={Award} onClick={onTemplates} className="mr-auto">
+            From a template
+          </Button>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={() => cls && onPick(cls._id)} disabled={!cls}>
+            Continue
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-1.5">
+        <label htmlFor="new-exam-class" className={labelClass}>
+          Class
+        </label>
+        <ClassPicker id="new-exam-class" value={cls} onChange={setCls} autoFocus />
+        <p className={type.meta}>The exam is only visible to students enrolled in this class.</p>
+      </div>
+    </Modal>
+  );
+}
+
+export default function ExamManagement() {
   const { classId } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
-  
-  // Detect if admin or teacher based on URL path
-  const isAdmin = location.pathname.includes('/admin/');
-  const basePath = isAdmin ? '/admin' : '/teacher';
-  
+  const { pathname } = useLocation();
+  const base = pathname.startsWith('/teacher') ? '/teacher' : '/admin';
+  const scoped = Boolean(classId);
+
   const [exams, setExams] = useState([]);
+  const [className, setClassName] = useState('');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [expandedExams, setExpandedExams] = useState(new Set());
+  const [error, setError] = useState('');
+  const [busyId, setBusyId] = useState(null);
+  const [newOpen, setNewOpen] = useState(false);
+  const [get, update] = useUrlState(DEFAULTS);
+
+  const query = get('q');
+  const phase = FILTERS.includes(get('phase')) ? get('phase') : 'all';
+  const classFilter = scoped ? '' : get('class');
+  const page = Number(get('page')) || 1;
+
+  const load = useCallback(
+    async ({ quiet = false } = {}) => {
+      if (!quiet) setLoading(true);
+      try {
+        const { data } = scoped ? await listClassExams(classId) : await listStaffExams();
+        setExams(data.exams || []);
+        if (scoped) setClassName(data.className || '');
+        setError('');
+      } catch (err) {
+        if (!quiet) setError(errorText(err, 'Failed to fetch exams'));
+      } finally {
+        if (!quiet) setLoading(false);
+      }
+    },
+    [classId, scoped],
+  );
 
   useEffect(() => {
-    const fetchExams = async () => {
-      try {
-        setLoading(true);
-        const response = await listClassExams(classId);
-        setExams(response.data.exams || []);
-        setLoading(false);
-      } catch (err) {
-        console.error('Failed to fetch exams:', err);
-        setError(err.response?.data?.error || 'Failed to fetch exams');
-        setLoading(false);
-      }
-    };
+    load();
+  }, [load]);
 
-    if (classId) {
-      fetchExams();
-    }
-  }, [classId]);
+  const hasLive = exams.some((e) => e.phase === 'live');
+  useEffect(() => {
+    if (!hasLive) return undefined;
+    const id = setInterval(() => document.visibilityState === 'visible' && load({ quiet: true }), POLL_MS);
+    return () => clearInterval(id);
+  }, [hasLive, load]);
 
-  const handleDelete = async (examId) => {
-    if (!window.confirm('Are you sure you want to delete this exam?')) return;
-    
-    try {
-      await deleteExam(examId);
-      setExams(exams.filter(e => e._id !== examId));
-    } catch (err) {
-      alert(err.response?.data?.error || 'Failed to delete exam');
-    }
-  };
+  const classOptions = useMemo(() => {
+    const map = new Map();
+    exams.forEach((e) => map.set(String(e.classId), e.className || 'Unknown class'));
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [exams]);
 
-  const toggleExpand = (examId) => {
-    setExpandedExams(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(examId)) {
-        newSet.delete(examId);
-      } else {
-        newSet.add(examId);
-      }
-      return newSet;
+  const inClass = useMemo(() => (classFilter ? exams.filter((e) => String(e.classId) === classFilter) : exams), [exams, classFilter]);
+
+  const counts = useMemo(() => {
+    const c = { all: inClass.length };
+    inClass.forEach((e) => {
+      c[e.phase] = (c[e.phase] || 0) + 1;
     });
-  };
+    return c;
+  }, [inClass]);
 
-  const getStatusBadge = (exam) => {
-    if (exam.status === 'scheduled') {
-      return <span className="px-2 py-1 bg-yellow-500 text-white rounded text-xs font-semibold">Scheduled</span>;
-    } else if (exam.status === 'active') {
-      return <span className="px-2 py-1 bg-green-500 text-white rounded text-xs font-semibold">Active</span>;
-    } else if (exam.status === 'completed') {
-      return <span className="px-2 py-1 bg-gray-500 text-white rounded text-xs font-semibold">Completed</span>;
-    } else if (exam.status === 'draft') {
-      return <span className="px-2 py-1 bg-blue-500 text-white rounded text-xs font-semibold">Draft</span>;
-    }
-    return <span className="px-2 py-1 bg-blue-500 text-white rounded text-xs font-semibold">{exam.status}</span>;
-  };
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const order = { live: 0, scheduled: 1, draft: 2, completed: 3, archived: 4 };
+    return inClass
+      .filter((e) => (phase === 'all' ? e.phase !== 'archived' : e.phase === phase))
+      .filter((e) => !q || [e.title, e.description, e.className].filter(Boolean).some((t) => t.toLowerCase().includes(q)))
+      .sort((a, b) => (order[a.phase] ?? 9) - (order[b.phase] ?? 9) || new Date(b.createdAt) - new Date(a.createdAt));
+  }, [inClass, phase, query]);
 
-  const calculateTotalPoints = (exam) => {
-    return exam.questions?.reduce((sum, q) => sum + (q.points || 0), 0) || 0;
-  };
+  const { current, rows } = paginate(filtered, page, PAGE_SIZE);
+  const hasFilters = Boolean(query) || phase !== 'all' || Boolean(classFilter);
 
-  const formatDuration = (seconds) => {
-    if (!seconds) return 'N/A';
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}m ${secs}s`;
-  };
+  // ---- actions --------------------------------------------------------------
+  const examPath = (e, suffix) => `${base}/classes/${e.classId}/exams/${e._id}/${suffix}`;
+  const openRow = (e) => navigate(examPath(e, e.phase === 'draft' ? 'edit' : 'report'));
 
-  const formatDate = (dateValue) => {
-    if (!dateValue) return 'Not set';
+  const run = async (e, task, success) => {
+    setBusyId(e._id);
     try {
-      // Handle MongoDB date format with $date wrapper
-      let dateString = dateValue;
-      if (typeof dateValue === 'object' && dateValue.$date) {
-        dateString = dateValue.$date;
-      } else if (typeof dateValue === 'object' && dateValue.toString) {
-        dateString = dateValue.toString();
-      }
-      
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return 'Not set';
-      
-      return date.toLocaleString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      });
-    } catch (error) {
-      console.error('Date formatting error:', error, dateValue);
-      return 'Not set';
+      const result = await task();
+      if (success) notify(typeof success === 'function' ? success(result) : success, 'success');
+      await load({ quiet: true });
+      return result;
+    } catch (err) {
+      notify(errorText(err, 'Something went wrong'), 'error');
+      return null;
+    } finally {
+      setBusyId(null);
     }
   };
 
-  // Filter exams based on search and status
-  const filteredExams = exams.filter(exam => {
-    const matchesSearch = searchQuery === '' || 
-      exam.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      exam.description?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || exam.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  const publish = async (e) => {
+    const opens = e.proctoring?.startTime ? `on ${formatDate(e.proctoring.startTime, true)}` : 'right away';
+    if (!(await confirmAction(`Students in ${e.className || 'the class'} can take "${e.title}" ${opens}.`, { title: 'Publish exam?', confirmLabel: 'Publish' }))) return;
+    run(e, () => setExamStatus(e._id, 'scheduled'), 'Exam published');
+  };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-xl">Loading exams...</div>
-      </div>
+  const close = async (e) => {
+    const open = e.stats?.inProgress || 0;
+    const note = open ? ` ${plural(open, 'student is', 'students are')} still writing; their answers will be submitted as they are.` : '';
+    if (!(await confirmAction(`Students will no longer be able to start "${e.title}".${note}`, { title: 'Close exam now?', confirmLabel: 'Close exam', danger: open > 0 }))) return;
+    run(e, () => setExamStatus(e._id, 'completed'), (r) => (r.data.closedAttempts ? `Exam closed, ${plural(r.data.closedAttempts, 'attempt')} submitted` : 'Exam closed'));
+  };
+
+  const setStatus = (e, status, message) => run(e, () => setExamStatus(e._id, status), message);
+
+  const toggleRelease = (e) =>
+    run(e, () => releaseExamScores(e._id, !e.released), e.released ? 'Scores hidden from students' : 'Scores released to students');
+
+  const duplicate = async (e) => {
+    const result = await run(e, () => duplicateExam(e._id), 'Copy created as a draft');
+    const copy = result?.data?.exam;
+    if (copy) navigate(`${base}/classes/${copy.classId}/exams/${copy._id}/edit`);
+  };
+
+  const saveAsTemplate = (e) => run(e, () => duplicateExam(e._id, { asTemplate: true, title: e.title }), `"${e.title}" saved as a template`);
+
+  const remove = async (e) => {
+    const started = e.stats?.started || 0;
+    const note = started ? ` This also deletes ${plural(started, 'student attempt')} and their answers.` : '';
+    if (!(await confirmAction(`Delete "${e.title}"?${note} This cannot be undone.`, { title: 'Delete exam', confirmLabel: 'Delete exam', danger: true }))) return;
+    setBusyId(e._id);
+    try {
+      await deleteExam(e._id);
+      setExams((prev) => prev.filter((x) => x._id !== e._id));
+      notify('Exam deleted', 'success');
+    } catch (err) {
+      notify(errorText(err, 'Failed to delete exam'), 'error');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const rowActions = (e) => {
+    const items = [
+      { label: e.phase === 'live' ? 'Monitor' : 'View report', icon: BarChart3, onClick: () => navigate(examPath(e, 'report')) },
+      { label: e.stats?.started ? 'Edit settings' : 'Edit exam', icon: Pencil, onClick: () => navigate(examPath(e, 'edit')) },
+      { divider: true },
+    ];
+    if (e.phase === 'draft') items.push({ label: 'Publish', icon: Send, onClick: () => publish(e) });
+    if (e.phase === 'live' || e.phase === 'scheduled') items.push({ label: 'Close now', icon: Lock, onClick: () => close(e) });
+    if (e.phase === 'completed') items.push({ label: 'Reopen', icon: Unlock, onClick: () => setStatus(e, 'scheduled', 'Exam reopened') });
+    if (e.phase === 'scheduled' && !e.stats?.started) items.push({ label: 'Move back to draft', icon: EyeOff, onClick: () => setStatus(e, 'draft', 'Exam moved to drafts') });
+    if (e.phase !== 'archived' && e.phase !== 'live') items.push({ label: 'Archive', icon: Archive, onClick: () => setStatus(e, 'archived', 'Exam archived') });
+    if (e.phase === 'archived') items.push({ label: 'Restore', icon: ArchiveRestore, onClick: () => setStatus(e, 'completed', 'Exam restored') });
+    if (e.stats?.submitted && !e.scoring?.immediateScoreRelease) {
+      items.push({ label: e.released ? 'Hide scores' : 'Release scores', icon: e.released ? EyeOff : Eye, onClick: () => toggleRelease(e) });
+    }
+    items.push(
+      { divider: true },
+      { label: 'Duplicate', icon: Copy, onClick: () => duplicate(e) },
+      { label: 'Save as template', icon: Save, onClick: () => saveAsTemplate(e) },
+      { divider: true },
+      { label: 'Delete', icon: Trash2, tone: 'danger', onClick: () => remove(e) },
     );
-  }
+    return items;
+  };
+
+  const startNew = () => (scoped ? navigate(`${base}/classes/${classId}/exams/create`) : setNewOpen(true));
+
+  const columns = [
+    { label: 'Exam' },
+    { label: 'Status' },
+    { label: 'Window', className: HIDE_SM },
+    { label: 'Submitted', className: 'text-right' },
+    { label: 'Avg. score', className: HIDE_SM },
+    { label: 'Scores', className: HIDE_MD },
+    { key: 'actions', label: '' },
+  ];
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
-      <div className="container mx-auto px-4">
-        <div className="mb-6 flex justify-between items-center">
-          <h1 className="text-3xl font-bold">Exam Management</h1>
-          <button
-            onClick={() => navigate(`${basePath}/classes/${classId}/exams/create`)}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            Create Exam
-          </button>
-        </div>
-
-        {/* Search and Filter */}
-        {exams.length > 0 && (
-          <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Search Exams</label>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by title or description..."
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">Filter by Status</label>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              >
-                <option value="all">All Statuses</option>
-                <option value="draft">Draft</option>
-                <option value="scheduled">Scheduled</option>
-                <option value="active">Active</option>
-                <option value="completed">Completed</option>
-              </select>
-            </div>
+    <div className="h-full flex flex-col px-4 sm:px-5 py-5">
+      <section className="flex-1 min-h-0 flex flex-col gap-3">
+        <header className="shrink-0 flex flex-wrap items-center gap-2">
+          {scoped && (
+            <Button
+              variant="ghost"
+              icon={ArrowLeft}
+              className="h-9 w-9 justify-center p-0!"
+              onClick={() => navigate(`${base}/classes/${classId}`)}
+              aria-label="Back to class"
+              title="Back to class"
+            />
+          )}
+          <h1 className={`${type.pageTitle} mr-1 truncate max-w-full`}>
+            {scoped ? (className ? `${className} exams` : 'Class exams') : 'Exams'}
+          </h1>
+          <SearchBox value={query} onChange={(v) => update({ q: v })} placeholder={scoped ? 'Search exams' : 'Search exams or classes'} label="Search exams" />
+          <Segmented
+            label="Filter by status"
+            value={phase}
+            onChange={(v) => update({ phase: v })}
+            options={FILTERS.map((id) => ({
+              id,
+              label: id === 'all' ? 'All' : PHASES[id].label,
+              count: id === 'all' ? (counts.all || 0) - (counts.archived || 0) : counts[id] || 0,
+            }))}
+          />
+          {!scoped && classOptions.length > 1 && (
+            <select value={classFilter} onChange={(e) => update({ class: e.target.value })} className={`max-w-48 ${selectClass}`} aria-label="Filter by class">
+              <option value="">All classes</option>
+              {classOptions.map(([id, name]) => (
+                <option key={id} value={id}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          )}
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="secondary"
+              icon={RefreshCw}
+              onClick={() => load()}
+              disabled={loading}
+              aria-label="Refresh"
+              title="Refresh"
+              className={`h-9 w-9 justify-center p-0! ${loading ? '[&>svg]:animate-spin' : ''}`}
+            />
+            <Button variant="secondary" icon={Award} className="h-9" onClick={() => navigate(`${base}/exams/templates`)}>
+              Templates
+            </Button>
+            <Button icon={Plus} className="h-9" onClick={startNew}>
+              New exam
+            </Button>
           </div>
-        )}
+        </header>
 
-        {exams.length === 0 ? (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
-            <p className="text-gray-600 dark:text-gray-400">No exams available</p>
-          </div>
-        ) : filteredExams.length === 0 ? (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
-            <p className="text-gray-600 dark:text-gray-400">
-              No exams found matching your search criteria.
-            </p>
-          </div>
-        ) : (
-          <div className="grid gap-4">
-            {filteredExams.map((exam) => {
-              const isExpanded = expandedExams.has(exam._id);
-              const totalPoints = calculateTotalPoints(exam);
-              const sections = exam.sections || [];
-              const questions = exam.questions || [];
-              
-              return (
-                <div
-                  key={exam._id}
-                  className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden"
-                >
-                  {/* Header Section */}
-                  <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{exam.title}</h2>
-                          {exam.template?.baseTemplateId && (
-                            <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs font-semibold">
-                              From Template
-                            </span>
-                          )}
-                        </div>
-                        {exam.description && (
-                          <p className="text-gray-600 dark:text-gray-400 mb-3">{exam.description}</p>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => toggleExpand(exam._id)}
-                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                        title={isExpanded ? 'Collapse details' : 'Expand details'}
-                      >
-                        {isExpanded ? (
-                          <ChevronUpIcon className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-                        ) : (
-                          <ChevronDownIcon className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-                        )}
-                      </button>
-                    </div>
-
-                    {/* Status and Dates Row */}
-                    <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
-                        <div>
-                          <span className="text-gray-600 dark:text-gray-400 font-medium">Status:</span>{' '}
-                          {getStatusBadge(exam)}
-                        </div>
-                        <div>
-                          <span className="text-gray-600 dark:text-gray-400 font-medium">Created:</span>{' '}
-                          <span className="text-gray-900 dark:text-white font-semibold">
-                            {formatDate(exam.createdAt)}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600 dark:text-gray-400 font-medium">Last Updated:</span>{' '}
-                          <span className="text-gray-900 dark:text-white font-semibold">
-                            {formatDate(exam.updatedAt)}
-                          </span>
-                        </div>
-                        {exam.proctoring?.startTime && (
-                          <div>
-                            <span className="text-gray-600 dark:text-gray-400 font-medium">Scheduled Start:</span>{' '}
-                            <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
-                              {formatDate(exam.proctoring.startTime)}
-                            </span>
-                          </div>
-                        )}
-                        {exam.proctoring?.endTime && (
-                          <div>
-                            <span className="text-gray-600 dark:text-gray-400 font-medium">Scheduled End:</span>{' '}
-                            <span className="text-red-600 dark:text-red-400 font-semibold">
-                              {formatDate(exam.proctoring.endTime)}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Quick Stats */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 text-sm">
-                      <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
-                        <div className="text-gray-600 dark:text-gray-400 text-xs font-medium">Questions</div>
-                        <div className="text-lg font-bold text-blue-600 dark:text-blue-400">{questions.length}</div>
-                      </div>
-                      <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg">
-                        <div className="text-gray-600 dark:text-gray-400 text-xs font-medium">Total Points</div>
-                        <div className="text-lg font-bold text-green-600 dark:text-green-400">{totalPoints}</div>
-                      </div>
-                      <div className="bg-purple-50 dark:bg-purple-900/20 p-3 rounded-lg">
-                        <div className="text-gray-600 dark:text-gray-400 text-xs font-medium">Sections</div>
-                        <div className="text-lg font-bold text-purple-600 dark:text-purple-400">{sections.length}</div>
-                      </div>
-                      <div className="bg-orange-50 dark:bg-orange-900/20 p-3 rounded-lg">
-                        <div className="text-gray-600 dark:text-gray-400 text-xs font-medium">Duration</div>
-                        <div className="text-lg font-bold text-orange-600 dark:text-orange-400">
-                          {exam.proctoring?.durationMinutes || 0}m
-                        </div>
-                      </div>
-                      {exam.proctoring?.startTime && (
-                        <div className="bg-indigo-50 dark:bg-indigo-900/20 p-3 rounded-lg">
-                          <div className="text-gray-600 dark:text-gray-400 text-xs font-medium">Start Date</div>
-                          <div className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                            {new Date(exam.proctoring.startTime).toLocaleDateString()}
-                          </div>
-                          <div className="text-xs text-indigo-600 dark:text-indigo-400">
-                            {new Date(exam.proctoring.startTime).toLocaleTimeString()}
-                          </div>
-                        </div>
-                      )}
-                      {exam.proctoring?.endTime && (
-                        <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg">
-                          <div className="text-gray-600 dark:text-gray-400 text-xs font-medium">End Date</div>
-                          <div className="text-xs font-semibold text-red-600 dark:text-red-400">
-                            {new Date(exam.proctoring.endTime).toLocaleDateString()}
-                          </div>
-                          <div className="text-xs text-red-600 dark:text-red-400">
-                            {new Date(exam.proctoring.endTime).toLocaleTimeString()}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex flex-wrap gap-3 mt-4">
-                      <button
-                        onClick={() => navigate(`${basePath}/classes/${classId}/exams/${exam._id}/report`)}
-                        className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm font-semibold"
-                      >
-                        View Report
-                      </button>
-                      <button
-                        onClick={() => navigate(`${basePath}/classes/${classId}/exams/${exam._id}/edit`)}
-                        className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-semibold"
-                        title="Edit exam"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(exam._id)}
-                        className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-semibold"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Expanded Details */}
-                  {isExpanded && (
-                    <div className="p-6 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700">
-                      <div className="space-y-6">
-                        {/* Sections Details */}
-                        {sections.length > 0 && (
-                          <div>
-                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Sections</h3>
-                            <div className="grid gap-3">
-                              {sections.map((section, idx) => {
-                                const sectionQuestions = questions.filter(q => q.sectionId === section.sectionId);
-                                const sectionPoints = sectionQuestions.reduce((sum, q) => sum + (q.points || 0), 0);
-                                return (
-                                  <div key={section.sectionId} className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                                    <div className="flex justify-between items-start mb-2">
-                                      <div>
-                                        <h4 className="font-semibold text-gray-900 dark:text-white">
-                                          {section.title || `Section ${idx + 1}`}
-                                        </h4>
-                                        {section.description && (
-                                          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{section.description}</p>
-                                        )}
-                                      </div>
-                                      <span className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded text-xs font-semibold">
-                                        Order: {section.order}
-                                      </span>
-                                    </div>
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 text-sm">
-                                      <div>
-                                        <span className="text-gray-600 dark:text-gray-400">Questions:</span>{' '}
-                                        <span className="font-semibold">{sectionQuestions.length}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-600 dark:text-gray-400">Points:</span>{' '}
-                                        <span className="font-semibold">{sectionPoints}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-600 dark:text-gray-400">Duration:</span>{' '}
-                                        <span className="font-semibold">{formatDuration(section.durationSeconds)}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-600 dark:text-gray-400">Revisit:</span>{' '}
-                                        <span className="font-semibold">{section.allowRevisit ? 'Yes' : 'No'}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Questions Breakdown */}
-                        {questions.length > 0 && (
-                          <div>
-                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-                              Questions ({questions.length})
-                            </h3>
-                            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                              <div className="space-y-2">
-                                {questions.map((q, idx) => (
-                                  <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700 last:border-0">
-                                    <div className="flex items-center gap-3">
-                                      <span className="font-semibold text-gray-700 dark:text-gray-300">Q{idx + 1}</span>
-                                      <span className="text-sm text-gray-600 dark:text-gray-400">
-                                        Section: {q.sectionId || 'N/A'}
-                                      </span>
-                                    </div>
-                                    <div className="flex items-center gap-4 text-sm">
-                                      <span className="text-gray-600 dark:text-gray-400">
-                                        Points: <span className="font-semibold">{q.points || 0}</span>
-                                      </span>
-                                      {q.timeLimitSeconds && (
-                                        <span className="text-gray-600 dark:text-gray-400">
-                                          Timer: <span className="font-semibold">{formatDuration(q.timeLimitSeconds)}</span>
-                                        </span>
-                                      )}
-                                      <span className="text-gray-600 dark:text-gray-400">
-                                        Order: <span className="font-semibold">{q.order}</span>
-                                      </span>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Proctoring Settings */}
-                        <div>
-                          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Proctoring Settings</h3>
-                          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                              <div>
-                                <span className="text-gray-600 dark:text-gray-400">Auto Submit:</span>{' '}
-                                <span className={`font-semibold ${exam.proctoring?.autoSubmitOnEnd ? 'text-green-600' : 'text-red-600'}`}>
-                                  {exam.proctoring?.autoSubmitOnEnd ? 'Yes' : 'No'}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-gray-600 dark:text-gray-400">Tab Switch Limit:</span>{' '}
-                                <span className="font-semibold">{exam.proctoring?.tabSwitchLimit || 'Unlimited'}</span>
-                              </div>
-                              <div>
-                                <span className="text-gray-600 dark:text-gray-400">Copy/Paste:</span>{' '}
-                                <span className={`font-semibold ${exam.proctoring?.copyPasteDisabled ? 'text-red-600' : 'text-green-600'}`}>
-                                  {exam.proctoring?.copyPasteDisabled ? 'Disabled' : 'Enabled'}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-gray-600 dark:text-gray-400">Fullscreen Required:</span>{' '}
-                                <span className={`font-semibold ${exam.proctoring?.fullscreenRequired ? 'text-green-600' : 'text-gray-600'}`}>
-                                  {exam.proctoring?.fullscreenRequired ? 'Yes' : 'No'}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-gray-600 dark:text-gray-400">Internet Required:</span>{' '}
-                                <span className={`font-semibold ${exam.proctoring?.internetRequired ? 'text-green-600' : 'text-gray-600'}`}>
-                                  {exam.proctoring?.internetRequired ? 'Yes' : 'No'}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-gray-600 dark:text-gray-400">Allow Run Code:</span>{' '}
-                                <span className={`font-semibold ${exam.proctoring?.allowRunCode ? 'text-green-600' : 'text-red-600'}`}>
-                                  {exam.proctoring?.allowRunCode ? 'Yes' : 'No'}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Scoring Settings */}
-                        <div>
-                          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Scoring Settings</h3>
-                          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                              <div>
-                                <span className="text-gray-600 dark:text-gray-400">Grading Mode:</span>{' '}
-                                <span className="font-semibold capitalize">{exam.scoring?.gradingMode || 'auto'}</span>
-                              </div>
-                              <div>
-                                <span className="text-gray-600 dark:text-gray-400">Score Release:</span>{' '}
-                                <span className={`font-semibold ${
-                                  exam.scoring?.releaseStatus === 'released' ? 'text-green-600' : 'text-yellow-600'
-                                }`}>
-                                  {exam.scoring?.releaseStatus === 'released' ? 'Released' : 'Not Released'}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-gray-600 dark:text-gray-400">Immediate Release:</span>{' '}
-                                <span className={`font-semibold ${exam.scoring?.immediateScoreRelease ? 'text-green-600' : 'text-gray-600'}`}>
-                                  {exam.scoring?.immediateScoreRelease ? 'Yes' : 'No'}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Template Info */}
-                        {exam.template?.baseTemplateId && (
-                          <div>
-                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Template Information</h3>
-                            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                              <p className="text-sm text-gray-600 dark:text-gray-400">
-                                This exam was created from a template.
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Metadata */}
-                        <div>
-                          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Metadata</h3>
-                          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                              <div>
-                                <span className="text-gray-600 dark:text-gray-400">Created:</span>{' '}
-                                <span className="font-semibold">{formatDate(exam.createdAt)}</span>
-                              </div>
-                              <div>
-                                <span className="text-gray-600 dark:text-gray-400">Last Updated:</span>{' '}
-                                <span className="font-semibold">{formatDate(exam.updatedAt)}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+        {error ? (
+          <EmptyState icon={ClipboardList} title="Couldn't load exams" message={error} action={<Button variant="secondary" onClick={() => load()}>Try again</Button>} />
+        ) : !loading && filtered.length === 0 ? (
+          <EmptyState
+            icon={ClipboardList}
+            title={hasFilters ? 'No exams match your filters' : 'No exams yet'}
+            message={
+              hasFilters
+                ? 'Try a different search or status.'
+                : 'Create a proctored exam from your question bank, or start from a saved template.'
+            }
+            action={
+              hasFilters ? (
+                <Button variant="secondary" onClick={() => update({ q: '', phase: 'all', class: '' })}>
+                  Clear filters
+                </Button>
+              ) : (
+                <div className="flex gap-2 justify-center">
+                  <Button variant="secondary" icon={Award} onClick={() => navigate(`${base}/exams/templates`)}>
+                    From a template
+                  </Button>
+                  <Button icon={Plus} onClick={startNew}>
+                    New exam
+                  </Button>
                 </div>
-              );
-            })}
-          </div>
+              )
+            }
+          />
+        ) : (
+          <>
+            <Table columns={columns} fill>
+              {loading && exams.length === 0 ? (
+                <SkeletonRows columns={columns} />
+              ) : (
+                rows.map((e) => {
+                  const s = e.stats || {};
+                  const start = e.proctoring?.startTime;
+                  const end = e.proctoring?.endTime;
+                  return (
+                    <tr
+                      key={e._id}
+                      onClick={() => openRow(e)}
+                      className={`${tableClass.row} cursor-pointer ${busyId === e._id ? 'opacity-50 pointer-events-none' : ''}`}
+                    >
+                      <td className={`${tableClass.td} max-w-xs`}>
+                        <p className="text-sm font-semibold text-fg truncate">{e.title}</p>
+                        <p className={`${type.meta} truncate`}>
+                          {!scoped && e.className ? `${e.className} · ` : ''}
+                          {plural(e.questionCount || 0, 'question')} · {e.totalPoints || 0} pts · {e.proctoring?.durationMinutes || 0} min
+                        </p>
+                      </td>
+                      <td className={`${tableClass.td} whitespace-nowrap`}>
+                        <PhaseLabel phase={e.phase} />
+                        {e.phase === 'live' && s.inProgress > 0 && <p className={`${type.meta} mt-0.5`}>{s.inProgress} writing now</p>}
+                      </td>
+                      <td className={`${tableClass.td} whitespace-nowrap ${HIDE_SM}`}>
+                        {start || end ? (
+                          <>
+                            <p className="text-body">{start ? formatDate(start, true) : 'When published'}</p>
+                            <p className={type.meta}>{end ? `until ${formatDate(end, true)}` : 'no end time'}</p>
+                          </>
+                        ) : (
+                          <span className="text-subtle">{e.phase === 'draft' ? 'Not scheduled' : 'Open until closed'}</span>
+                        )}
+                      </td>
+                      <td className={`${tableClass.td} text-right whitespace-nowrap`}>
+                        <p className="tabular-nums">
+                          <span className="text-fg font-semibold">{s.submitted || 0}</span>
+                          <span className="text-subtle">/{e.studentCount || 0}</span>
+                        </p>
+                        {s.inProgress > 0 && e.phase !== 'live' && <p className={type.meta}>{s.inProgress} in progress</p>}
+                      </td>
+                      <td className={`${tableClass.td} ${HIDE_SM}`}>
+                        <RateBar value={s.avgPercent} />
+                      </td>
+                      <td className={`${tableClass.td} whitespace-nowrap ${HIDE_MD}`}>
+                        {!s.submitted ? (
+                          <span className="text-subtle">—</span>
+                        ) : e.scoring?.immediateScoreRelease ? (
+                          <span className="text-[11px] font-semibold text-ok">On submit</span>
+                        ) : (
+                          <span className={`text-[11px] font-semibold ${e.released ? 'text-ok' : 'text-warn'}`}>{e.released ? 'Released' : 'Not released'}</span>
+                        )}
+                      </td>
+                      <td className={`${tableClass.td} whitespace-nowrap`}>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="soft"
+                            icon={e.phase === 'draft' ? Pencil : BarChart3}
+                            className="hidden sm:flex"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              openRow(e);
+                            }}
+                          >
+                            {e.phase === 'draft' ? 'Edit' : e.phase === 'live' ? 'Monitor' : 'Report'}
+                          </Button>
+                          <ActionMenu label={`Actions for ${e.title}`} items={rowActions(e)} />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </Table>
+            <Pagination page={current} pageSize={PAGE_SIZE} total={filtered.length} onChange={(p) => update({ page: p }, { resetPage: false })} />
+          </>
         )}
-      </div>
+      </section>
+
+      {newOpen && (
+        <NewExamModal
+          open
+          onClose={() => setNewOpen(false)}
+          onPick={(id) => navigate(`${base}/classes/${id}/exams/create`)}
+          onTemplates={() => navigate(`${base}/exams/templates`)}
+        />
+      )}
     </div>
   );
-};
-
-export default ExamManagement;
-
+}

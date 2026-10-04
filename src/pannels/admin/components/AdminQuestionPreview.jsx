@@ -1,531 +1,275 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { adminSearchQuestionsById, getDraftQuestion, teacherTestQuestion } from '../../../common/services/api';
-import QuestionStatement from '../../teacher/components/QuestionStatement';
-import CodeEditor from '../../student/components/CodeEditor';
-import TestSolutionResults from '../../../common/components/TestSolutionResults';
-import TestSolutionLimitControls from '../../../common/components/TestSolutionLimitControls';
-import {
-  buildSolutionCodesFromQuestion,
-  hasSavedSolution,
-  solutionCodeForLanguage,
-} from '../../../common/utils/solutionCodes';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSelector } from 'react-redux';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Activity, AlertTriangle, ArrowLeft, Copy, Eye, FlaskConical, KeyRound, Link2, Pencil, RefreshCw, Share2, Trash2 } from 'lucide-react';
+import { adminDeleteQuestion, deleteDraftQuestion, getQuestionOverview } from '../../../common/services/api';
+import { Button, Card, StatusChip } from '../../../common/ui/primitives';
+import ActionMenu from '../../../common/ui/ActionMenu';
+import { type } from '../../../common/ui/format';
+import { confirmAction, notify } from '../../../common/ui/Toast';
+import { QUESTION_TYPES, errorText, plural } from './classDetails/helpers';
+import { DIFFICULTY_KIND, copyText, isRunnable, stripHtml } from './questionDetails/helpers';
+import DetailsPanel from './questionDetails/DetailsPanel';
+import AnswerKeyTab from './questionDetails/AnswerKeyTab';
+import TestSolutionTab from './questionDetails/TestSolutionTab';
+import UsageTab from './questionDetails/UsageTab';
+import ActivityTab from './questionDetails/ActivityTab';
+import StudentPreview from './questionDetails/StudentPreview';
 
-const DEFAULT_BACK = '/admin/questions';
+const OBJECT_ID = /^[0-9a-f]{24}$/i;
+
+/** Students only get starter code; older coding questions store it as templateCode. */
+function withStarterCode(q) {
+  if (!q || (q.type !== 'coding' && q.type !== 'codingWithDriver')) return q;
+  if (q.starterCode?.length || !q.templateCode?.length) return q;
+  return { ...q, starterCode: q.templateCode.map(({ language, code }) => ({ language, code })) };
+}
+
+function LoadingShell() {
+  return (
+    <div className="h-full flex flex-col gap-4 px-4 sm:px-5 py-5 animate-pulse">
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-xl bg-hover" />
+        <div className="h-6 w-72 rounded-lg bg-hover" />
+      </div>
+      <div className="flex-1 grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="rounded-2xl bg-surface border border-line min-h-80" />
+        <div className="rounded-2xl bg-surface border border-line min-h-80" />
+      </div>
+    </div>
+  );
+}
 
 const AdminQuestionPreview = () => {
   const { questionId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const returnTo =
-    typeof location.state?.returnTo === 'string' && location.state.returnTo.startsWith('/admin')
-      ? location.state.returnTo
-      : DEFAULT_BACK;
+  const [params, setParams] = useSearchParams();
 
-  const handleBack = () => {
-    navigate(returnTo);
-  };
-  const [question, setQuestion] = useState(null);
+  const user = useSelector((state) => state.auth.user);
+  const base = location.pathname.startsWith('/teacher') ? '/teacher' : '/admin';
+  const isAdmin = base === '/admin';
+  const [returnTo] = useState(() => {
+    const target = location.state?.returnTo;
+    return typeof target === 'string' && target.startsWith(base) ? target : `${base}/questions`;
+  });
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const [classId, setClassId] = useState(location.state?.classId || '');
-  const [solutionCodes, setSolutionCodes] = useState([]);
-  const [solutionLanguage, setSolutionLanguage] = useState('javascript');
-  const activeSolutionCode = solutionCodeForLanguage(solutionCodes, solutionLanguage);
-  const [isTestingSolution, setIsTestingSolution] = useState(false);
-  const [testResults, setTestResults] = useState(null);
-  const [activeTab, setActiveTab] = useState('preview');
-  const limitOptionsRef = useRef(null);
 
-  useEffect(() => {
-    setActiveTab('preview');
-  }, [questionId]);
-
-  useEffect(() => {
-    const runnable = ['coding', 'fillInTheBlanksCoding', 'codingWithDriver'];
-    if (question && !runnable.includes(question.type)) {
-      setActiveTab('preview');
-    }
-  }, [question]);
-
-  useEffect(() => {
-    console.log('[AdminQuestionPreview] Component mounted/updated', { 
-      questionId, 
-      questionIdType: typeof questionId,
-      questionIdLength: questionId?.length,
-      questionIdValid: questionId && questionId !== 'undefined' && questionId !== 'null',
-      urlParams: window.location.pathname
-    });
-    
-    const fetchQuestion = async () => {
-      // Validate questionId - check for undefined, null, empty string, or literal "undefined"/"null" strings
-      if (!questionId || 
-          questionId === 'undefined' || 
-          questionId === 'null' || 
-          (typeof questionId === 'string' && questionId.trim() === '') ||
-          questionId === undefined ||
-          questionId === null) {
-        console.error('[AdminQuestionPreview] Invalid questionId:', { 
-          questionId, 
-          type: typeof questionId,
-          pathname: window.location.pathname 
-        });
-        setError('Question ID is required. Please navigate from the question edit page.');
+  const load = useCallback(
+    async (silent = false) => {
+      if (!OBJECT_ID.test(questionId || '')) {
+        setError("This link doesn't point to a valid question.");
         setLoading(false);
         return;
       }
-      
-      // Check if questionId is a valid MongoDB ObjectId format (24 hex characters)
-      const objectIdPattern = /^[0-9a-fA-F]{24}$/;
-      if (!objectIdPattern.test(questionId)) {
-        console.error('[AdminQuestionPreview] Invalid questionId format:', questionId);
-        setError(`Invalid question ID format: ${questionId}. Please check the URL and try again.`);
-        setLoading(false);
-        return;
-      }
-      
-      console.log('[AdminQuestionPreview] Valid questionId received:', questionId);
-
+      if (silent) setRefreshing(true);
+      else setLoading(true);
       try {
-        setLoading(true);
+        const res = await getQuestionOverview(questionId);
+        setData(res.data);
         setError('');
-        console.log('[AdminQuestionPreview] Calling API with:', questionId);
-        
-        // Try to fetch as draft first
-        let fetchedQuestion = null;
-        try {
-          const draftResponse = await getDraftQuestion(questionId);
-          fetchedQuestion = draftResponse.data.question;
-          console.log('[AdminQuestionPreview] Fetched as draft');
-        } catch (draftErr) {
-          // If not a draft, fetch as regular question
-          console.log('[AdminQuestionPreview] Not a draft, fetching as regular question');
-          const response = await adminSearchQuestionsById(questionId);
-          fetchedQuestion = response?.data?.question;
-        }
-        
-        console.log('[AdminQuestionPreview] Fetched question:', fetchedQuestion);
-        
-        if (fetchedQuestion) {
-          setQuestion(fetchedQuestion);
-          setError('');
-          
-          const codes = buildSolutionCodesFromQuestion(fetchedQuestion);
-          setSolutionCodes(codes);
-          const defaultLang =
-            fetchedQuestion.solutionLanguage ||
-            (codes.find((s) => s.code?.trim())?.language) ||
-            fetchedQuestion.languages?.[0] ||
-            'javascript';
-          setSolutionLanguage(defaultLang);
-          
-          // Extract classId if available
-          const classEntry = fetchedQuestion.classes?.[0];
-          if (classEntry?.classId?._id) {
-            setClassId(classEntry.classId._id);
-          } else if (classEntry?.classId) {
-            setClassId(classEntry.classId);
-          } else if (Array.isArray(fetchedQuestion.classIds) && fetchedQuestion.classIds.length > 0) {
-            setClassId(fetchedQuestion.classIds[0]);
-          }
-        } else {
-          console.warn('[AdminQuestionPreview] No question in response');
-          setError('Question not found in response');
-        }
       } catch (err) {
-        console.error('[AdminQuestionPreview] Fetch error:', err);
-        console.error('[AdminQuestionPreview] Error type:', typeof err);
-        console.error('[AdminQuestionPreview] Error details:', {
-          message: err?.message,
-          response: err?.response?.data,
-          status: err?.response?.status,
-          statusText: err?.response?.statusText,
-          error: err?.error
-        });
-        
-        // Handle error message extraction
-        let errorMessage = 'Failed to fetch question';
-        try {
-          if (typeof err === 'string') {
-            errorMessage = err;
-          } else if (err?.message) {
-            errorMessage = err.message;
-          } else if (err?.response?.data?.error) {
-            errorMessage = err.response.data.error;
-          } else if (err?.response?.data?.message) {
-            errorMessage = err.response.data.message;
-          } else if (err?.error) {
-            errorMessage = typeof err.error === 'string' ? err.error : 'Failed to fetch question';
-          } else if (err?.response?.statusText) {
-            errorMessage = `${err.response.status}: ${err.response.statusText}`;
-          }
-        } catch (parseErr) {
-          console.error('[AdminQuestionPreview] Error parsing error message:', parseErr);
-          errorMessage = 'Failed to fetch question. Please check the console for details.';
-        }
-        
-        console.error('[AdminQuestionPreview] Setting error message:', errorMessage);
-        setError(errorMessage);
+        if (silent) notify(errorText(err, 'Failed to refresh'), 'error');
+        else setError(errorText(err, 'Failed to load question'));
       } finally {
         setLoading(false);
+        setRefreshing(false);
       }
-    };
-    
-    fetchQuestion();
-  }, [questionId]);
+    },
+    [questionId],
+  );
 
-  /** Ensure templateCode is visible as starterCode for previews (API may only persist template). */
-  const previewQuestion = useMemo(() => {
-    if (!question) return null;
-    if (question.type !== 'codingWithDriver' && question.type !== 'coding') return question;
-    const hasStarter = Array.isArray(question.starterCode) && question.starterCode.length > 0;
-    const hasTemplate = Array.isArray(question.templateCode) && question.templateCode.length > 0;
-    if (hasStarter || !hasTemplate) return question;
-    return {
-      ...question,
-      starterCode: question.templateCode.map((tc) => ({ language: tc.language, code: tc.code })),
-    };
-  }, [question]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const questionTypeLabel = useMemo(() => {
-    const map = {
-      singleCorrectMcq: 'Single choice',
-      multipleCorrectMcq: 'Multiple choice',
-      fillInTheBlanks: 'Fill in the blanks',
-      fillInTheBlanksCoding: 'Fill in the blanks (code)',
-      coding: 'Coding',
-      codingWithDriver: 'Coding (LeetCode-style)',
-    };
-    return map[previewQuestion?.type] || previewQuestion?.type || '—';
-  }, [previewQuestion?.type]);
+  const reload = useCallback(() => load(true), [load]);
+  const question = data?.question;
+  const previewQuestion = useMemo(() => withStarterCode(question), [question]);
+  const runnable = isRunnable(question);
 
-  if (loading) {
-    console.log('[AdminQuestionPreview] Rendering loading state');
+  const tabs = useMemo(() => {
+    if (!data) return [];
+    return [
+      { id: 'statement', label: 'Student view', icon: Eye },
+      { id: 'answer', label: 'Answer key', icon: KeyRound },
+      ...(runnable ? [{ id: 'test', label: 'Test solution', icon: FlaskConical }] : []),
+      { id: 'usage', label: 'Usage', icon: Share2, count: data.classes.length + data.exams.length },
+      { id: 'activity', label: 'Activity', icon: Activity, count: data.stats.submissions },
+    ];
+  }, [data, runnable]);
+
+  const tab = tabs.some((t) => t.id === params.get('tab')) ? params.get('tab') : 'statement';
+  const openTab = (id) =>
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (id === 'statement') next.delete('tab');
+        else next.set('tab', id);
+        return next;
+      },
+      { replace: true, state: location.state },
+    );
+
+  const goBack = () => navigate(returnTo);
+
+  if (loading) return <LoadingShell />;
+
+  if (error || !question) {
     return (
-      <div className="fixed inset-0 bg-gray-600 bg-opacity-60 flex items-center justify-center z-50">
-        <div className="bg-white/90 backdrop-blur-sm p-8 rounded-2xl shadow-xl max-w-sm w-full">
-          <div className="flex items-center justify-center">
-            <svg
-              className="animate-spin h-10 w-10 text-indigo-600"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              ></circle>
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-            <span className="ml-4 text-lg font-semibold text-gray-800">Loading...</span>
+      <div className="h-full flex items-center justify-center px-4">
+        <Card className="max-w-sm w-full p-6 text-center space-y-3">
+          <span className="mx-auto w-10 h-10 rounded-xl bg-bad-soft text-bad flex items-center justify-center">
+            <AlertTriangle className="w-5 h-5" />
+          </span>
+          <p className={type.cardTitle}>Couldn't open this question</p>
+          <p className={type.body}>{error || 'Question not found.'}</p>
+          <div className="flex justify-center gap-2 pt-1">
+            <Button variant="secondary" icon={ArrowLeft} onClick={goBack}>
+              Back
+            </Button>
+            {OBJECT_ID.test(questionId || '') && (
+              <Button icon={RefreshCw} onClick={() => load()}>
+                Try again
+              </Button>
+            )}
           </div>
-        </div>
+        </Card>
       </div>
     );
   }
 
-  if (error) {
-    console.log('[AdminQuestionPreview] Rendering error state:', error);
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6 p-4 rounded-xl bg-red-50/80 backdrop-blur-sm border border-red-200 shadow-sm">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <svg
-                className="h-6 w-6 text-red-500"
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm font-semibold text-red-800">{error}</p>
-            </div>
-          </div>
-        </div>
-      </div>
+  const title = stripHtml(question.title) || 'Untitled question';
+  const isDraft = question.isDraft || question.status === 'draft';
+  const testClassId = location.state?.classId || data.classes[0]?._id || null;
+
+  const deleteQuestion = async () => {
+    const usage = [
+      data.classes.length && plural(data.classes.length, 'class', 'classes'),
+      data.exams.length && plural(data.exams.length, 'exam'),
+    ].filter(Boolean);
+    const ok = await confirmAction(
+      `"${title}" will be permanently deleted${usage.length ? `. It is used in ${usage.join(' and ')}` : ''}` +
+        `${data.stats.submissions ? `, and ${plural(data.stats.submissions, 'student submission')} will be lost` : ''}. This cannot be undone.`,
+      { title: 'Delete question', confirmLabel: 'Delete question', danger: true },
     );
-  }
-
-  if (!previewQuestion) {
-    console.log('[AdminQuestionPreview] Rendering question not found state');
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
-          <p className="text-center text-gray-800 font-semibold">Question not found</p>
-        </div>
-      </div>
-    );
-  }
-
-  const resolveClassId = (questionData) => {
-    if (!questionData) return '';
-    const classEntry = questionData.classes?.[0];
-    if (classEntry?.classId?._id) return classEntry.classId._id;
-    if (classEntry?.classId) return classEntry.classId;
-    if (Array.isArray(questionData.classIds) && questionData.classIds.length > 0) return questionData.classIds[0];
-    return '';
-  };
-
-  const handleSolutionCodeChange = (code) => {
-    setSolutionCodes((prev) =>
-      prev.map((s) =>
-        s.language?.toLowerCase() === solutionLanguage?.toLowerCase() ? { ...s, code } : s
-      )
-    );
-  };
-
-  // Test solution against test cases
-  const handleTestSolution = async () => {
-    const q = previewQuestion;
-    if (!activeSolutionCode.trim()) {
-      alert('Please write a solution first');
-      return;
-    }
-    if (!q.testCases || q.testCases.length === 0) {
-      alert('Please add at least one test case');
-      return;
-    }
-    if (q.testCases.some(tc => !tc.input?.trim() || !tc.expectedOutput?.trim())) {
-      alert('All test cases must have input and expected output');
-      return;
-    }
-
-    // Check if question exists
-    if (!q._id) {
-      alert('Question ID is required to test the solution');
-      return;
-    }
-
-    // Check if it's a coding question
-    if (q.type !== 'coding' && q.type !== 'fillInTheBlanksCoding' && q.type !== 'codingWithDriver') {
-      alert('Solution testing is only available for coding questions');
-      return;
-    }
-
-    setIsTestingSolution(true);
-    setTestResults(null);
-
+    if (!ok) return;
     try {
-      console.log('[AdminQuestionPreview] Testing solution for question:', q._id);
-      
-      // Use the first classId if available, otherwise null (for testing purposes)
-      const fallbackClassId = classId || resolveClassId(q);
-      const classIdForTest = fallbackClassId || null;
-      
-      // Call the teacher test API
-      const response = await teacherTestQuestion(
-        q._id,
-        activeSolutionCode,
-        classIdForTest,
-        solutionLanguage,
-        limitOptionsRef.current || {}
-      );
-
-      const { testResults: results, passedTestCases, totalTestCases, isCorrect, publicTestCases, hiddenTestCases } = response.data;
-
-      setTestResults({
-        message: isCorrect 
-          ? `✅ All ${totalTestCases} test cases passed! (${publicTestCases} public, ${hiddenTestCases} hidden)`
-          : `⚠️ ${passedTestCases}/${totalTestCases} test cases passed (${publicTestCases} public, ${hiddenTestCases} hidden)`,
-        results: results,
-        totalTestCases,
-        passedTestCases,
-        isCorrect,
-        publicTestCases,
-        hiddenTestCases
-      });
+      await (isAdmin ? adminDeleteQuestion(question._id) : deleteDraftQuestion(question._id));
+      notify('Question deleted', 'success');
+      goBack();
     } catch (err) {
-      console.error('[AdminQuestionPreview] Error testing solution:', err);
-      const errorMessage = err.response?.data?.error || err.message || 'Failed to test solution';
-      setTestResults({
-        error: true,
-        message: `Error: ${errorMessage}`
-      });
-    } finally {
-      setIsTestingSolution(false);
+      notify(errorText(err, 'Failed to delete question'), 'error');
     }
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="flex items-center mb-8">
+    <div className="lg:h-full flex flex-col gap-4 px-4 sm:px-5 py-5">
+      <header className="shrink-0 flex flex-wrap items-center gap-x-3 gap-y-2">
         <button
           type="button"
-          onClick={handleBack}
-          className="mr-4 p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200"
-          aria-label="Go back"
+          onClick={goBack}
+          className="w-9 h-9 shrink-0 rounded-xl border border-line bg-surface text-muted hover:text-fg hover:bg-hover flex items-center justify-center"
+          aria-label="Back"
+          title="Back"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-5 w-5 text-gray-600"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-          >
-            <path
-              fillRule="evenodd"
-              d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
-              clipRule="evenodd"
-            />
-          </svg>
+          <ArrowLeft className="w-4 h-4" />
         </button>
-        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight">
-          Student Preview
+        <h1 className={`${type.pageTitle} min-w-0 truncate max-w-full sm:max-w-[40rem]`} title={title}>
+          {title}
         </h1>
-      </div>
-      
-      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
-        <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-          <p className="text-sm text-blue-800">
-            <strong>Preview Mode:</strong> This is how students will see this question. You can test the interface but submissions are disabled.
-          </p>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <StatusChip kind="ai">{QUESTION_TYPES[question.type] || question.type}</StatusChip>
+          {question.difficulty && <StatusChip kind={DIFFICULTY_KIND[question.difficulty]}>{question.difficulty}</StatusChip>}
+          {question.points != null && <StatusChip kind="neutral">{question.points} pts</StatusChip>}
+          {isDraft && <StatusChip kind="warning">Draft</StatusChip>}
+          {question.isExamOnly && <StatusChip kind="info">Exam-only</StatusChip>}
         </div>
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="ghost"
+            icon={RefreshCw}
+            className={`h-9 ${refreshing ? '[&>svg]:animate-spin' : ''}`}
+            onClick={reload}
+            disabled={refreshing}
+            aria-label="Refresh"
+            title="Refresh"
+          />
+          <Button variant="secondary" icon={Pencil} className="h-9" onClick={() => navigate(`${base}/questions/${question._id}/edit`)}>
+            Edit
+          </Button>
+          <ActionMenu
+            label="Question actions"
+            items={[
+              { label: 'Copy question ID', icon: Copy, onClick: () => copyText(question._id, 'Question ID copied') },
+              { label: 'Copy link', icon: Link2, onClick: () => copyText(window.location.href.split('?')[0], 'Link copied') },
+              ...(isAdmin || (isDraft && String(question.createdBy?._id || question.createdBy) === String(user?.id || user?._id))
+                ? [{ divider: true }, { label: isDraft ? 'Delete draft' : 'Delete question', icon: Trash2, tone: 'danger', onClick: deleteQuestion }]
+                : []),
+            ]}
+          />
+        </div>
+      </header>
 
-        <div className="mb-6 flex flex-wrap gap-2 items-center text-sm">
-          <span className="px-3 py-1.5 rounded-full font-semibold bg-slate-800 text-white">{questionTypeLabel}</span>
-          {previewQuestion?.isDraft || previewQuestion?.status === 'draft' ? (
-            <span className="px-3 py-1.5 rounded-full font-medium bg-amber-100 text-amber-900">Draft</span>
-          ) : null}
-          {previewQuestion?.languages?.length > 0 && (
-            <span className="px-3 py-1.5 rounded-full font-medium bg-indigo-100 text-indigo-900">
-              Languages: {previewQuestion.languages.join(', ')}
-            </span>
-          )}
-          {previewQuestion?.testCases?.length > 0 && (
-            <span className="px-3 py-1.5 rounded-full font-medium bg-gray-100 text-gray-800">
-              {previewQuestion.testCases.length} test case{previewQuestion.testCases.length === 1 ? '' : 's'}
-            </span>
-          )}
-        </div>
-        
-        {/* Tabs Navigation - Only show Test Solution tab for coding questions */}
-        {(previewQuestion.type === 'coding' || previewQuestion.type === 'fillInTheBlanksCoding' || previewQuestion.type === 'codingWithDriver') && (
-          <div className="mb-6 border-b border-gray-200">
-            <nav className="flex space-x-8" aria-label="Tabs">
-              <button
-                onClick={() => setActiveTab('preview')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                  activeTab === 'preview'
-                    ? 'border-indigo-500 text-indigo-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                Preview
-              </button>
-              <button
-                onClick={() => setActiveTab('test')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                  activeTab === 'test'
-                    ? 'border-indigo-500 text-indigo-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                Test Solution
-              </button>
-            </nav>
-          </div>
-        )}
-        
-        {/* Tab Content */}
-        {activeTab === 'preview' && (
-        <QuestionStatement isPreview={true} question={previewQuestion} />
-        )}
-        
-        {/* Test Solution Tab - Only for coding questions */}
-        {activeTab === 'test' && (previewQuestion.type === 'coding' || previewQuestion.type === 'fillInTheBlanksCoding' || previewQuestion.type === 'codingWithDriver') && (
-          <div>
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">Test Solution</h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Solution Language</label>
-                <select
-                  value={solutionLanguage}
-                  onChange={(e) => setSolutionLanguage(e.target.value)}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
-                >
-                  {(previewQuestion.languages?.length > 0
-                    ? previewQuestion.languages
-                    : solutionCodes.map((s) => s.language)
-                  ).map((lang) => (
-                    <option key={lang} value={lang}>
-                      {lang.charAt(0).toUpperCase() + lang.slice(1)}
-                      {hasSavedSolution(solutionCodes, lang) ? '' : ' (no solution saved)'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Solution Code</label>
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                  <CodeEditor
-                    key={`solution-${solutionLanguage}-${previewQuestion._id}`}
-                    value={activeSolutionCode}
-                    onChange={handleSolutionCodeChange}
-                    language={solutionLanguage}
-                    disabled={false}
-                    isFillInTheBlanks={false}
-                  />
-                </div>
-                <p className="mt-2 text-xs text-gray-500">
-                  Switch language to view or edit each saved solution. You can test the code shown for the selected language.
-                </p>
-              </div>
-              <TestSolutionLimitControls
-                question={previewQuestion}
-                testResults={testResults}
-                optionsRef={limitOptionsRef}
-                getBenchmarkPayload={() => ({
-                  questionId: previewQuestion._id,
-                  answer: activeSolutionCode,
-                  classId: classId || resolveClassId(previewQuestion) || null,
-                  language: solutionLanguage,
-                })}
-                onSaved={(timeLimit, memoryLimit) => {
-                  setQuestion((prev) => (prev ? { ...prev, timeLimit, memoryLimit } : prev));
-                }}
-              />
-              <div className="flex items-center gap-3">
+      <div className="flex-1 lg:min-h-0 grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <Card className="lg:min-h-0 flex flex-col overflow-hidden">
+          <nav className="shrink-0 flex gap-1 overflow-x-auto border-b border-line px-2" role="tablist" aria-label="Question sections">
+            {tabs.map((t) => {
+              const Icon = t.icon;
+              const active = t.id === tab;
+              return (
                 <button
+                  key={t.id}
                   type="button"
-                  onClick={handleTestSolution}
-                  disabled={isTestingSolution || !activeSolutionCode.trim() || !previewQuestion.testCases || previewQuestion.testCases.length === 0 || !previewQuestion._id}
-                  className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => openTab(t.id)}
+                  className={`relative flex items-center gap-1.5 px-3 py-3 text-xs font-semibold whitespace-nowrap transition ${
+                    active ? 'text-fg' : 'text-muted hover:text-fg'
+                  }`}
                 >
-                  {isTestingSolution ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Testing...
-                    </>
-                  ) : (
-                    'Test Solution'
+                  <Icon className="w-3.5 h-3.5" />
+                  {t.label}
+                  {t.count != null && (
+                    <span className={`px-1.5 rounded-md text-[10px] tabular-nums ${active ? 'bg-accent-soft text-accent-ink' : 'bg-hover text-muted'}`}>
+                      {t.count}
+                    </span>
                   )}
+                  {active && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-accent" />}
                 </button>
-              </div>
-              {testResults && <TestSolutionResults testResults={testResults} />}
-            </div>
+              );
+            })}
+          </nav>
+
+          <div className="flex-1 lg:min-h-0 lg:overflow-y-auto p-4 sm:p-5">
+            {tab === 'statement' && <StudentPreview key={question._id} question={previewQuestion} />}
+            {tab === 'answer' && <AnswerKeyTab key={question._id} question={question} />}
+            {tab === 'test' && (
+              <TestSolutionTab
+                key={question._id}
+                question={question}
+                classId={testClassId}
+                onLimitsSaved={(timeLimit, memoryLimit) =>
+                  setData((prev) => ({ ...prev, question: { ...prev.question, timeLimit, memoryLimit } }))
+                }
+              />
+            )}
+            {tab === 'usage' && (
+              <UsageTab base={base} canRemove={isAdmin} question={question} classes={data.classes} exams={data.exams} templateCount={data.templateCount} reload={reload} />
+            )}
+            {tab === 'activity' && <ActivityTab question={question} stats={data.stats} recent={data.recentSubmissions} />}
           </div>
-        )}
+        </Card>
+
+        <aside className="lg:min-h-0 lg:overflow-y-auto">
+          <DetailsPanel question={question} classes={data.classes} exams={data.exams} stats={data.stats} templateCount={data.templateCount} />
+        </aside>
       </div>
     </div>
   );
 };
 
 export default AdminQuestionPreview;
-

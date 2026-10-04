@@ -2,6 +2,18 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const ThemeContext = createContext();
 
+const STORAGE_KEY = 'theme';
+const systemQuery = () => window.matchMedia?.('(prefers-color-scheme: light)');
+
+function readSavedTheme() {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  return saved === 'light' || saved === 'dark' ? saved : null;
+}
+
+function systemTheme() {
+  return systemQuery()?.matches ? 'light' : 'dark';
+}
+
 export const useTheme = () => {
   const context = useContext(ThemeContext);
   if (!context) {
@@ -11,38 +23,39 @@ export const useTheme = () => {
 };
 
 export const ThemeProvider = ({ children }) => {
-  const [theme, setTheme] = useState(() => {
-    // Check localStorage first, then system preference
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme) {
-      return savedTheme;
-    }
-    
-    // Check system preference
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      return 'dark';
-    }
-    
-    return 'light';
-  });
+  const [theme, setTheme] = useState(() => readSavedTheme() || systemTheme());
 
   useEffect(() => {
     const root = document.documentElement;
     root.setAttribute('data-theme', theme);
     root.classList.toggle('dark', theme === 'dark');
     root.style.colorScheme = theme;
-    localStorage.setItem('theme', theme);
   }, [theme]);
 
+  // Follow the OS setting until the user picks a theme explicitly.
+  useEffect(() => {
+    const query = systemQuery();
+    if (!query) return undefined;
+    const onChange = () => {
+      if (!readSavedTheme()) setTheme(systemTheme());
+    };
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, []);
+
   const toggleTheme = () => {
-    setTheme(prevTheme => prevTheme === 'light' ? 'dark' : 'light');
+    setTheme((prevTheme) => {
+      const next = prevTheme === 'light' ? 'dark' : 'light';
+      localStorage.setItem(STORAGE_KEY, next);
+      return next;
+    });
   };
 
   const value = {
     theme,
     toggleTheme,
     isDark: theme === 'dark',
-    isLight: theme === 'light'
+    isLight: theme === 'light',
   };
 
   return (
@@ -51,15 +64,3 @@ export const ThemeProvider = ({ children }) => {
     </ThemeContext.Provider>
   );
 };
-
-
-
-
-
-
-
-
-
-
-
-

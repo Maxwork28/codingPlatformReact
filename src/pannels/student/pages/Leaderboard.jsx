@@ -1,73 +1,76 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import LeaderboardTable from '../../../common/components/LeaderboardTable';
-import StudentBackNav from '../components/StudentBackNav';
+import { useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Trophy } from 'lucide-react';
 import { getLeaderboard } from '../../../common/services/api';
+import { Button, EmptyState, Table } from '../../../common/ui/primitives';
+import { table as tableClass, type } from '../../../common/ui/format';
+
+const COLUMNS = [
+  { label: 'Rank' },
+  { label: 'Student' },
+  { label: 'Solved', className: 'text-right' },
+  { label: 'First solved', className: 'hidden md:table-cell' },
+  { label: 'Score', className: 'hidden sm:table-cell text-right' },
+];
 
 const Leaderboard = () => {
   const { classId } = useParams();
-  const [leaderboard, setLeaderboard] = useState([]);
+  const navigate = useNavigate();
+  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    const fetchLeaderboard = async () => {
-      if (!classId) {
-        setError('Class ID is required');
-        setLoading(false);
-        return;
-      }
-      try {
-        const response = await getLeaderboard(classId);
-        setLeaderboard(response.data.leaderboard || []);
-        setLoading(false);
-      } catch (err) {
-        setError(typeof err === 'string' ? err : err?.message || 'Failed to fetch leaderboard');
-        setLoading(false);
-      }
-    };
-    fetchLeaderboard();
+    if (!classId) {
+      setError('Class ID is required');
+      setLoading(false);
+      return;
+    }
+    getLeaderboard(classId)
+      .then((res) => setRows(res.data.leaderboard || []))
+      .catch((err) => setError(typeof err === 'string' ? err : 'Failed to load leaderboard'))
+      .finally(() => setLoading(false));
   }, [classId]);
 
-  if (loading) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-4">
-          <StudentBackNav fallbackTo={classId ? `/student/classes/${classId}` : '/student'} />
-        </div>
-        <div className="flex justify-center items-center h-64">
-          <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-        </div>
-      </div>
-    );
-  }
+  const back = classId ? `/student/classes/${classId}` : '/student';
 
   if (error) {
     return (
-      <div className="max-w-4xl mx-auto p-6">
-        <div className="mb-4">
-          <StudentBackNav fallbackTo={classId ? `/student/classes/${classId}` : '/student'} />
-        </div>
-        <div className="flex items-center p-4 bg-red-50/80 rounded-xl shadow-sm border border-red-200">
-          <svg className="h-6 w-6 text-red-500 mr-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-          </svg>
-          <p className="text-sm text-red-700 font-semibold">Error: {error}</p>
-        </div>
+      <div className="px-4 sm:px-5 py-6">
+        <EmptyState icon={Trophy} title="Leaderboard unavailable" message={error} action={<Button variant="secondary" onClick={() => navigate(back)}>Back</Button>} />
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-4">
-        <StudentBackNav fallbackTo={classId ? `/student/classes/${classId}` : '/student'} />
-      </div>
-      <h2 className="text-2xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Top 10 Leaderboard</h2>
-      <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
-        Ranked by problems solved (first-solved time as tiebreaker)
-      </p>
-      <LeaderboardTable leaderboard={leaderboard} />
+    <div className="h-full flex flex-col px-4 sm:px-5 py-5">
+      <header className="shrink-0 flex items-center gap-2 mb-3">
+        <Button variant="ghost" icon={ArrowLeft} className="h-9 w-9 justify-center p-0!" onClick={() => navigate(back)} aria-label="Back" />
+        <h1 className={type.pageTitle}>Leaderboard</h1>
+      </header>
+      {loading ? (
+        <div className="flex-1 grid place-items-center">
+          <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : rows.length === 0 ? (
+        <EmptyState icon={Trophy} title="No rankings yet" message="Solve published questions to appear here." />
+      ) : (
+        <Table columns={COLUMNS} fill>
+          {rows.map((row, index) => (
+            <tr key={row._id || row.studentId?._id || index} className={tableClass.row}>
+              <td className={tableClass.td}>{row.rank || index + 1}</td>
+              <td className={tableClass.td}>
+                <p className="text-sm font-semibold text-fg">{row.studentId?.name || 'Unknown'}</p>
+              </td>
+              <td className={`${tableClass.td} text-right tabular-nums`}>{row.problemsSolved ?? 0}</td>
+              <td className={`${tableClass.td} hidden md:table-cell text-body`}>
+                {row.firstSolvedAt ? new Date(row.firstSolvedAt).toLocaleString() : '—'}
+              </td>
+              <td className={`${tableClass.td} hidden sm:table-cell text-right tabular-nums`}>{row.totalScore || 0}</td>
+            </tr>
+          ))}
+        </Table>
+      )}
     </div>
   );
 };

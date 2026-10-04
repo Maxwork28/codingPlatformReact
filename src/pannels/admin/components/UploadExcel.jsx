@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { uploadExcel } from '../../common/services/api';
-import { DocumentArrowUpIcon } from '@heroicons/react/24/outline';
+import { FileUpIcon } from 'lucide-react';
 
 const UploadExcel = () => {
   const [file, setFile] = useState(null);
@@ -40,24 +40,24 @@ const UploadExcel = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="w-full px-4 sm:px-5 py-8">
       <div className="mb-10">
-        <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight">
+        <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-accent to-accent-hover tracking-tight">
           Bulk User Upload
         </h2>
-        <p className="mt-1 text-sm text-gray-500">Upload an Excel file to add multiple users at once.</p>
+        <p className="mt-1 text-sm text-muted">Upload an Excel file to add multiple users at once.</p>
       </div>
 
-      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 p-6">
+      <div className="bg-surface backdrop-blur-sm rounded-2xl shadow-lg border border-line p-6">
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Role Selection */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">User Role</label>
+              <label className="block text-sm font-medium text-body mb-2">User Role</label>
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
-                className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="w-full rounded-lg border-line-strong shadow-sm focus:border-accent focus:ring-accent sm:text-sm"
               >
                 <option value="student">Student</option>
                 <option value="teacher">Teacher</option>
@@ -66,15 +66,15 @@ const UploadExcel = () => {
 
             {/* File Upload */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Excel File</label>
+              <label className="block text-sm font-medium text-body mb-2">Excel File</label>
               <div className="flex items-center justify-center w-full">
                 <label
                   htmlFor="fileInput"
-                  className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors"
+                  className="flex flex-col items-center justify-center w-full h-32 border-2 border-line-strong border-dashed rounded-lg cursor-pointer bg-inset hover:bg-hover transition-colors"
                 >
                   <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                    <DocumentArrowUpIcon className="h-8 w-8 text-gray-400" />
-                    <p className="mt-2 text-sm text-gray-500">
+                    <FileUpIcon className="h-8 w-8 text-muted" />
+                    <p className="mt-2 text-sm text-muted">
                       {file ? file.name : 'Drag and drop or click to select Excel file'}
                     </p>
                   </div>
@@ -96,14 +96,14 @@ const UploadExcel = () => {
             <button
               type="submit"
               disabled={isUploading}
-              className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white ${
-                isUploading ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
-              } focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300`}
+              className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-on-accent ${
+                isUploading ? 'bg-accent/60 cursor-not-allowed' : 'bg-accent hover:bg-accent-hover'
+              } focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 transition-all duration-300`}
             >
               {isUploading ? (
                 <>
                   <svg
-                    className="animate-spin h-5 w-5 mr-2 text-white"
+                    className="animate-spin h-5 w-5 mr-2 text-on-accent"
                     xmlns="http://www.w3.org/2000/svg"
                     fill="none"
                     viewBox="0 0 24 24"
@@ -133,10 +133,10 @@ const UploadExcel = () => {
 
         {/* Feedback Messages */}
         {message && (
-          <div className="mt-6 p-4 bg-green-50/80 backdrop-blur-sm rounded-xl shadow-sm border border-green-200">
+          <div className="mt-6 p-4 bg-ok-soft backdrop-blur-sm rounded-xl shadow-sm border border-ok-line">
             <div className="flex items-start">
               <svg
-                className="h-6 w-6 text-green-500 mr-3 flex-shrink-0 mt-0.5"
+                className="h-6 w-6 text-ok mr-3 flex-shrink-0 mt-0.5"
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 20 20"
                 fill="currentColor"
@@ -147,12 +147,12 @@ const UploadExcel = () => {
                   clipRule="evenodd"
                 />
               </svg>
-              <div className="text-sm text-green-800 space-y-2">
+              <div className="text-sm text-ok space-y-2">
                 <p className="font-semibold">{message}</p>
                 {uploadSummary?.skipped?.length > 0 && (
                   <div>
-                    <p className="font-medium text-green-900">Skipped rows</p>
-                    <ul className="list-disc pl-5 mt-1 text-green-800/90">
+                    <p className="font-medium text-ok">Skipped rows</p>
+                    <ul className="list-disc pl-5 mt-1 text-ok">
                       {uploadSummary.skipped.map((s, i) => (
                         <li key={`${s.email}-${i}`}>
                           {s.email}
@@ -167,7 +167,7 @@ const UploadExcel = () => {
                   </div>
                 )}
                 {uploadSummary?.invalid?.length > 0 && (
-                  <p className="text-green-800/90">
+                  <p className="text-ok">
                     Invalid rows (missing name, email, or number): {uploadSummary.invalid.length}
                   </p>
                 )}
@@ -176,9 +176,9 @@ const UploadExcel = () => {
           </div>
         )}
         {error && (
-          <div className="mt-6 flex items-center p-4 bg-red-50/80 backdrop-blur-sm rounded-xl shadow-sm border border-red-200">
+          <div className="mt-6 flex items-center p-4 bg-bad-soft backdrop-blur-sm rounded-xl shadow-sm border border-bad-line">
             <svg
-              className="h-6 w-6 text-red-500 mr-3"
+              className="h-6 w-6 text-bad mr-3"
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 20 20"
               fill="currentColor"
@@ -189,14 +189,14 @@ const UploadExcel = () => {
                 clipRule="evenodd"
               />
             </svg>
-            <p className="text-sm font-semibold text-red-800">{error}</p>
+            <p className="text-sm font-semibold text-bad">{error}</p>
           </div>
         )}
 
         {/* Instructions */}
-        <div className="mt-6 bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-3">File Format Requirements</h3>
-          <ul className="list-disc pl-5 space-y-1 text-sm text-gray-600">
+        <div className="mt-6 bg-surface backdrop-blur-sm rounded-2xl shadow-lg border border-line p-6">
+          <h3 className="text-lg font-semibold text-fg mb-3">File Format Requirements</h3>
+          <ul className="list-disc pl-5 space-y-1 text-sm text-muted">
             <li>First row should contain column headers</li>
             <li>
               Required columns: <strong>name</strong>, <strong>email</strong>, <strong>number</strong>

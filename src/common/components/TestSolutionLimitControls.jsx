@@ -167,12 +167,12 @@ const TestSolutionLimitControls = ({
   };
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
+    <div className="rounded-lg border border-line bg-inset p-4 space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <label className="flex items-start gap-2 text-sm text-gray-800 cursor-pointer">
+        <label className="flex items-start gap-2 text-sm text-fg cursor-pointer">
           <input
             type="checkbox"
-            className="mt-0.5 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+            className="mt-0.5 h-4 w-4 text-accent-ink focus:ring-accent border-line-strong rounded"
             checked={setLimits}
             onChange={(e) => {
               setSetLimits(e.target.checked);
@@ -181,7 +181,7 @@ const TestSolutionLimitControls = ({
           />
           <span>
             <span className="font-semibold">Set time and memory limits</span>
-            <span className="block text-xs text-gray-500 mt-0.5">
+            <span className="block text-xs text-muted mt-0.5">
               Leave unchecked to keep the current question limits ({savedTime}s / {savedMemory} MB).
             </span>
           </span>
@@ -190,21 +190,21 @@ const TestSolutionLimitControls = ({
           type="button"
           onClick={handleMeasureAverages}
           disabled={measuring}
-          className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+          className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold text-on-accent bg-accent hover:bg-accent-hover disabled:opacity-50"
         >
           {measuring ? 'Running 10 times...' : 'Measure TLE & memory (10 runs)'}
         </button>
       </div>
 
       {average && (
-        <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 space-y-2">
-          <p className="text-xs text-indigo-900">
+        <div className="rounded-lg border border-accent-line bg-accent-soft px-3 py-2 space-y-2">
+          <p className="text-xs text-accent-ink">
             10-run average: <strong>{average.avgTimeMs ?? '—'} ms</strong>,{' '}
             <strong>{average.avgMemoryKb ?? '—'} KB</strong>
             {' → question limits '}
             <strong>{average.timeLimit} seconds</strong> / <strong>{average.memoryLimit} MB</strong>
           </p>
-          <div className="text-xs text-indigo-900/90 space-y-1 font-mono bg-white/70 rounded-md px-2 py-2">
+          <div className="text-xs text-accent-ink space-y-1 font-mono bg-surface rounded-md px-2 py-2">
             <p>
               Time: {average.avgTimeMs ?? '—'} ms ÷ 1000 ={' '}
               {Number.isFinite(Number(average.avgTimeMs))
@@ -225,7 +225,7 @@ const TestSolutionLimitControls = ({
           <button
             type="button"
             onClick={applyAveragesToFields}
-            className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700"
+            className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold text-on-accent bg-accent hover:bg-accent-hover"
           >
             Set average time & memory limits
           </button>
@@ -236,7 +236,7 @@ const TestSolutionLimitControls = ({
         <div className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Time limit (seconds, 0.1–5)</label>
+              <label className="block text-xs font-semibold text-body mb-1">Time limit (seconds, 0.1–5)</label>
               <input
                 type="text"
                 inputMode="decimal"
@@ -246,11 +246,11 @@ const TestSolutionLimitControls = ({
                   setTimeLimit(e.target.value);
                 }}
                 onBlur={() => setTimeLimit(interpretTimeSeconds(timeLimit))}
-                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                className="w-full px-3 py-2 rounded-lg border border-line text-sm focus:ring-2 focus:ring-accent focus:border-accent"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Memory limit (MB, 16–1024)</label>
+              <label className="block text-xs font-semibold text-body mb-1">Memory limit (MB, 16–1024)</label>
               <input
                 type="text"
                 inputMode="decimal"
@@ -260,11 +260,11 @@ const TestSolutionLimitControls = ({
                   setMemoryLimit(e.target.value);
                 }}
                 onBlur={() => setMemoryLimit(interpretMemoryMb(memoryLimit))}
-                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                className="w-full px-3 py-2 rounded-lg border border-line text-sm focus:ring-2 focus:ring-accent focus:border-accent"
               />
             </div>
           </div>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted">
             Paste the 10-run averages as-is: values above 5 are treated as milliseconds, values above 1024 as KB.
             Example: 61.6 → 0.1 s, 42126 → 42 MB.
           </p>
@@ -276,7 +276,7 @@ const TestSolutionLimitControls = ({
                 setTimeLimit(suggested.timeLimit);
                 setMemoryLimit(suggested.memoryLimit);
               }}
-              className="text-xs font-semibold text-indigo-700 hover:underline"
+              className="text-xs font-semibold text-accent-ink hover:underline"
             >
               Use last test: {suggested.timeLimit}s / {suggested.memoryLimit} MB
             </button>
@@ -290,7 +290,7 @@ const TestSolutionLimitControls = ({
             >
               {saving ? 'Saving...' : 'Save limits on question'}
             </button>
-            {saveMessage && <span className="text-xs text-gray-600">{saveMessage}</span>}
+            {saveMessage && <span className="text-xs text-muted">{saveMessage}</span>}
           </div>
         </div>
       )}

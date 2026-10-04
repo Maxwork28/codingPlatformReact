@@ -39,7 +39,7 @@ const PasteFullQuestion = ({ onApply }) => {
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="text-sm font-medium text-indigo-600 hover:text-indigo-800"
+          className="text-sm font-medium text-accent-ink hover:text-accent"
         >
           {open ? 'Hide' : 'Show paste box'}
         </button>
@@ -54,7 +54,7 @@ const PasteFullQuestion = ({ onApply }) => {
               setMessage('');
             }}
             rows={10}
-            className="w-full px-3 py-2 rounded-lg border font-mono text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            className="w-full px-3 py-2 rounded-lg border font-mono text-xs focus:ring-2 focus:ring-accent focus:border-accent"
             style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)', color: 'var(--text-primary)' }}
             placeholder={'Title\nSum of Two Numbers\nDifficulty\nEasy\nProblem Statement\n...\nSample Input 1\n2 3\nSample Output 1\n5\nExplanation 1\n2 + 3 = 5\nSample Input 2\n-1 4\nSample Output 2\n3\nExplanation 2\n-1 + 4 = 3\nPython Code\n...'}
           />
@@ -62,7 +62,7 @@ const PasteFullQuestion = ({ onApply }) => {
             <button
               type="button"
               onClick={() => handleParse(true)}
-              className="px-3 py-1.5 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
+              className="px-3 py-1.5 text-sm font-semibold text-on-accent bg-accent rounded-lg hover:bg-accent-hover"
             >
               Parse & fill form
             </button>
@@ -92,7 +92,7 @@ const PasteFullQuestion = ({ onApply }) => {
                     onApply(q);
                     setMessage(`Filled form: ${summarizePastedQuestion(q)}. Review the steps, then save.`);
                   }}
-                  className="text-left px-3 py-2 rounded-lg border text-sm hover:border-indigo-400"
+                  className="text-left px-3 py-2 rounded-lg border text-sm hover:border-accent"
                   style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--card-white)', color: 'var(--text-primary)' }}
                 >
                   {idx + 1}. {summarizePastedQuestion(q)}

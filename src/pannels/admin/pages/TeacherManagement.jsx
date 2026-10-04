@@ -1,459 +1,332 @@
-import React, { useState, useEffect } from 'react';
-import { getTeachers, manageTeacherPermission, deleteTeacher } from '../../../common/services/api';
-import { ShieldCheckIcon, TrashIcon } from '@heroicons/react/24/outline';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Copy, Mail, RefreshCw, Search, Trash2, Upload, Users, X } from 'lucide-react';
+import { deleteTeacher, getTeachers, manageTeacherPermission } from '../../../common/services/api';
+import { Button, EmptyState, Pagination, Switch, Table } from '../../../common/ui/primitives';
+import ActionMenu from '../../../common/ui/ActionMenu';
+import { inputClass, table as tableClass, type } from '../../../common/ui/format';
+import { confirmAction, notify } from '../../../common/ui/Toast';
+
+const PAGE_SIZE = 10;
+
+const PERMISSION_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'author', label: 'Can create' },
+  { id: 'viewer', label: 'View only' },
+];
+
+const HIDE_SM = 'hidden md:table-cell';
+
+const COLUMNS = [
+  { label: 'Teacher' },
+  { label: 'Classes', className: HIDE_SM },
+  { label: 'Questions', className: `text-right ${HIDE_SM}` },
+  { label: 'Can create questions' },
+  { label: '', key: 'actions' },
+];
+
+const initials = (name = '') =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0].toUpperCase())
+    .join('') || '?';
+
+const errorText = (err, fallback) => (typeof err === 'string' ? err : err?.message || fallback);
+
+function ClassChips({ classes = [], onOpen }) {
+  if (classes.length === 0) return <span className="text-subtle">No classes</span>;
+  const shown = classes.slice(0, 2);
+  const rest = classes.length - shown.length;
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {shown.map((c) => (
+        <button
+          key={c._id}
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen(c._id);
+          }}
+          className={`max-w-[160px] truncate rounded-md border px-1.5 py-0.5 text-[11px] transition hover:border-accent hover:text-fg ${
+            c.status === 'active' ? 'border-line bg-inset text-body' : 'border-line bg-inset text-subtle line-through'
+          }`}
+          title={c.status === 'active' ? c.name : `${c.name} (inactive)`}
+        >
+          {c.name}
+        </button>
+      ))}
+      {rest > 0 && (
+        <span className="text-[11px] text-muted" title={classes.slice(2).map((c) => c.name).join(', ')}>
+          +{rest} more
+        </span>
+      )}
+    </div>
+  );
+}
+
+function SkeletonRows() {
+  return Array.from({ length: 4 }, (_, i) => (
+    <tr key={i}>
+      {COLUMNS.map((c, j) => (
+        <td key={j} className={`${tableClass.td} ${c.className || ''}`}>
+          <div className="h-3 rounded bg-hover animate-pulse" style={{ width: j === 0 ? '70%' : '40%' }} />
+        </td>
+      ))}
+    </tr>
+  ));
+}
 
 const TeacherManagement = () => {
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
   const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
-  const [deleteModal, setDeleteModal] = useState({ open: false, teacher: null });
-  const [processing, setProcessing] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [busyId, setBusyId] = useState(null);
 
-  // Calculate pagination
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentTeachers = teachers.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(teachers.length / itemsPerPage);
+  const query = params.get('q') || '';
+  const permission = PERMISSION_FILTERS.some((f) => f.id === params.get('perm')) ? params.get('perm') : 'all';
+  const page = Math.max(1, Number(params.get('page')) || 1);
 
-  const fetchTeachers = async (search = '') => {
+  const updateParams = (changes, { resetPage = true } = {}) => {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        Object.entries(changes).forEach(([key, value]) => {
+          const isDefault = !value || (key === 'perm' && value === 'all') || (key === 'page' && value === 1);
+          if (isDefault) next.delete(key);
+          else next.set(key, String(value));
+        });
+        if (resetPage && !('page' in changes)) next.delete('page');
+        return next;
+      },
+      { replace: true },
+    );
+  };
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
     try {
-      setLoading(true);
-      const response = await getTeachers(search);
-      setTeachers(response.data.teachers);
+      const response = await getTeachers('');
+      setTeachers(response.data.teachers || []);
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to fetch teachers');
+      setLoadError(errorText(err, 'Failed to fetch teachers'));
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchTeachers('');
   }, []);
 
-  const handleSearch = (e) => {
-    e.preventDefault();
-    setCurrentPage(1); // Reset to first page on search
-    fetchTeachers(searchQuery);
-  };
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const handleClearFilter = () => {
-    setSearchQuery('');
-    setCurrentPage(1); // Reset to first page on clear
-    fetchTeachers('');
-  };
+  const counts = useMemo(() => {
+    const authors = teachers.filter((t) => t.canCreateQuestion).length;
+    return { all: teachers.length, author: authors, viewer: teachers.length - authors };
+  }, [teachers]);
 
-  const handlePageChange = (pageNumber) => {
-    setCurrentPage(pageNumber);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return teachers
+      .filter((t) => permission === 'all' || (permission === 'author' ? t.canCreateQuestion : !t.canCreateQuestion))
+      .filter((t) => !q || [t.name, t.email, ...(t.classes || []).map((c) => c.name)].some((v) => v?.toLowerCase().includes(q)));
+  }, [teachers, query, permission]);
 
-  const handlePermissionToggle = async (teacherId, canCreateQuestion) => {
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageRows = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const hasFilters = Boolean(query) || permission !== 'all';
+
+  const togglePermission = async (teacher, canCreateQuestion) => {
+    setBusyId(teacher._id);
+    setTeachers((list) => list.map((t) => (t._id === teacher._id ? { ...t, canCreateQuestion } : t)));
     try {
-      await manageTeacherPermission(teacherId, canCreateQuestion);
-      setTeachers(teachers.map((t) =>
-        t._id === teacherId ? { ...t, canCreateQuestion } : t
-      ));
+      await manageTeacherPermission(teacher._id, canCreateQuestion);
+      notify(
+        canCreateQuestion
+          ? `${teacher.name} can now create and edit questions`
+          : `${teacher.name} can no longer create or edit questions`,
+        'success',
+      );
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to update permission');
-    }
-  };
-
-  const handleDeleteClick = (teacher) => {
-    setDeleteModal({ open: true, teacher });
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!deleteModal.teacher?._id) return;
-    setProcessing(true);
-    try {
-      await deleteTeacher(deleteModal.teacher._id);
-      const remaining = teachers.filter((t) => t._id !== deleteModal.teacher._id);
-      setTeachers(remaining);
-      const nextTotalPages = Math.max(1, Math.ceil(remaining.length / itemsPerPage));
-      if (currentPage > nextTotalPages) {
-        setCurrentPage(nextTotalPages);
-      }
-      setDeleteModal({ open: false, teacher: null });
-    } catch (err) {
-      setError(err.response?.data?.error || err || 'Failed to delete teacher');
+      setTeachers((list) => list.map((t) => (t._id === teacher._id ? { ...t, canCreateQuestion: !canCreateQuestion } : t)));
+      notify(errorText(err, 'Failed to update permission'), 'error');
     } finally {
-      setProcessing(false);
+      setBusyId(null);
     }
   };
+
+  const removeTeacher = async (teacher) => {
+    const classCount = teacher.classes?.length || 0;
+    const ok = await confirmAction(
+      `${teacher.name} (${teacher.email}) will lose access` +
+        (classCount ? ` and be unassigned from ${classCount} class${classCount === 1 ? '' : 'es'}` : '') +
+        '. Classes, questions, exams and student work they created are kept.',
+      { title: 'Delete teacher', confirmLabel: 'Delete teacher', danger: true },
+    );
+    if (!ok) return;
+    setBusyId(teacher._id);
+    try {
+      await deleteTeacher(teacher._id);
+      setTeachers((list) => list.filter((t) => t._id !== teacher._id));
+      notify(`${teacher.name} deleted`, 'success');
+    } catch (err) {
+      notify(errorText(err, 'Failed to delete teacher'), 'error');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const copyEmail = async (email) => {
+    try {
+      await navigator.clipboard.writeText(email);
+      notify('Email copied', 'success');
+    } catch {
+      notify('Could not copy email', 'error');
+    }
+  };
+
+  const rowActions = (teacher) => [
+    { label: 'Copy email', icon: Copy, onClick: () => copyEmail(teacher.email) },
+    { label: 'Send email', icon: Mail, onClick: () => window.open(`mailto:${teacher.email}`) },
+    { divider: true },
+    { label: 'Delete teacher', icon: Trash2, tone: 'danger', onClick: () => removeTeacher(teacher) },
+  ];
+
+  const openClass = (id) => navigate(`/admin/classes/${id}`);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-10">
-        <h2 className="text-3xl font-bold tracking-tight mb-2" style={{ color: 'var(--text-heading)' }}>
-          Teacher Management
-        </h2>
-        <p className="mt-1 text-sm mb-8" style={{ color: 'var(--text-secondary)' }}>Manage teacher permissions and records.</p>
-      </div>
-
-      {/* Search and Filter */}
-      <div className="mb-6 rounded-2xl shadow-lg border p-6" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-        <form onSubmit={handleSearch} className="flex gap-2">
-          <div className="flex-1 relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <svg className="h-5 w-5" style={{ color: 'var(--text-secondary)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
+    <div className="h-full flex flex-col px-4 sm:px-5 py-5">
+      <section className="flex-1 min-h-0 flex flex-col gap-3">
+        <header className="shrink-0 flex flex-wrap items-center gap-2">
+          <h1 className={`${type.pageTitle} mr-2`}>Teachers</h1>
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted pointer-events-none" />
             <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by teacher name or email..."
-              className="w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500"
-              style={{ 
-                borderColor: 'var(--card-border)', 
-                backgroundColor: 'var(--background-light)', 
-                color: 'var(--text-primary)' 
-              }}
+              value={query}
+              onChange={(e) => updateParams({ q: e.target.value })}
+              placeholder="Search by name, email or class"
+              className={`${inputClass} h-9 pl-9 pr-8`}
+              aria-label="Search teachers"
             />
-          </div>
-          <button
-            type="submit"
-            className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-300"
-            style={{ backgroundColor: 'var(--primary-navy)' }}
-          >
-            Search
-          </button>
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={handleClearFilter}
-              className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold border transition-all duration-300"
-              style={{ 
-                color: 'var(--text-primary)', 
-                backgroundColor: 'var(--background-light)', 
-                borderColor: 'var(--card-border)' 
-              }}
-            >
-              Clear
-            </button>
-          )}
-        </form>
-      </div>
-
-      {loading ? (
-        <div className="flex justify-center items-center py-16 rounded-xl shadow-lg" style={{ backgroundColor: 'var(--card-white)', backdropFilter: 'blur(8px)' }}>
-          <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-        </div>
-      ) : error ? (
-        <div className="flex items-center p-4 mb-6 bg-red-50/80 backdrop-blur-sm rounded-xl shadow-sm border border-red-200">
-          <svg
-            className="h-6 w-6 text-red-500 mr-3"
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-          >
-            <path
-              fillRule="evenodd"
-              d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-              clipRule="evenodd"
-            />
-          </svg>
-          <p className="text-sm font-semibold text-red-800">{error}</p>
-        </div>
-      ) : (
-        <div className="rounded-2xl shadow-lg border p-6" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-          <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-heading)' }}>
-            Teachers ({teachers.length})
-            {searchQuery && <span className="text-sm font-normal ml-2" style={{ color: 'var(--text-secondary)' }}>(filtered by "{searchQuery}")</span>}
-          </h3>
-          
-          {teachers.length === 0 ? (
-            <div className="text-center py-12">
-              <svg
-                className="mx-auto h-14 w-14"
-                style={{ color: 'var(--text-secondary)' }}
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
+            {query && (
+              <button
+                type="button"
+                onClick={() => updateParams({ q: '' })}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-lg text-muted hover:text-fg"
+                aria-label="Clear search"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
-                />
-              </svg>
-              <p className="mt-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                {searchQuery ? `No teachers found matching "${searchQuery}"` : 'No teachers available'}
-              </p>
-              {searchQuery && (
-                <button
-                  onClick={handleClearFilter}
-                  className="mt-4 inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold border transition-all duration-300"
-                  style={{ 
-                    color: 'var(--text-primary)', 
-                    backgroundColor: 'var(--background-light)', 
-                    borderColor: 'var(--card-border)' 
-                  }}
-                >
-                  Clear Search
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-            <div className="overflow-x-auto">
-          <table className="min-w-full divide-y" style={{ borderColor: 'var(--card-border)' }}>
-            <thead style={{ backgroundColor: 'var(--background-light)' }}>
-              <tr>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  Teacher
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  Email
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  Permissions
-                </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y" style={{ borderColor: 'var(--card-border)' }}>
-              {currentTeachers.map((teacher) => (
-                <tr key={teacher._id}>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--background-light)', color: 'var(--text-primary)' }}>
-                        <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-                        </svg>
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex h-9 rounded-xl border border-line bg-inset p-0.5" role="tablist" aria-label="Filter by permission">
+            {PERMISSION_FILTERS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                role="tab"
+                aria-selected={permission === f.id}
+                onClick={() => updateParams({ perm: f.id })}
+                className={`px-3 rounded-lg text-xs font-semibold transition ${
+                  permission === f.id ? 'bg-surface text-fg shadow-sm' : 'text-muted hover:text-fg'
+                }`}
+              >
+                {f.label} <span className="text-subtle font-normal">{counts[f.id]}</span>
+              </button>
+            ))}
+          </div>
+
+          <Button
+            variant="secondary"
+            icon={RefreshCw}
+            onClick={load}
+            disabled={loading}
+            aria-label="Refresh"
+            title="Refresh"
+            className={`ml-auto h-9 w-9 justify-center p-0! ${loading ? '[&>svg]:animate-spin' : ''}`}
+          />
+          <Button icon={Upload} className="h-9" onClick={() => navigate('/admin/upload?role=teacher')}>
+            Import teachers
+          </Button>
+        </header>
+
+        {loadError ? (
+          <EmptyState
+            icon={Users}
+            title="Couldn't load teachers"
+            message={loadError}
+            action={<Button variant="secondary" onClick={load}>Try again</Button>}
+          />
+        ) : !loading && filtered.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title={hasFilters ? 'No teachers match your filters' : 'No teachers yet'}
+            message={hasFilters ? 'Try a different search or permission.' : 'Import teachers from an Excel sheet to get started.'}
+            action={
+              hasFilters ? (
+                <Button variant="secondary" onClick={() => updateParams({ q: '', perm: 'all' })}>Clear filters</Button>
+              ) : (
+                <Button icon={Upload} onClick={() => navigate('/admin/upload?role=teacher')}>Import teachers</Button>
+              )
+            }
+          />
+        ) : (
+          <>
+            <Table columns={COLUMNS} fill>
+              {loading && teachers.length === 0 ? (
+                <SkeletonRows />
+              ) : (
+                pageRows.map((teacher) => (
+                  <tr key={teacher._id} className={`${tableClass.row} ${busyId === teacher._id ? 'opacity-60' : ''}`}>
+                    <td className={tableClass.td}>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="w-8 h-8 rounded-full bg-accent-soft text-accent-ink border border-accent-line flex items-center justify-center text-[11px] font-bold shrink-0">
+                          {initials(teacher.name)}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-fg truncate">{teacher.name}</p>
+                          <p className={`${type.meta} truncate`}>{teacher.email}</p>
+                        </div>
                       </div>
-                      <div className="ml-4">
-                        <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{teacher.name}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    {teacher.email}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <ShieldCheckIcon
-                        className={`h-5 w-5 mr-2 ${
-                          teacher.canCreateQuestion ? 'text-green-500' : 'text-gray-400'
-                        }`}
-                      />
-                      <span
-                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          teacher.canCreateQuestion
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}
-                      >
-                        {teacher.canCreateQuestion ? 'Can create questions' : 'Cannot create questions'}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <div className="inline-flex items-center gap-4">
-                      <label className="inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={teacher.canCreateQuestion}
-                          onChange={(e) => handlePermissionToggle(teacher._id, e.target.checked)}
-                          className="sr-only peer"
+                    </td>
+                    <td className={`${tableClass.td} ${HIDE_SM}`}>
+                      <ClassChips classes={teacher.classes} onOpen={openClass} />
+                    </td>
+                    <td className={`${tableClass.td} text-right tabular-nums ${HIDE_SM}`}>{teacher.questionCount ?? 0}</td>
+                    <td className={tableClass.td}>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={Boolean(teacher.canCreateQuestion)}
+                          disabled={busyId === teacher._id}
+                          onChange={(value) => togglePermission(teacher, value)}
+                          label={`Allow ${teacher.name} to create questions`}
                         />
-                        <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteClick(teacher)}
-                        className="text-red-600 hover:text-red-900 inline-flex items-center"
-                      >
-                        <TrashIcon className="h-4 w-4 mr-1" />
-                        Delete Teacher
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-
-          {/* Pagination */}
-          {teachers.length > itemsPerPage && (
-            <div className="mt-6 flex items-center justify-between border-t pt-4" style={{ borderColor: 'var(--card-border)' }}>
-              <div className="flex-1 flex justify-between sm:hidden">
-                <button
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage === 1}
-                  className="relative inline-flex items-center px-4 py-2 border text-sm font-medium rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ 
-                    color: 'var(--text-primary)', 
-                    backgroundColor: 'var(--background-light)', 
-                    borderColor: 'var(--card-border)' 
-                  }}
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage === totalPages}
-                  className="ml-3 relative inline-flex items-center px-4 py-2 border text-sm font-medium rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ 
-                    color: 'var(--text-primary)', 
-                    backgroundColor: 'var(--background-light)', 
-                    borderColor: 'var(--card-border)' 
-                  }}
-                >
-                  Next
-                </button>
-              </div>
-              <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    Showing <span className="font-medium">{indexOfFirstItem + 1}</span> to{' '}
-                    <span className="font-medium">{Math.min(indexOfLastItem, teachers.length)}</span> of{' '}
-                    <span className="font-medium">{teachers.length}</span> results
-                  </p>
-                </div>
-                <div>
-                  <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-                    <button
-                      onClick={() => handlePageChange(currentPage - 1)}
-                      disabled={currentPage === 1}
-                      className="relative inline-flex items-center px-2 py-2 rounded-l-md border text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{ 
-                        color: 'var(--text-secondary)', 
-                        backgroundColor: 'var(--background-light)', 
-                        borderColor: 'var(--card-border)' 
-                      }}
-                    >
-                      <span className="sr-only">Previous</span>
-                      <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                    </button>
-                    
-                    {[...Array(totalPages)].map((_, index) => {
-                      const pageNumber = index + 1;
-                      // Show first page, last page, current page, and pages around current
-                      if (
-                        pageNumber === 1 ||
-                        pageNumber === totalPages ||
-                        (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 1)
-                      ) {
-                        return (
-                          <button
-                            key={pageNumber}
-                            onClick={() => handlePageChange(pageNumber)}
-                            className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
-                              currentPage === pageNumber ? 'text-white' : ''
-                            }`}
-                            style={
-                              currentPage === pageNumber
-                                ? { backgroundColor: 'var(--primary-navy)', borderColor: 'var(--primary-navy)' }
-                                : { color: 'var(--text-secondary)', backgroundColor: 'var(--background-light)', borderColor: 'var(--card-border)' }
-                            }
-                          >
-                            {pageNumber}
-                          </button>
-                        );
-                      } else if (
-                        pageNumber === currentPage - 2 ||
-                        pageNumber === currentPage + 2
-                      ) {
-                        return (
-                          <span
-                            key={pageNumber}
-                            className="relative inline-flex items-center px-4 py-2 border text-sm font-medium"
-                            style={{ 
-                              color: 'var(--text-secondary)', 
-                              backgroundColor: 'var(--background-light)', 
-                              borderColor: 'var(--card-border)' 
-                            }}
-                          >
-                            ...
-                          </span>
-                        );
-                      }
-                      return null;
-                    })}
-                    
-                    <button
-                      onClick={() => handlePageChange(currentPage + 1)}
-                      disabled={currentPage === totalPages}
-                      className="relative inline-flex items-center px-2 py-2 rounded-r-md border text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{ 
-                        color: 'var(--text-secondary)', 
-                        backgroundColor: 'var(--background-light)', 
-                        borderColor: 'var(--card-border)' 
-                      }}
-                    >
-                      <span className="sr-only">Next</span>
-                      <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                      </svg>
-                    </button>
-                  </nav>
-                </div>
-              </div>
-            </div>
-          )}
+                        <span className={teacher.canCreateQuestion ? 'text-ok font-semibold' : 'text-muted'}>
+                          {teacher.canCreateQuestion ? 'Allowed' : 'View only'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className={`${tableClass.td} text-right`}>
+                      <ActionMenu label={`Actions for ${teacher.name}`} items={rowActions(teacher)} />
+                    </td>
+                  </tr>
+                ))
+              )}
+            </Table>
+            <Pagination
+              page={currentPage}
+              pageSize={PAGE_SIZE}
+              total={filtered.length}
+              onChange={(p) => updateParams({ page: p }, { resetPage: false })}
+            />
           </>
-          )}
-        </div>
-      )}
-
-      {deleteModal.open && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="rounded-lg p-6 w-full max-w-md mx-4" style={{ backgroundColor: 'var(--card-white)' }}>
-            <h3 className="text-lg font-semibold mb-4 text-red-600">Delete Teacher</h3>
-            <p className="mb-6" style={{ color: 'var(--text-secondary)' }}>
-              Remove <strong>{deleteModal.teacher?.name}</strong> from the teacher list?
-              Classes, questions, exams, and student work they created will be kept.
-            </p>
-            <div className="flex justify-end space-x-3">
-              <button
-                type="button"
-                onClick={() => setDeleteModal({ open: false, teacher: null })}
-                className="px-4 py-2 hover:opacity-80"
-                style={{ color: 'var(--text-secondary)' }}
-                disabled={processing}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleDeleteConfirm}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
-                disabled={processing}
-              >
-                {processing ? 'Deleting...' : 'Delete Teacher'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        )}
+      </section>
     </div>
   );
 };

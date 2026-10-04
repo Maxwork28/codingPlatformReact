@@ -1,39 +1,39 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { Dialog } from '@headlessui/react';
-import { ArrowLeftIcon, PlayIcon, XMarkIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
 import { format } from 'date-fns';
 import { io } from 'socket.io-client';
+import {
+  ArrowLeft,
+  Download,
+  Maximize2,
+  Minimize2,
+  Play,
+  RotateCcw,
+  X,
+} from 'lucide-react';
 import { API_BASE_URL } from '../../../common/constants';
-import { getQuestionPerspectiveReport, blockUser, blockAllUsers, teacherTestQuestion, getClassSheetReport } from '../../../common/services/api';
+import {
+  blockAllUsers,
+  blockUser,
+  getClassSheetReport,
+  getQuestionPerspectiveReport,
+  teacherTestQuestion,
+} from '../../../common/services/api';
 import { downloadSheetReport, shareSheetReport } from '../../../common/utils/downloadCsv';
 import CodeEditor from '../../student/components/CodeEditor';
 import TestCaseResultsList from '../../student/components/TestCaseResultsList';
+import { Button, EmptyState, StatusChip, Table } from '../../../common/ui/primitives';
+import Modal from '../../../common/ui/Modal';
+import { confirmAction, notify } from '../../../common/ui/Toast';
+import { inputClass, table as tableClass, type } from '../../../common/ui/format';
+import { extractAnswerText, stripHtml, tokenColor } from './takeClass/helpers';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 const CODING_TYPES = ['coding', 'fillInTheBlanksCoding', 'codingWithDriver'];
 const LANGUAGES = ['javascript', 'python', 'c', 'cpp', 'java', 'php', 'ruby', 'go'];
-
-const stripHtml = (html) => {
-  if (!html) return '';
-  const tmp = document.createElement('div');
-  tmp.innerHTML = html;
-  return (tmp.textContent || tmp.innerText || '').trim();
-};
-
-const extractCode = (answer) => {
-  if (answer == null || answer === '') return '';
-  if (typeof answer === 'string') return answer;
-  if (Array.isArray(answer)) return answer.join('\n');
-  try {
-    return JSON.stringify(answer, null, 2);
-  } catch {
-    return String(answer);
-  }
-};
 
 const doughnutPercentPlugin = {
   id: 'doughnutPercentLabels',
@@ -46,24 +46,27 @@ const doughnutPercentPlugin = {
     meta.data.forEach((arc, i) => {
       const value = Number(values[i] || 0);
       if (!value) return;
-      const pct = Math.round((value / total) * 100);
       const pos = arc.tooltipPosition();
       ctx.save();
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 13px ui-sans-serif, system-ui, sans-serif';
+      ctx.font = 'bold 12px ui-sans-serif, system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(`${pct}%`, pos.x, pos.y);
+      ctx.fillText(`${Math.round((value / total) * 100)}%`, pos.x, pos.y);
       ctx.restore();
     });
   },
 };
 
 const STATUS = {
-  correct: { label: 'Correct', chip: 'bg-emerald-50 text-emerald-800 border-emerald-200', dot: 'bg-emerald-500' },
-  incorrect: { label: 'Wrong', chip: 'bg-rose-50 text-rose-800 border-rose-200', dot: 'bg-rose-500' },
-  not_attempted: { label: 'Inactive', chip: 'bg-slate-100 text-slate-700 border-slate-200', dot: 'bg-slate-400' },
+  correct: { label: 'Correct', kind: 'ok' },
+  incorrect: { label: 'Wrong', kind: 'bad' },
+  not_attempted: { label: 'Inactive', kind: 'neutral' },
 };
+
+function latestSubmit(student) {
+  return (student.attempts || []).find((attempt) => !attempt.isRun) || student.attempts?.[0] || null;
+}
 
 const QuestionStatistics = () => {
   const navigate = useNavigate();
@@ -74,13 +77,11 @@ const QuestionStatistics = () => {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [actionMsg, setActionMsg] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [blocking, setBlocking] = useState(false);
   const [search, setSearch] = useState('');
   const [classReport, setClassReport] = useState(null);
   const [shareNote, setShareNote] = useState('');
-
   const [codeStudent, setCodeStudent] = useState(null);
   const [editorCode, setEditorCode] = useState('');
   const [originalCode, setOriginalCode] = useState('');
@@ -94,19 +95,22 @@ const QuestionStatistics = () => {
   const questionType = report?.question?.type;
   const isCodingQuestion = CODING_TYPES.includes(questionType);
 
-  const loadReport = useCallback(async ({ silent = false } = {}) => {
-    if (!classId || !questionId) return;
-    if (!silent) setLoading(true);
-    setError('');
-    try {
-      const response = await getQuestionPerspectiveReport(classId, questionId);
-      setReport(response.data.report);
-    } catch (err) {
-      setError(typeof err === 'string' ? err : err?.error || 'Failed to load statistics');
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  }, [classId, questionId]);
+  const loadReport = useCallback(
+    async ({ silent = false } = {}) => {
+      if (!classId || !questionId) return;
+      if (!silent) setLoading(true);
+      setError('');
+      try {
+        const response = await getQuestionPerspectiveReport(classId, questionId);
+        setReport(response.data.report);
+      } catch (err) {
+        setError(typeof err === 'string' ? err : err?.error || 'Failed to load statistics');
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [classId, questionId]
+  );
 
   useEffect(() => {
     loadReport();
@@ -141,7 +145,9 @@ const QuestionStatistics = () => {
     return () => clearInterval(id);
   }, [timerRunning]);
 
-  const timerLabel = `${String(Math.floor(elapsedSec / 3600)).padStart(2, '0')}:${String(Math.floor((elapsedSec % 3600) / 60)).padStart(2, '0')}:${String(elapsedSec % 60).padStart(2, '0')}`;
+  const timerLabel = `${String(Math.floor(elapsedSec / 3600)).padStart(2, '0')}:${String(
+    Math.floor((elapsedSec % 3600) / 60)
+  ).padStart(2, '0')}:${String(elapsedSec % 60).padStart(2, '0')}`;
 
   const handleBack = () => {
     if (backState.fromTakeClass) {
@@ -151,14 +157,18 @@ const QuestionStatistics = () => {
     }
   };
 
-  const summary = report
-    ? {
-        correct: report.totalStudentsCorrect ?? 0,
-        incorrect: report.totalStudentsIncorrect ?? 0,
-        notAttempted: report.totalStudentsNotAttempted ?? 0,
-        enrolled: report.totalStudentsEnrolled ?? report.studentData?.length ?? 0,
-      }
-    : null;
+  const summary = useMemo(
+    () =>
+      report
+        ? {
+            correct: report.totalStudentsCorrect ?? 0,
+            incorrect: report.totalStudentsIncorrect ?? 0,
+            notAttempted: report.totalStudentsNotAttempted ?? 0,
+            enrolled: report.totalStudentsEnrolled ?? report.studentData?.length ?? 0,
+          }
+        : null,
+    [report]
+  );
 
   const chartData = useMemo(() => {
     if (!summary) return null;
@@ -169,7 +179,7 @@ const QuestionStatistics = () => {
       datasets: [
         {
           data: [summary.correct, summary.incorrect],
-          backgroundColor: ['#10b981', '#f43f5e'],
+          backgroundColor: [tokenColor('--ok', '#059669'), tokenColor('--bad', '#e11d48')],
           borderWidth: 0,
         },
       ],
@@ -197,7 +207,7 @@ const QuestionStatistics = () => {
   }, [report?.studentData, statusFilter, search]);
 
   const openStudentWork = (student) => {
-    const code = extractCode(student.lastSubmittedAnswer);
+    const code = extractAnswerText(student.lastSubmittedAnswer);
     const language = student.lastSubmittedLanguage || (report?.question?.languages || [])[0] || 'javascript';
     setCodeStudent(student);
     setEditorCode(code);
@@ -205,13 +215,25 @@ const QuestionStatistics = () => {
     setEditorLanguage(language);
     setRunResults(null);
     setBoardMode(false);
-    setActionMsg('');
   };
 
-  const closeEditor = () => {
-    setCodeStudent(null);
-    setBoardMode(false);
-    setRunResults(null);
+  const openAttemptReview = (student) => {
+    const attempt = latestSubmit(student);
+    if (!attempt?.submissionId) {
+      notify('No saved attempt to review');
+      return;
+    }
+    navigate(`/teacher/take-class/${classId}/questions/${questionId}/statistics/attempts/${attempt.submissionId}`, {
+      state: {
+        fromTakeClass: backState.fromTakeClass,
+        selectedStudentId: student.studentId,
+        studentName: student.studentName,
+        studentEmail: student.studentEmail,
+        questionTitle: stripHtml(report?.question?.title),
+        questionType,
+        attempt,
+      },
+    });
   };
 
   const handleRunCorrected = async () => {
@@ -242,20 +264,23 @@ const QuestionStatistics = () => {
     const shouldBlock = unblockedInactive.length > 0;
     const ids = targets.map((student) => String(student.studentId)).filter(Boolean);
     if (!ids.length) return;
+    const ok = await confirmAction(
+      shouldBlock
+        ? `Block ${ids.length} inactive student(s) in this class?`
+        : `Unblock ${ids.length} inactive student(s)?`
+    );
+    if (!ok) return;
     setBlocking(true);
-    setActionMsg('');
-    setError('');
     try {
       const response = await blockAllUsers(classId, shouldBlock, { studentIds: ids });
-      const updated = response?.data?.updated ?? ids.length;
-      setActionMsg(
+      notify(
         shouldBlock
-          ? `${updated} inactive student(s) blocked`
-          : `${updated} inactive student(s) unblocked`
+          ? `${response?.data?.updated ?? ids.length} inactive student(s) blocked`
+          : `${response?.data?.updated ?? ids.length} inactive student(s) unblocked`
       );
       await loadReport({ silent: true });
     } catch (err) {
-      setError(typeof err === 'string' ? err : err?.error || 'Failed to update inactive students');
+      notify(typeof err === 'string' ? err : 'Failed to update inactive students');
     } finally {
       setBlocking(false);
     }
@@ -279,7 +304,7 @@ const QuestionStatistics = () => {
     } catch (err) {
       setClassReport({
         loading: false,
-        error: typeof err === 'string' ? err : err?.error || 'Failed to load class report',
+        error: typeof err === 'string' ? err : 'Failed to load class report',
         columns: [],
         rows: [],
         title: 'Class report',
@@ -289,7 +314,6 @@ const QuestionStatistics = () => {
 
   const handleShareClassReport = async () => {
     if (!classReport || classReport.loading || classReport.error) return;
-    setShareNote('');
     try {
       const result = await shareSheetReport(classReport);
       setShareNote(result === 'copied' ? 'Report copied. Paste it to share.' : 'Report shared.');
@@ -301,75 +325,56 @@ const QuestionStatistics = () => {
 
   const handleBlockStudent = async (student, shouldBlock) => {
     if (!student?.studentId) return;
+    const ok = await confirmAction(
+      shouldBlock ? `Block ${student.studentName} from this class?` : `Unblock ${student.studentName}?`
+    );
+    if (!ok) return;
     setBlocking(true);
-    setActionMsg('');
     try {
       await blockUser(classId, student.studentId, shouldBlock);
-      setActionMsg(`${student.studentName} ${shouldBlock ? 'blocked' : 'unblocked'}`);
+      notify(`${student.studentName} ${shouldBlock ? 'blocked' : 'unblocked'}`);
       await loadReport({ silent: true });
     } catch (err) {
-      setError(typeof err === 'string' ? err : err?.error || 'Failed to update block status');
+      notify(typeof err === 'string' ? err : 'Failed to update block status');
     } finally {
       setBlocking(false);
     }
   };
 
+  const languages = (report?.question?.languages || []).length ? report.question.languages : LANGUAGES;
+
   if (loading) {
     return (
-      <div className="flex justify-center items-center min-h-[50vh]" style={{ backgroundColor: 'var(--background-content)' }}>
-        <div className="w-10 h-10 border-4 border-t-transparent rounded-full animate-spin border-indigo-600" />
+      <div className="flex justify-center items-center min-h-[50vh] bg-page">
+        <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   if (error && !report) {
     return (
-      <div className="max-w-4xl mx-auto p-6">
-        <p className="text-red-600 mb-4">{error}</p>
-        <button type="button" onClick={handleBack} className="text-indigo-600 font-medium hover:underline">
-          Go back
-        </button>
+      <div className="h-full flex flex-col px-4 sm:px-5 py-5">
+        <EmptyState
+          title="Couldn't load statistics"
+          message={error}
+          action={<Button variant="secondary" onClick={handleBack}>Go back</Button>}
+        />
       </div>
     );
   }
 
-  const languages = (report?.question?.languages || []).length
-    ? report.question.languages
-    : LANGUAGES;
-
   return (
-    <div className="min-h-screen" style={{ backgroundColor: 'var(--background-content)' }}>
-      <div className="border-b px-4 py-3 sm:px-6" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={handleBack}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium hover:bg-gray-50"
-            style={{ borderColor: 'var(--card-border)', color: 'var(--text-primary)' }}
-          >
-            <ArrowLeftIcon className="w-4 h-4" />
-            {backState.fromTakeClass ? 'Back to Take Class' : 'Back to class'}
-          </button>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-lg font-bold truncate" style={{ color: 'var(--text-heading)' }}>
-              {stripHtml(report?.question?.title) || 'Question statistics'}
-            </h1>
-            <p className="text-sm truncate" style={{ color: 'var(--text-secondary)' }}>
-              {report?.class?.name}
-            </p>
-          </div>
-          <div
-            className="flex items-center gap-2 rounded-lg border px-3 py-1.5"
-            style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--background-light)' }}
-          >
-            <span className="font-mono text-base font-semibold tabular-nums" style={{ color: 'var(--text-heading)' }}>
-              {timerLabel}
-            </span>
-            <button
-              type="button"
-              onClick={() => setTimerRunning((v) => !v)}
-              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800"
-            >
+    <div className="flex flex-col h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)] bg-page">
+      <header className="shrink-0 h-14 px-4 sm:px-5 border-b border-line bg-surface flex items-center gap-2">
+        <Button variant="ghost" icon={ArrowLeft} className="h-9 w-9 justify-center p-0!" onClick={handleBack} aria-label="Back" />
+        <h1 className={`${type.pageTitle} text-xl! truncate min-w-0`}>
+          {stripHtml(report?.question?.title) || 'Question statistics'}
+        </h1>
+        {report?.class?.name && <StatusChip kind="neutral">{report.class.name}</StatusChip>}
+        <div className="ml-auto flex items-center gap-2">
+          <div className="hidden sm:flex items-center gap-2 rounded-xl border border-line bg-inset px-3 h-9">
+            <span className="font-mono text-sm font-semibold tabular-nums text-fg">{timerLabel}</span>
+            <button type="button" onClick={() => setTimerRunning((v) => !v)} className="text-[11px] font-semibold text-accent-ink">
               {timerRunning ? 'Pause' : 'Start'}
             </button>
             <button
@@ -378,292 +383,216 @@ const QuestionStatistics = () => {
                 setTimerRunning(false);
                 setElapsedSec(0);
               }}
-              className="text-xs font-semibold text-slate-600 hover:text-slate-800"
+              className="text-[11px] font-semibold text-muted hover:text-fg"
             >
               Reset
             </button>
           </div>
-          <button
-            type="button"
-            disabled={!report}
-            onClick={openClassReport}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
-            style={{ borderColor: 'var(--card-border)', color: 'var(--text-primary)' }}
-          >
-            <ArrowDownTrayIcon className="w-4 h-4" />
+          <Button variant="secondary" icon={Download} className="h-9" disabled={!report} onClick={openClassReport}>
             Report
-          </button>
+          </Button>
         </div>
-      </div>
+      </header>
 
-      <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-5">
-        {(actionMsg || error) && (
-          <div
-            className={`rounded-lg border px-4 py-2 text-sm ${
-              error ? 'bg-red-50 border-red-200 text-red-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-            }`}
-          >
-            {error || actionMsg}
-          </div>
-        )}
-
+      <section className="flex-1 min-h-0 flex flex-col gap-3 px-4 sm:px-5 py-4">
         {summary && (
-          <div
-            className="rounded-xl border p-4 grid grid-cols-1 sm:grid-cols-4 gap-4 items-center"
-            style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
-          >
-            <div className="w-36 mx-auto sm:mx-0">
+          <div className="shrink-0 rounded-2xl border border-line bg-surface shadow-card px-4 py-3 flex flex-wrap items-center gap-5">
+            <div className="w-24">
               {chartData ? (
                 <Doughnut
                   data={chartData}
                   plugins={[doughnutPercentPlugin]}
-                  options={{
-                    plugins: { legend: { display: false }, tooltip: { enabled: true } },
-                    cutout: '58%',
-                  }}
+                  options={{ plugins: { legend: { display: false }, tooltip: { enabled: true } }, cutout: '58%' }}
                 />
               ) : (
-                <div className="aspect-square rounded-full border-[14px] border-slate-200 flex items-center justify-center text-center text-xs font-medium text-slate-500">
+                <div className="aspect-square rounded-full border-[10px] border-line flex items-center justify-center text-[10px] font-medium text-muted text-center">
                   No attempts
                 </div>
               )}
             </div>
             {[
-              { label: 'Correct', value: summary.correct, color: 'text-emerald-700' },
-              { label: 'Wrong', value: summary.incorrect, color: 'text-rose-700' },
-              { label: 'Inactive', value: summary.notAttempted, color: 'text-slate-600' },
+              { label: 'Correct', value: summary.correct, className: 'text-ok' },
+              { label: 'Wrong', value: summary.incorrect, className: 'text-bad' },
+              { label: 'Inactive', value: summary.notAttempted, className: 'text-muted' },
             ].map((item) => (
-              <div key={item.label} className="text-center sm:text-left">
-                <p className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
-                  {item.label}
-                </p>
-                <p className={`text-2xl font-bold ${item.color}`}>{item.value}</p>
-                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                  of {summary.enrolled} enrolled
-                </p>
+              <div key={item.label} className="min-w-[4.5rem]">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted">{item.label}</p>
+                <p className={`text-xl font-bold leading-tight ${item.className}`}>{item.value}</p>
+                <p className="text-[11px] text-subtle">of {summary.enrolled}</p>
               </div>
             ))}
           </div>
         )}
 
-        <div
-          className="rounded-xl border overflow-hidden"
-          style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
-        >
-          <div className="px-4 py-3 border-b flex flex-wrap items-center gap-2" style={{ borderColor: 'var(--card-border)' }}>
-            <p className="text-sm font-semibold mr-2" style={{ color: 'var(--text-heading)' }}>
-              Students
-            </p>
-            {[
-              { value: 'all', label: 'All', count: summary?.enrolled },
-              { value: 'correct', label: 'Correct', count: summary?.correct },
-              { value: 'incorrect', label: 'Wrong', count: summary?.incorrect },
-              { value: 'not_attempted', label: 'Inactive', count: summary?.notAttempted },
-            ].map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setStatusFilter(opt.value)}
-                className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
-                  statusFilter === opt.value
-                    ? 'bg-slate-800 text-white border-slate-800'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                {opt.label} {opt.count != null ? `(${opt.count})` : ''}
-              </button>
-            ))}
+        <div className="shrink-0 flex flex-wrap items-center gap-2">
+          {[
+            { value: 'all', label: 'All', count: summary?.enrolled },
+            { value: 'correct', label: 'Correct', count: summary?.correct },
+            { value: 'incorrect', label: 'Wrong', count: summary?.incorrect },
+            { value: 'not_attempted', label: 'Inactive', count: summary?.notAttempted },
+          ].map((opt) => (
             <button
+              key={opt.value}
               type="button"
-              disabled={blocking || inactiveStudents.length === 0}
-              onClick={handleBlockAllInactive}
-              className="px-2.5 py-1 rounded-full text-xs font-semibold border border-slate-800 bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              onClick={() => setStatusFilter(opt.value)}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium border ${
+                statusFilter === opt.value
+                  ? 'bg-accent text-on-accent border-accent'
+                  : 'bg-surface text-body border-line hover:bg-hover'
+              }`}
             >
-              {inactiveStudents.length === 0
-                ? 'Block all inactive'
-                : unblockedInactive.length > 0
-                  ? `Block all inactive (${unblockedInactive.length})`
-                  : 'Unblock all inactive'}
+              {opt.label} {opt.count != null ? `(${opt.count})` : ''}
             </button>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name or email"
-              className="ml-auto w-full sm:w-56 px-3 py-1.5 rounded-lg border text-sm"
-              style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--background-light)' }}
-            />
-          </div>
+          ))}
+          <Button
+            variant="danger"
+            className="px-2.5 py-1!"
+            disabled={blocking || inactiveStudents.length === 0}
+            onClick={handleBlockAllInactive}
+          >
+            {inactiveStudents.length === 0
+              ? 'Block inactive'
+              : unblockedInactive.length > 0
+                ? `Block inactive (${unblockedInactive.length})`
+                : 'Unblock inactive'}
+          </Button>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search name or email"
+            className={`${inputClass} ml-auto w-full sm:w-56 h-9`}
+          />
+        </div>
 
+        <Table
+          fill
+          columns={[
+            { key: 'student', label: 'Student' },
+            { key: 'status', label: 'Status' },
+            { key: 'language', label: 'Language', className: 'hidden md:table-cell' },
+            { key: 'action', label: 'Action', className: 'text-right' },
+          ]}
+        >
+          {filteredStudents.map((student) => {
+            const style = STATUS[student.status] || STATUS.not_attempted;
+            const hasWork = Boolean(extractAnswerText(student.lastSubmittedAnswer));
+            const attempt = latestSubmit(student);
+            const highlighted = String(backState.selectedStudentId) === String(student.studentId);
+            return (
+              <tr key={student.studentId} className={`${tableClass.row} ${highlighted ? 'bg-accent-soft' : ''}`}>
+                <td className={tableClass.td}>
+                  <p className="font-semibold text-fg truncate">
+                    {student.studentName}
+                    {student.isBlocked ? <span className="ml-2 text-[11px] text-muted">Blocked</span> : null}
+                  </p>
+                  <p className="text-[11px] text-muted truncate">{student.studentEmail || 'No email'}</p>
+                </td>
+                <td className={tableClass.td}>
+                  <StatusChip kind={style.kind}>{style.label}</StatusChip>
+                </td>
+                <td className={`${tableClass.td} hidden md:table-cell`}>{student.lastSubmittedLanguage || '—'}</td>
+                <td className={tableClass.td}>
+                  <div className="flex justify-end gap-1.5">
+                    <Button variant="soft" className="h-8" disabled={!hasWork} onClick={() => openStudentWork(student)}>
+                      {isCodingQuestion ? 'Board' : 'View'}
+                    </Button>
+                    <Button variant="secondary" className="h-8" disabled={!attempt?.submissionId} onClick={() => openAttemptReview(student)}>
+                      Review
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className="h-8"
+                      disabled={blocking}
+                      onClick={() => handleBlockStudent(student, !student.isBlocked)}
+                    >
+                      {student.isBlocked ? 'Unblock' : 'Block'}
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </Table>
+        {filteredStudents.length === 0 && (
+          <p className="text-xs text-muted text-center -mt-1">
+            {report?.studentData?.length === 0 ? 'No students enrolled in this class.' : 'No students match this filter.'}
+          </p>
+        )}
+      </section>
+
+      <Modal
+        open={Boolean(classReport)}
+        onClose={() => setClassReport(null)}
+        title={classReport?.title || 'Class report'}
+        width="max-w-6xl"
+        footer={
+          classReport && !classReport.loading && !classReport.error ? (
+            <>
+              <Button variant="secondary" onClick={handleShareClassReport}>
+                Share
+              </Button>
+              <Button onClick={() => downloadSheetReport(classReport)}>Download</Button>
+            </>
+          ) : null
+        }
+      >
+        {shareNote && <p className="text-xs text-accent-ink">{shareNote}</p>}
+        {classReport?.loading && <p className="text-xs text-muted">Loading report…</p>}
+        {classReport?.error && <p className="text-xs text-bad">{classReport.error}</p>}
+        {classReport && !classReport.loading && !classReport.error && (
           <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wide" style={{ color: 'var(--text-secondary)', backgroundColor: 'var(--background-light)' }}>
-                  <th className="px-4 py-2 font-medium">Student</th>
-                  <th className="px-4 py-2 font-medium">Status</th>
-                  <th className="px-4 py-2 font-medium hidden md:table-cell">Language</th>
-                  <th className="px-4 py-2 font-medium text-right">Action</th>
+            <table className="min-w-full divide-y divide-line text-xs">
+              <thead className="bg-inset">
+                <tr>
+                  {(classReport.columns || []).map((column) => (
+                    <th key={column} className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-muted whitespace-nowrap">
+                      {column}
+                    </th>
+                  ))}
                 </tr>
               </thead>
-              <tbody>
-                {filteredStudents.map((student) => {
-                  const style = STATUS[student.status] || STATUS.not_attempted;
-                  const hasWork = Boolean(extractCode(student.lastSubmittedAnswer));
-                  return (
-                    <tr key={student.studentId} className="border-t" style={{ borderColor: 'var(--card-border)' }}>
-                      <td className="px-4 py-2.5">
-                        <p className="font-medium truncate" style={{ color: 'var(--text-heading)' }}>
-                          {student.studentName}
-                          {student.isBlocked ? <span className="ml-2 text-xs text-slate-500">Blocked</span> : null}
-                        </p>
-                        <p className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>
-                          {student.studentEmail || 'No email'}
-                        </p>
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs font-medium ${style.chip}`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
-                          {style.label}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 hidden md:table-cell" style={{ color: 'var(--text-secondary)' }}>
-                        {student.lastSubmittedLanguage || '—'}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            type="button"
-                            disabled={!hasWork}
-                            onClick={() => openStudentWork(student)}
-                            className="px-2.5 py-1 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            {isCodingQuestion ? 'Open in editor' : 'View answer'}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={blocking}
-                            onClick={() => handleBlockStudent(student, !student.isBlocked)}
-                            className="px-2.5 py-1 rounded-md text-xs font-medium border hover:bg-slate-50 disabled:opacity-50"
-                            style={{ borderColor: 'var(--card-border)', color: 'var(--text-primary)' }}
-                          >
-                            {student.isBlocked ? 'Unblock' : 'Block'}
-                          </button>
-                        </div>
-                      </td>
+              <tbody className="divide-y divide-line">
+                {(classReport.rows || []).length === 0 ? (
+                  <tr>
+                    <td colSpan={classReport.columns?.length || 1} className="px-3 py-4 text-muted">
+                      No students in this class.
+                    </td>
+                  </tr>
+                ) : (
+                  classReport.rows.map((row, rowIndex) => (
+                    <tr key={rowIndex}>
+                      {row.map((cell, cellIndex) => (
+                        <td key={cellIndex} className="px-3 py-2 whitespace-nowrap text-body">
+                          {cell == null || cell === '' ? '—' : String(cell)}
+                        </td>
+                      ))}
                     </tr>
-                  );
-                })}
+                  ))
+                )}
               </tbody>
             </table>
-            {filteredStudents.length === 0 && (
-              <p className="px-4 py-8 text-sm text-center" style={{ color: 'var(--text-secondary)' }}>
-                {report?.studentData?.length === 0 ? 'No students enrolled in this class.' : 'No students match this filter.'}
-              </p>
-            )}
           </div>
-        </div>
-      </div>
-
-      <Dialog open={Boolean(classReport)} onClose={() => setClassReport(null)} className="relative z-50">
-        <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
-        <div className="fixed inset-0 flex items-center justify-center p-4">
-          <Dialog.Panel className="mx-auto flex max-h-[85vh] w-full max-w-6xl flex-col rounded-2xl bg-white shadow-xl">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 p-5">
-              <Dialog.Title className="text-lg font-semibold text-gray-900">
-                {classReport?.title || 'Class report'}
-              </Dialog.Title>
-              <div className="flex items-center gap-2">
-                {classReport && !classReport.loading && !classReport.error && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={handleShareClassReport}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-indigo-200 text-indigo-700 hover:bg-indigo-50"
-                    >
-                      Share
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => downloadSheetReport(classReport)}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700"
-                    >
-                      Download
-                    </button>
-                  </>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setClassReport(null)}
-                  className="text-gray-500 hover:text-gray-700 p-1 rounded"
-                  aria-label="Close"
-                >
-                  <XMarkIcon className="w-6 h-6" />
-                </button>
-              </div>
-            </div>
-            <div className="overflow-auto p-5">
-              {shareNote && <p className="mb-3 text-sm text-indigo-700">{shareNote}</p>}
-              {classReport?.loading && <p className="text-sm text-gray-600">Loading report…</p>}
-              {classReport?.error && <p className="text-sm text-red-600">{classReport.error}</p>}
-              {classReport && !classReport.loading && !classReport.error && (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        {(classReport.columns || []).map((column) => (
-                          <th key={column} className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                            {column}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {(classReport.rows || []).length === 0 ? (
-                        <tr>
-                          <td colSpan={classReport.columns?.length || 1} className="px-3 py-4 text-sm text-gray-500">
-                            No students in this class.
-                          </td>
-                        </tr>
-                      ) : classReport.rows.map((row, rowIndex) => (
-                        <tr key={rowIndex}>
-                          {row.map((cell, cellIndex) => (
-                            <td key={cellIndex} className="px-3 py-2 whitespace-nowrap text-gray-700">
-                              {cell == null || cell === '' ? '—' : String(cell)}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </Dialog.Panel>
-        </div>
-      </Dialog>
+        )}
+      </Modal>
 
       {codeStudent && (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: boardMode ? '#0f172a' : 'var(--background-content)' }}>
-          <div
-            className="flex-shrink-0 border-b px-4 py-3 flex flex-wrap items-center gap-2"
-            style={{
-              backgroundColor: boardMode ? '#1e293b' : 'var(--card-white)',
-              borderColor: boardMode ? '#334155' : 'var(--card-border)',
-            }}
-          >
-            <button
-              type="button"
-              onClick={closeEditor}
-              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium ${
-                boardMode ? 'text-white hover:bg-white/10' : 'border hover:bg-gray-50'
-              }`}
-              style={!boardMode ? { borderColor: 'var(--card-border)' } : undefined}
+        <div className={`fixed inset-0 z-50 flex flex-col ${boardMode ? 'bg-slate-950' : 'bg-page'}`}>
+          <div className={`shrink-0 border-b px-4 py-3 flex flex-wrap items-center gap-2 ${boardMode ? 'border-slate-800 bg-slate-900' : 'border-line bg-surface'}`}>
+            <Button
+              variant={boardMode ? 'ghost' : 'secondary'}
+              icon={X}
+              className={boardMode ? 'text-white hover:bg-white/10' : ''}
+              onClick={() => {
+                setCodeStudent(null);
+                setBoardMode(false);
+                setRunResults(null);
+              }}
             >
-              <XMarkIcon className="w-4 h-4" />
               Close
-            </button>
+            </Button>
             <div className="min-w-0 flex-1">
-              <p className={`text-sm font-semibold truncate ${boardMode ? 'text-white' : ''}`} style={!boardMode ? { color: 'var(--text-heading)' } : undefined}>
+              <p className={`text-sm font-semibold truncate ${boardMode ? 'text-white' : 'text-fg'}`}>
                 {codeStudent.studentName}
                 {codeStudent.lastSubmittedIsCorrect === true
                   ? ' · Correct'
@@ -671,18 +600,16 @@ const QuestionStatistics = () => {
                     ? ' · Wrong'
                     : ''}
               </p>
-              <p className={`text-xs truncate ${boardMode ? 'text-slate-300' : ''}`} style={!boardMode ? { color: 'var(--text-secondary)' } : undefined}>
+              <p className={`text-[11px] truncate ${boardMode ? 'text-slate-300' : 'text-muted'}`}>
                 Students watch the board and type the fix in their own editor.
-                {codeStudent.lastSubmittedAt
-                  ? ` · ${format(new Date(codeStudent.lastSubmittedAt), 'MMM d, h:mm a')}`
-                  : ''}
+                {codeStudent.lastSubmittedAt ? ` · ${format(new Date(codeStudent.lastSubmittedAt), 'MMM d, h:mm a')}` : ''}
               </p>
             </div>
             {isCodingQuestion && (
               <select
                 value={editorLanguage}
                 onChange={(e) => setEditorLanguage(e.target.value)}
-                className={`rounded-lg border text-sm px-2 py-1.5 ${boardMode ? 'bg-slate-800 text-white border-slate-600' : ''}`}
+                className={`${inputClass} h-9 w-auto ${boardMode ? 'bg-slate-800 text-white border-slate-700' : ''}`}
               >
                 {languages.map((lang) => (
                   <option key={lang} value={lang}>
@@ -691,47 +618,35 @@ const QuestionStatistics = () => {
                 ))}
               </select>
             )}
-            <button
-              type="button"
+            <Button
+              variant={boardMode ? 'ghost' : 'secondary'}
+              icon={RotateCcw}
+              className={boardMode ? 'text-slate-200 hover:bg-white/10' : ''}
               onClick={() => {
                 setEditorCode(originalCode);
                 setRunResults(null);
               }}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
-                boardMode ? 'text-slate-200 hover:bg-white/10' : 'border hover:bg-gray-50'
-              }`}
-              style={!boardMode ? { borderColor: 'var(--card-border)' } : undefined}
             >
               Reset
-            </button>
+            </Button>
             {isCodingQuestion && (
-              <button
-                type="button"
-                onClick={handleRunCorrected}
-                disabled={runLoading || !editorCode.trim()}
-                className="inline-flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
-              >
-                <PlayIcon className="w-4 h-4" />
-                {runLoading ? 'Submitting…' : 'Submit corrected code'}
-              </button>
+              <Button icon={Play} disabled={runLoading || !editorCode.trim()} onClick={handleRunCorrected}>
+                {runLoading ? 'Submitting…' : 'Submit corrected'}
+              </Button>
             )}
-            <button
-              type="button"
+            <Button
+              variant={boardMode ? 'ghost' : 'secondary'}
+              icon={boardMode ? Minimize2 : Maximize2}
+              className={boardMode ? 'text-white hover:bg-white/10' : ''}
               onClick={() => setBoardMode((v) => !v)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium ${
-                boardMode ? 'bg-white/10 text-white' : 'border hover:bg-gray-50'
-              }`}
-              style={!boardMode ? { borderColor: 'var(--card-border)' } : undefined}
             >
-              {boardMode ? <ArrowsPointingInIcon className="w-4 h-4" /> : <ArrowsPointingOutIcon className="w-4 h-4" />}
-              {boardMode ? 'Exit board' : 'Board / projector'}
-            </button>
+              {boardMode ? 'Exit board' : 'Board'}
+            </Button>
           </div>
-
           <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
             <div className="flex-1 min-h-0 min-w-0 p-3 lg:p-4">
               {isCodingQuestion ? (
-                <div className="h-full min-h-[320px] rounded-xl overflow-hidden border" style={{ borderColor: boardMode ? '#334155' : 'var(--card-border)' }}>
+                <div className={`h-full min-h-[320px] rounded-xl overflow-hidden border ${boardMode ? 'border-slate-700' : 'border-line'}`}>
                   <CodeEditor
                     value={editorCode}
                     onChange={setEditorCode}
@@ -742,42 +657,25 @@ const QuestionStatistics = () => {
                   />
                 </div>
               ) : (
-                <div
-                  className={`h-full rounded-xl border p-6 overflow-auto ${boardMode ? 'text-2xl leading-relaxed text-white' : 'text-lg'}`}
-                  style={{
-                    backgroundColor: boardMode ? '#1e293b' : 'var(--card-white)',
-                    borderColor: boardMode ? '#334155' : 'var(--card-border)',
-                    color: boardMode ? '#fff' : 'var(--text-primary)',
-                  }}
-                >
-                  <p className="text-sm font-semibold mb-3 opacity-70">Student answer — edit on the board if needed</p>
-                  <textarea
-                    value={editorCode}
-                    onChange={(e) => setEditorCode(e.target.value)}
-                    className={`w-full min-h-[50vh] rounded-lg p-4 font-mono ${boardMode ? 'bg-slate-900 text-white text-2xl' : 'border text-base'}`}
-                  />
-                </div>
+                <textarea
+                  value={editorCode}
+                  onChange={(e) => setEditorCode(e.target.value)}
+                  className={`${inputClass} w-full min-h-[50vh] font-mono ${boardMode ? 'bg-slate-900 text-white text-2xl' : ''}`}
+                />
               )}
             </div>
             {isCodingQuestion && (
-              <div
-                className={`lg:w-[360px] flex-shrink-0 border-t lg:border-t-0 lg:border-l overflow-y-auto p-4 ${
-                  boardMode ? 'bg-slate-900 text-slate-100' : ''
-                }`}
-                style={!boardMode ? { backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' } : { borderColor: '#334155' }}
-              >
-                <p className={`text-sm font-semibold mb-3 ${boardMode ? 'text-white' : ''}`} style={!boardMode ? { color: 'var(--text-heading)' } : undefined}>
-                  Test result
-                </p>
+              <div className={`lg:w-[360px] shrink-0 border-t lg:border-t-0 lg:border-l overflow-y-auto p-4 ${boardMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-surface border-line'}`}>
+                <p className={`text-sm font-semibold mb-3 ${boardMode ? 'text-white' : 'text-fg'}`}>Test result</p>
                 {!runResults && (
-                  <p className={`text-sm ${boardMode ? 'text-slate-400' : ''}`} style={!boardMode ? { color: 'var(--text-secondary)' } : undefined}>
-                    Correct the code in the editor, then run it. Students copy the working version into their own editor.
+                  <p className={`text-xs ${boardMode ? 'text-slate-400' : 'text-muted'}`}>
+                    Correct the code, then run it. Students copy the working version into their own editor.
                   </p>
                 )}
-                {runResults?.error && <p className="text-sm text-red-400">{runResults.message}</p>}
+                {runResults?.error && <p className="text-xs text-bad">{runResults.message}</p>}
                 {runResults && !runResults.error && (
                   <div>
-                    <p className={`font-semibold mb-3 ${runResults.isCorrect ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    <p className={`font-semibold mb-3 ${runResults.isCorrect ? 'text-ok' : 'text-warn'}`}>
                       {runResults.isCorrect
                         ? `All ${runResults.totalTestCases} tests passed`
                         : `${runResults.passedTestCases}/${runResults.totalTestCases} passed`}

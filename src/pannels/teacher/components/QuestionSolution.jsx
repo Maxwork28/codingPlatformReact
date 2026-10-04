@@ -1,16 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { getQuestion, viewSolution } from '../../../common/services/api';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import parse from 'html-react-parser';
+import { ArrowLeft } from 'lucide-react';
+import { getQuestion, viewSolution } from '../../../common/services/api';
+import { Button, EmptyState, StatusChip } from '../../../common/ui/primitives';
+import { type } from '../../../common/ui/format';
+import { RUNNABLE_CODING_TYPES, QUESTION_TYPE_LABELS, stripHtml } from '../pages/takeClass/helpers';
 
-const stripHtml = (html) => {
-  if (!html) return '';
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  return doc.body.textContent || '';
-};
-
-const langLabel = (lang) =>
-  lang ? String(lang).charAt(0).toUpperCase() + String(lang).slice(1) : 'Solution';
+const langLabel = (lang) => (lang ? String(lang).charAt(0).toUpperCase() + String(lang).slice(1) : 'Solution');
 
 const collectCodingSolutions = (question) => {
   const byLang = new Map();
@@ -29,15 +26,8 @@ const collectCodingSolutions = (question) => {
 
 const SolutionCodeBlock = ({ language, code }) => (
   <div>
-    {language ? (
-      <p className="text-sm font-semibold mb-2" style={{ color: 'var(--text-heading)' }}>
-        {langLabel(language)}
-      </p>
-    ) : null}
-    <pre
-      className="p-4 rounded-lg text-sm font-mono whitespace-pre-wrap overflow-x-auto"
-      style={{ backgroundColor: '#0f172a', color: '#e2e8f0' }}
-    >
+    {language ? <p className="text-xs font-semibold text-fg mb-2">{langLabel(language)}</p> : null}
+    <pre className="p-4 rounded-xl text-xs font-mono whitespace-pre-wrap overflow-x-auto bg-inset border border-line text-fg">
       {code}
     </pre>
   </div>
@@ -60,12 +50,8 @@ const QuestionSolution = () => {
         try {
           const response = await getQuestion(questionId);
           q = response.data?.question || response.data;
-        } catch (err) {
-          if (typeof err === 'string') {
-            /* continue to viewSolution */
-          } else {
-            throw err;
-          }
+        } catch {
+          /* continue to viewSolution */
         }
         try {
           const solRes = await viewSolution(questionId);
@@ -73,9 +59,7 @@ const QuestionSolution = () => {
         } catch {
           /* getQuestion already includes solutions for teachers */
         }
-        if (!q) {
-          throw new Error('Question not found');
-        }
+        if (!q) throw new Error('Question not found');
         setQuestion(q);
       } catch (err) {
         setError(
@@ -92,16 +76,11 @@ const QuestionSolution = () => {
     fetchQuestion();
   }, [questionId]);
 
-  const codingSolutions = useMemo(
-    () => (question ? collectCodingSolutions(question) : []),
-    [question]
-  );
+  const codingSolutions = useMemo(() => (question ? collectCodingSolutions(question) : []), [question]);
 
   const handleBack = () => {
     if (location.state?.fromTakeClass && navClassId) {
-      navigate('/teacher/take-class', {
-        state: { classId: navClassId, questionId },
-      });
+      navigate('/teacher/take-class', { state: { classId: navClassId, questionId } });
       return;
     }
     if (navClassId) {
@@ -113,41 +92,41 @@ const QuestionSolution = () => {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center min-h-[50vh]">
-        <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+      <div className="flex justify-center items-center min-h-[50vh] bg-page">
+        <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   if (error || !question) {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <p className="text-red-600 mb-4">{error || 'Question not found'}</p>
-        <button type="button" onClick={handleBack} className="text-indigo-600 font-medium hover:underline">
-          Go back
-        </button>
+      <div className="h-full flex flex-col px-4 sm:px-5 py-5">
+        <EmptyState
+          title="Couldn't load solution"
+          message={error || 'Question not found'}
+          action={<Button variant="secondary" onClick={handleBack}>Go back</Button>}
+        />
       </div>
     );
   }
 
-  const type = question.type;
-  const isCoding = ['coding', 'codingWithDriver', 'fillInTheBlanksCoding'].includes(type);
-
+  const qType = question.type;
+  const isCoding = RUNNABLE_CODING_TYPES.includes(qType);
   let body = null;
 
-  if (type === 'singleCorrectMcq') {
+  if (qType === 'singleCorrectMcq') {
     const opt = question.options?.[question.correctOption];
     body = opt ? (
-      <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
+      <p className="text-xs text-body">
         {question.correctOption + 1}. {parse(opt)}
       </p>
     ) : (
-      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>No solution saved.</p>
+      <p className="text-xs text-muted">No solution saved.</p>
     );
-  } else if (type === 'multipleCorrectMcq') {
+  } else if (qType === 'multipleCorrectMcq') {
     const indexes = question.correctOptions || [];
     body = indexes.length ? (
-      <ul className="space-y-2 text-sm" style={{ color: 'var(--text-primary)' }}>
+      <ul className="space-y-2 text-xs text-body">
         {indexes.map((idx) => (
           <li key={idx}>
             {idx + 1}. {parse(question.options?.[idx] || '')}
@@ -155,18 +134,16 @@ const QuestionSolution = () => {
         ))}
       </ul>
     ) : (
-      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>No solution saved.</p>
+      <p className="text-xs text-muted">No solution saved.</p>
     );
-  } else if (type === 'fillInTheBlanks') {
+  } else if (qType === 'fillInTheBlanks') {
     body = question.correctAnswer ? (
-      <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
-        {parse(question.correctAnswer)}
-      </p>
+      <p className="text-xs text-body">{parse(question.correctAnswer)}</p>
     ) : (
-      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>No solution saved.</p>
+      <p className="text-xs text-muted">No solution saved.</p>
     );
   } else if (isCoding) {
-    const fillAnswer = type === 'fillInTheBlanksCoding' ? stripHtml(question.correctAnswer || '').trim() : '';
+    const fillAnswer = qType === 'fillInTheBlanksCoding' ? stripHtml(question.correctAnswer || '') : '';
     body = (
       <div className="space-y-6">
         {fillAnswer ? <SolutionCodeBlock code={fillAnswer} /> : null}
@@ -175,48 +152,23 @@ const QuestionSolution = () => {
             <SolutionCodeBlock key={sol.language} language={sol.language} code={sol.code} />
           ))
         ) : !fillAnswer ? (
-          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            No solution saved for any language.
-          </p>
+          <p className="text-xs text-muted">No solution saved for any language.</p>
         ) : null}
       </div>
     );
   } else {
-    body = (
-      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-        No solution available for this question type.
-      </p>
-    );
+    body = <p className="text-xs text-muted">No solution available for this question type.</p>;
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="flex items-center gap-3 mb-6">
-        <button
-          type="button"
-          onClick={handleBack}
-          className="p-2 rounded-full border hover:opacity-80"
-          style={{ borderColor: 'var(--card-border)', color: 'var(--text-primary)' }}
-          aria-label="Back"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-            <path
-              fillRule="evenodd"
-              d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
-              clipRule="evenodd"
-            />
-          </svg>
-        </button>
-        <h2 className="text-xl font-bold truncate" style={{ color: 'var(--text-heading)' }}>
-          Solution
-        </h2>
-      </div>
-
-      <div
-        className="rounded-2xl border p-6"
-        style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
-      >
-        {body}
+    <div className="flex flex-col h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)] bg-page">
+      <header className="shrink-0 h-14 px-4 sm:px-5 border-b border-line bg-surface flex items-center gap-2">
+        <Button variant="ghost" icon={ArrowLeft} className="h-9 w-9 justify-center p-0!" onClick={handleBack} aria-label="Back" />
+        <h1 className={`${type.pageTitle} text-xl! truncate min-w-0`}>Solution</h1>
+        <StatusChip kind="neutral">{QUESTION_TYPE_LABELS[qType] || qType}</StatusChip>
+      </header>
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-5 py-5">
+        <div className="rounded-2xl border border-line bg-surface shadow-card p-5">{body}</div>
       </div>
     </div>
   );

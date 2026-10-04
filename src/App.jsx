@@ -1,10 +1,11 @@
 import React, { useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { validateToken } from './common/components/redux/authSlice';
 import Navbar from './common/components/Navbar';
 import ProtectedRoute from './common/components/ProtectedRoute';
 import { ThemeProvider } from './common/context/ThemeContext';
+import { ToastProvider } from './common/ui/Toast';
 
 // Pages
 import Login from './pannels/pages/Login';
@@ -16,42 +17,26 @@ import ClassManagement from './pannels/admin/pages/ClassManagement';
 import StudentManagement from './pannels/admin/pages/StudentManagement';
 import TeacherManagement from './pannels/admin/pages/TeacherManagement';
 import ExcelUpload from './pannels/admin/pages/ExcelUpload';
-import QuesionBanks from './pannels/admin/pages/QuesionBanks';
+import QuestionBank from './pannels/admin/pages/QuestionBank';
 import AdminCreateNewQuestion from './pannels/admin/pages/AdminCreateNewQuestion';
 import AdminClassDetails from './pannels/admin/pages/AdminClassDetails';
 import AdminQuestionEdit from './pannels/admin/components/AdminQuestionEdit.jsx';
 import AdminQuestionPreview from './pannels/admin/components/AdminQuestionPreview';
 import AdminDraftsPage from './pannels/admin/pages/AdminDraftsPage';
-import TeacherDraftsPage from './pannels/teacher/pages/TeacherDraftsPage';
 import ExamManagement from './pannels/admin/pages/ExamManagement';
 import ExamReport from './pannels/admin/pages/ExamReport';
-import CreateExam from './pannels/admin/pages/CreateExam';
+import ExamBuilder from './pannels/admin/pages/ExamBuilder';
 import CreateExamTemplate from './pannels/admin/pages/CreateExamTemplate';
 import UseExamTemplate from './pannels/admin/pages/UseExamTemplate';
-import EditExam from './pannels/admin/pages/EditExam';
 import ExamTemplates from './pannels/admin/pages/ExamTemplates';
 
 // Teacher Pages
-import TeacherDashboard from './pannels/teacher/pages/TeacherDashboard';
-import TeacherClassManagement from './pannels/teacher/pages/TeacherClassManagement';
-import TeacherClassView from './pannels/teacher/pages/TeacherClassView';
 import TakeClass from './pannels/teacher/pages/TakeClass';
 import QuestionStatistics from './pannels/teacher/pages/QuestionStatistics';
 import QuestionAttemptReview from './pannels/teacher/pages/QuestionAttemptReview';
-import ClassDetails from './pannels/teacher/pages/ClassDetails';
-import ClassEdit from './pannels/teacher/pages/ClassEdit';
-import QuestionManagement from './pannels/teacher/pages/QuestionManagement';
-import CreateNewQuestion from './pannels/teacher/pages/CreateNewQuestion';
-import QuestionAssignment from './pannels/teacher/pages/QuestionAssignment';
-import QuestionEdit from '../src/pannels/teacher/components/QuestionEdit';
 import QuestionStatement from '../src/pannels/teacher/components/QuestionStatement.jsx';
-import QuestionPreview from '../src/pannels/teacher/components/QuestionPreview';
 import QuestionSolution from '../src/pannels/teacher/components/QuestionSolution.jsx';
 import QuestionTestCases from '../src/pannels/teacher/components/QuestionTestCases.jsx';
-import QuestionView from './pannels/teacher/pages/QuestionView';
-import TeacherQuestionDetail from './pannels/teacher/pages/TeacherQuestionDetail';
-import TeacherExamManagement from './pannels/teacher/pages/TeacherExamManagement';
-
 // Student Pages
 import StudentDashboard from './pannels/student/pages/StudentDashboard';
 import StudentClassView from './pannels/student/pages/StudentClassView';
@@ -63,13 +48,33 @@ import StudentExamScreen from './pannels/student/pages/StudentExamScreen';
 import StudentExamResults from './pannels/student/pages/StudentExamResults';
 
 // Main content wrapper component
+function LegacyClassRedirect() {
+  const { classId } = useParams();
+  return <Navigate to={`/admin/classes/${classId}`} replace />;
+}
+
+function TeacherClassRedirect({ to }) {
+  const { classId, questionId } = useParams();
+  if (to === 'class') return <Navigate to={`/teacher/classes/${classId}`} replace />;
+  if (to === 'questions') return <Navigate to={`/teacher/classes/${classId}?tab=questions`} replace />;
+  return (
+    <Navigate
+      to={`/teacher/questions/${questionId}/preview`}
+      replace
+      state={{ classId, returnTo: `/teacher/classes/${classId}?tab=questions` }}
+    />
+  );
+}
+
+const isExamRunner = (pathname) => /^\/student\/exams\/[^/]+$/.test(pathname);
+
 const MainContent = () => {
+  const { pathname } = useLocation();
+  const examRunner = isExamRunner(pathname);
   return (
     <main
       className="min-w-0 flex-1 overflow-y-auto transition-all duration-300 ease-in-out"
-      style={{
-        height: 'calc(100vh - 64px)',
-      }}
+      style={examRunner ? { height: '100vh' } : { height: 'calc(100vh - 4rem)' }}
     >
       <Routes>
         {/* Admin Routes */}
@@ -100,7 +105,7 @@ const MainContent = () => {
         } />
         <Route path="/admin/questions" element={
           <ProtectedRoute role="admin">
-            <QuesionBanks />
+            <QuestionBank />
           </ProtectedRoute>
         } />
         <Route path="/admin/questions/create" element={
@@ -128,35 +133,21 @@ const MainContent = () => {
             <AdminQuestionEdit />
           </ProtectedRoute>
         } />
-        <Route path="/admin/class/:classId" element={
-          <ProtectedRoute role="admin">
-            <AdminClassDetails />
-          </ProtectedRoute>
-        } />
+        <Route path="/admin/class/:classId" element={<LegacyClassRedirect />} />
         <Route path="/admin/classes/:classId" element={
           <ProtectedRoute role="admin">
             <AdminClassDetails />
           </ProtectedRoute>
         } />
-        <Route
-              path="/admin/questions/:questionId/edit"
-              element={
-                <ProtectedRoute role="admin">
-                  <AdminQuestionEdit />
-                </ProtectedRoute>
-              }
-            />
-
-
         {/* Teacher Routes */}
         <Route path="/teacher" element={
           <ProtectedRoute role="teacher">
-            <TeacherDashboard />
+            <AdminDashboard />
           </ProtectedRoute>
         } />
         <Route path="/teacher/classes" element={
           <ProtectedRoute role="teacher">
-            <TeacherClassManagement />
+            <ClassManagement />
           </ProtectedRoute>
         } />
         <Route path="/teacher/take-class" element={
@@ -176,54 +167,54 @@ const MainContent = () => {
         } />
         <Route path="/teacher/classes/:classId" element={
           <ProtectedRoute role="teacher">
-            <TeacherClassView />
+            <AdminClassDetails />
           </ProtectedRoute>
         } />
         <Route path="/teacher/classes/:classId/details" element={
           <ProtectedRoute role="teacher">
-            <ClassDetails />
+            <TeacherClassRedirect to="class" />
           </ProtectedRoute>
         } />
         <Route path="/teacher/classes/:classId/edit" element={
           <ProtectedRoute role="teacher">
-            <ClassEdit />
+            <TeacherClassRedirect to="class" />
           </ProtectedRoute>
         } />
         <Route path="/teacher/questions" element={
           <ProtectedRoute role="teacher">
-            <QuestionManagement />
+            <QuestionBank />
           </ProtectedRoute>
         } />
         <Route path="/teacher/questions/drafts" element={
           <ProtectedRoute role="teacher">
-            <TeacherDraftsPage />
+            <AdminDraftsPage />
           </ProtectedRoute>
         } />
         <Route path="/teacher/questions/create" element={
           <ProtectedRoute role="teacher">
-            <CreateNewQuestion />
+            <AdminCreateNewQuestion />
           </ProtectedRoute>
         } />
         <Route path="/teacher/questions/new" element={
           <ProtectedRoute role="teacher">
-            <CreateNewQuestion />
+            <AdminCreateNewQuestion />
           </ProtectedRoute>
         } />
         <Route path="/teacher/questions/:classId/create" element={
           <ProtectedRoute role="teacher">
-            <CreateNewQuestion />
+            <AdminCreateNewQuestion />
           </ProtectedRoute>
         } />
         <Route path="/teacher/questions/assign" element={
           <ProtectedRoute role="teacher">
-            <QuestionAssignment />
+            <Navigate to="/teacher/questions" replace />
           </ProtectedRoute>
         } />
         <Route
               path="/teacher/questions/:questionId/edit"
               element={
                 <ProtectedRoute role="teacher">
-                  <QuestionEdit />
+                  <AdminQuestionEdit />
                 </ProtectedRoute>
               }
             />
@@ -239,25 +230,25 @@ const MainContent = () => {
               path="/teacher/classes/:classId/questions/:questionId/edit"
               element={
                 <ProtectedRoute role="teacher">
-                  <QuestionAssignment />
+                  <TeacherClassRedirect to="questions" />
                 </ProtectedRoute>
               }
             />
         <Route path="/teacher/questions/:questionId/view" element={
           <ProtectedRoute role="teacher">
-            <QuestionView />
+            <AdminQuestionPreview />
           </ProtectedRoute>
         } />
         <Route path="/teacher/classes/:classId/questions/:questionId" element={
           <ProtectedRoute role="teacher">
-            <TeacherQuestionDetail />
+            <TeacherClassRedirect />
           </ProtectedRoute>
         } />
         <Route
               path="/teacher/questions/:questionId/preview"
               element={
                 <ProtectedRoute role="teacher">
-                  <QuestionPreview />
+                  <AdminQuestionPreview />
                 </ProtectedRoute>
               }
             />
@@ -337,6 +328,11 @@ const MainContent = () => {
         } />
 
         {/* Admin Exam Routes */}
+        <Route path="/admin/exams" element={
+          <ProtectedRoute role="admin">
+            <ExamManagement />
+          </ProtectedRoute>
+        } />
         <Route path="/admin/exams/templates" element={
           <ProtectedRoute role="admin">
             <ExamTemplates />
@@ -359,12 +355,12 @@ const MainContent = () => {
         } />
         <Route path="/admin/classes/:classId/exams/create" element={
           <ProtectedRoute role="admin">
-            <CreateExam />
+            <ExamBuilder />
           </ProtectedRoute>
         } />
         <Route path="/admin/classes/:classId/exams/:examId/edit" element={
           <ProtectedRoute role="admin">
-            <EditExam />
+            <ExamBuilder />
           </ProtectedRoute>
         } />
         <Route path="/admin/classes/:classId/exams/:examId/report" element={
@@ -376,7 +372,7 @@ const MainContent = () => {
         {/* Teacher Exam Routes */}
         <Route path="/teacher/exams" element={
           <ProtectedRoute role="teacher">
-            <TeacherExamManagement />
+            <ExamManagement />
           </ProtectedRoute>
         } />
         <Route path="/teacher/classes/:classId/exams" element={
@@ -384,14 +380,29 @@ const MainContent = () => {
             <ExamManagement />
           </ProtectedRoute>
         } />
+        <Route path="/teacher/exams/templates" element={
+          <ProtectedRoute role="teacher">
+            <ExamTemplates />
+          </ProtectedRoute>
+        } />
+        <Route path="/teacher/exams/templates/create" element={
+          <ProtectedRoute role="teacher">
+            <CreateExamTemplate />
+          </ProtectedRoute>
+        } />
+        <Route path="/teacher/exams/templates/:templateId/use" element={
+          <ProtectedRoute role="teacher">
+            <UseExamTemplate />
+          </ProtectedRoute>
+        } />
         <Route path="/teacher/classes/:classId/exams/create" element={
           <ProtectedRoute role="teacher">
-            <CreateExam />
+            <ExamBuilder />
           </ProtectedRoute>
         } />
         <Route path="/teacher/classes/:classId/exams/:examId/edit" element={
           <ProtectedRoute role="teacher">
-            <EditExam />
+            <ExamBuilder />
           </ProtectedRoute>
         } />
         <Route path="/teacher/classes/:classId/exams/:examId/report" element={
@@ -414,7 +425,9 @@ const MainContent = () => {
 
 function App() {
   const dispatch = useDispatch();
-  const { user, token, status } = useSelector((state) => state.auth);
+  const location = useLocation();
+  const { user, role, token, status } = useSelector((state) => state.auth);
+  const examRunner = isExamRunner(location.pathname);
   const hasToken = Boolean(token || localStorage.getItem('token'));
   const sessionReady = Boolean(user?.name && hasToken);
   const restoringSession = hasToken && !user?.name && status !== 'failed';
@@ -428,15 +441,22 @@ function App() {
     }
   }, [dispatch, hasToken, token, user?.name, status]);
 
+  useEffect(() => {
+    if (role) document.documentElement.dataset.role = role;
+    else delete document.documentElement.dataset.role;
+  }, [role]);
+
   if (restoringSession) {
     return (
       <ThemeProvider>
-        <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: 'var(--background-content)' }}>
+        <ToastProvider>
+        <div className="flex min-h-screen items-center justify-center bg-page text-fg">
           <div
             className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin"
             style={{ borderColor: 'var(--text-primary)', borderTopColor: 'transparent' }}
           />
         </div>
+        </ToastProvider>
       </ThemeProvider>
     );
   }
@@ -445,11 +465,13 @@ function App() {
   if (!sessionReady) {
     return (
       <ThemeProvider>
+        <ToastProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
+        </ToastProvider>
       </ThemeProvider>
     );
   }
@@ -457,12 +479,14 @@ function App() {
   // If authenticated, show appropriate dashboard based on role
   return (
     <ThemeProvider>
-      <div className="min-h-screen transition-all duration-300 flex flex-col" style={{ backgroundColor: 'var(--background-content)' }}>
-        <Navbar />
+      <ToastProvider>
+      <div className="min-h-screen bg-page text-fg font-sans transition-all duration-300 flex flex-col">
+        {examRunner ? null : <Navbar />}
         <div className="relative flex min-w-0 flex-1">
           <MainContent />
         </div>
       </div>
+      </ToastProvider>
     </ThemeProvider>
   );
 }

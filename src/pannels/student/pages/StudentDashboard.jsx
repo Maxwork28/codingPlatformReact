@@ -1,727 +1,291 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import { Link } from 'react-router-dom';
-import axios from 'axios';
-import { fetchClasses } from '../../../common/components/redux/classSlice';
-import { listClassExams, getLeaderboard } from '../../../common/services/api';
-import { DiJavascript } from "react-icons/di";
-import { FaJava, FaPython, FaCheckCircle, FaChartLine, FaClock, FaProjectDiagram, FaBookOpen, FaTimesCircle } from "react-icons/fa";
-import { GiNotebook } from "react-icons/gi";
-import { MdOutlineAssignment } from "react-icons/md";
-import { VscCode } from "react-icons/vsc";
+import React, { useCallback, useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { formatDistanceToNowStrict } from 'date-fns';
+import {
+  Award,
+  CheckCircle2,
+  ChevronRight,
+  CircleX,
+  ClipboardList,
+  GraduationCap,
+  Play,
+  RefreshCw,
+  School,
+} from 'lucide-react';
+import { getStudentDashboard } from '../../../common/services/api';
+import { Button, Card, EmptyState, StatusChip, Table } from '../../../common/ui/primitives';
+import { table as tableClass, type } from '../../../common/ui/format';
 
-const stripHtml = (html) => {
-  if (!html) return '';
-  try {
-    const tmp = document.createElement('div');
-    tmp.innerHTML = html;
-    return tmp.textContent || tmp.innerText || '';
-  } catch (err) {
-    console.warn('[StudentDashboard] stripHtml fallback used', { html, error: err });
-    return typeof html === 'string' ? html.replace(/<[^>]*>/g, '') : '';
-  }
+const tones = {
+  accent: 'bg-accent-soft text-accent-ink border-accent-line',
+  ok: 'bg-ok-soft text-ok border-ok-line',
+  warn: 'bg-warn-soft text-warn border-warn-line',
+  info: 'bg-info-soft text-info border-info-line',
 };
 
-const formatRelativeTime = (date) => {
-  if (!date) return '';
-  const diffMs = Date.now() - new Date(date).getTime();
-  if (Number.isNaN(diffMs) || diffMs < 0) return new Date(date).toLocaleDateString();
-  const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(date).toLocaleDateString();
-};
+const timeAgo = (value) => (value ? `${formatDistanceToNowStrict(new Date(value))} ago` : '');
 
-const getStudentIdFromEntry = (entry) =>
-  entry?.studentId?._id || entry?.studentId?.id || entry?.studentId;
+const formatWhen = (value) =>
+  value
+    ? new Date(value).toLocaleString(undefined, {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+    : '—';
+
+function SectionHeader({ title, action }) {
+  return (
+    <div className="flex items-center justify-between gap-2 mb-3">
+      <h2 className={type.section}>{title}</h2>
+      {action}
+    </div>
+  );
+}
+
+function ViewAll({ to, children = 'View all' }) {
+  return (
+    <Link to={to} className="flex items-center gap-0.5 text-[11px] font-semibold text-accent-ink hover:underline">
+      {children}
+      <ChevronRight className="w-3 h-3" />
+    </Link>
+  );
+}
+
+function Kpi({ icon: Icon, tone, label, value, hint, to }) {
+  return (
+    <Link to={to} className="bg-surface border border-line rounded-2xl p-4 flex flex-col gap-3 hover:border-line-strong transition">
+      <span className={`w-8 h-8 rounded-lg border flex items-center justify-center ${tones[tone]}`}>
+        <Icon className="w-4 h-4" />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">{label}</p>
+        <p className="text-2xl font-bold text-fg leading-tight tabular-nums">{value}</p>
+        <p className={`${type.meta} truncate`}>{hint}</p>
+      </div>
+    </Link>
+  );
+}
+
+const CLASS_COLS = [{ label: 'Class' }, { label: 'Teacher', className: 'hidden sm:table-cell' }, { label: 'Work', className: 'hidden md:table-cell' }, { label: '', key: 'action' }];
+const EXAM_COLS = [{ label: 'Exam' }, { label: 'When', className: 'hidden md:table-cell' }, { label: 'Status' }, { label: '', key: 'action' }];
+const ASSIGN_COLS = [{ label: 'Assignment' }, { label: 'Due', className: 'hidden sm:table-cell' }, { label: '', key: 'action' }];
 
 const StudentDashboard = () => {
-  const dispatch = useDispatch();
-  const { classes, status, error } = useSelector((state) => state.classes);
-  const { user } = useSelector((state) => state.auth);
-  const [assignments, setAssignments] = useState([]);
-  const [upcomingExams, setUpcomingExams] = useState([]);
-  const [activityStats, setActivityStats] = useState({
-    problemsSolved: 0,
-    successRate: 0,
-    totalSubmissions: 0,
-  });
-  const [recentActivities, setRecentActivities] = useState([]);
-  const [activityLoading, setActivityLoading] = useState(false);
-  const fetchedClassesRef = useRef('');
-  const fetchedActivityRef = useRef('');
+  const navigate = useNavigate();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  // Create a stable string representation of class IDs
-  // Only recalculate when classes array reference changes or length changes
-  const classIdsString = useMemo(() => {
-    if (classes.length === 0) return '';
-    return classes.map(c => c._id).sort().join(',');
-  }, [classes.length, classes.map(c => c._id).join(',')]);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await getStudentDashboard();
+      setData(res.data);
+      setError('');
+    } catch (err) {
+      setError(typeof err === 'string' ? err : 'Failed to load dashboard');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  // Fetch classes on mount
   useEffect(() => {
-    if (user?.id && status === 'idle') {
-      console.log('[StudentDashboard] Dispatching fetchClasses', { userId: user.id });
-      dispatch(fetchClasses(''));
-    }
-  }, [dispatch, user?.id, status]);
+    load();
+  }, [load]);
 
-  // Fetch assignments and exams when classes change
-  useEffect(() => {
-    // Check if user is authenticated
-    if (!user) {
-      console.log('[StudentDashboard] No user found, redirecting to login');
-      return;
-    }
-
-    // Skip if no classes or already fetched for these classes
-    if (classes.length === 0) {
-      console.log('[StudentDashboard] No classes available, skipping fetchAssignments and fetchExams');
-      return;
-    }
-
-    const currentClassIds = classIdsString;
-    if (fetchedClassesRef.current === currentClassIds) {
-      console.log('[StudentDashboard] Classes already fetched, skipping');
-      return;
-    }
-
-    console.log('[StudentDashboard] Triggering fetchAssignments and fetchExams', {
-      classIds: currentClassIds,
-      classesLength: classes.length,
-    });
-
-    // Mark as fetched
-    fetchedClassesRef.current = currentClassIds;
-
-    // Fetch exams for each class
-    const fetchExams = async () => {
-      try {
-        const allExams = [];
-        for (const cls of classes) {
-          try {
-            const response = await listClassExams(cls._id);
-            const exams = response.data.exams || [];
-            allExams.push(
-              ...exams
-                .filter(exam => 
-                  exam.status === 'active' || exam.status === 'scheduled'
-                )
-                .map(exam => ({
-                  ...exam,
-                  classId: cls._id,
-                  className: cls.name
-                }))
-            );
-          } catch (err) {
-            console.error(`Failed to fetch exams for class ${cls._id}:`, err);
-          }
-        }
-        // Sort by start time and get upcoming 5
-        const sorted = allExams.sort((a, b) => {
-          const aTime = a.proctoring?.startTime ? new Date(a.proctoring.startTime) : new Date(0);
-          const bTime = b.proctoring?.startTime ? new Date(b.proctoring.startTime) : new Date(0);
-          return aTime - bTime;
-        });
-        setUpcomingExams(sorted.slice(0, 5));
-      } catch (error) {
-        console.error('Failed to fetch exams:', error);
-      }
-    };
-
-    // Fetch assignments for each class
-    const fetchAssignments = async () => {
-      console.log('[StudentDashboard] Starting fetchAssignments for classes', {
-        classIds: classes.map((cls) => cls._id),
-      });
-      try {
-        const allAssignments = [];
-        for (const cls of classes) {
-          console.log('[StudentDashboard] Fetching assignments for class', {
-            classId: cls._id,
-            className: cls.name,
-          });
-          const response = await axios.get(
-            `https://api.algosutra.co.in/admin/classes/${cls._id}/assignments`,
-            {
-              headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-            }
-          );
-          // Ensure response.data.assignments is an array, fallback to empty array if not
-          const assignmentsArray = Array.isArray(response.data.assignments)
-            ? response.data.assignments
-            : Array.isArray(response.data)
-            ? response.data
-            : [];
-          console.log('[StudentDashboard] Assignments fetched for class', {
-            classId: cls._id,
-            assignmentCount: assignmentsArray.length,
-            assignments: assignmentsArray,
-          });
-          allAssignments.push(
-            ...assignmentsArray.map((assignment) => ({
-              ...assignment,
-              classId: cls._id,
-            }))
-          );
-        }
-        console.log('[StudentDashboard] All assignments fetched', {
-          totalAssignments: allAssignments.length,
-          assignments: allAssignments,
-        });
-        setAssignments(allAssignments);
-      } catch (err) {
-        console.error('[StudentDashboard] Failed to fetch assignments', {
-          error: err.message,
-          response: err.response
-            ? {
-                status: err.response.status,
-                data: err.response.data,
-              }
-            : null,
-        });
-      }
-    };
-
-    fetchAssignments();
-    fetchExams();
-  }, [classIdsString, user]);
-
-  // Fetch recent activity + stats from leaderboards across enrolled classes
-  useEffect(() => {
-    if (!user?.id || classes.length === 0) {
-      setActivityStats({ problemsSolved: 0, successRate: 0, totalSubmissions: 0 });
-      setRecentActivities([]);
-      return;
-    }
-
-    const enrolled = classes.filter((cls) =>
-      cls.students?.some((s) => String(s._id || s) === String(user.id))
+  if (error && !data) {
+    return (
+      <div className="px-4 sm:px-5 py-6">
+        <EmptyState title="Dashboard unavailable" message={error} action={<Button variant="secondary" onClick={load}>Retry</Button>} />
+      </div>
     );
-    const activityKey = `${user.id}:${enrolled.map((c) => c._id).sort().join(',')}`;
-    if (!activityKey.endsWith(':') && fetchedActivityRef.current === activityKey) {
-      return;
-    }
-    if (enrolled.length === 0) {
-      fetchedActivityRef.current = activityKey;
-      setActivityStats({ problemsSolved: 0, successRate: 0, totalSubmissions: 0 });
-      setRecentActivities([]);
-      return;
-    }
+  }
 
-    fetchedActivityRef.current = activityKey;
-    let cancelled = false;
-
-    const fetchActivity = async () => {
-      setActivityLoading(true);
-      try {
-        const questionTitleMap = {};
-        enrolled.forEach((cls) => {
-          (cls.questions || []).forEach((q) => {
-            if (q?._id) questionTitleMap[String(q._id)] = stripHtml(q.title) || 'Untitled Question';
-          });
-        });
-
-        const solvedQuestions = new Set();
-        let correctSubmits = 0;
-        let totalSubmits = 0;
-        const activities = [];
-
-        await Promise.all(
-          enrolled.map(async (cls) => {
-            try {
-              const response = await getLeaderboard(cls._id);
-              const leaderboard = response.data?.leaderboard || [];
-              const myEntry = leaderboard.find(
-                (entry) => String(getStudentIdFromEntry(entry)) === String(user.id)
-              );
-              if (!myEntry) return;
-
-              (myEntry.highestScores || []).forEach((hs) => {
-                if (hs.isCorrect && hs.questionId) {
-                  solvedQuestions.add(String(hs.questionId));
-                }
-              });
-
-              (myEntry.attempts || []).forEach((attempt) => {
-                if (attempt.isRun) return;
-                totalSubmits += 1;
-                if (attempt.isCorrect) correctSubmits += 1;
-
-                const qId = String(attempt.questionId);
-                activities.push({
-                  id: `${attempt.submissionId || qId}-${attempt.submittedAt}`,
-                  questionId: qId,
-                  questionTitle: questionTitleMap[qId] || 'Question',
-                  classId: cls._id,
-                  className: cls.name,
-                  isCorrect: Boolean(attempt.isCorrect),
-                  submittedAt: attempt.submittedAt,
-                });
-              });
-            } catch (err) {
-              console.error('[StudentDashboard] Failed to fetch leaderboard for activity', {
-                classId: cls._id,
-                error: err,
-              });
-            }
-          })
-        );
-
-        if (cancelled) return;
-
-        activities.sort(
-          (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
-        );
-
-        setActivityStats({
-          problemsSolved: solvedQuestions.size,
-          successRate: totalSubmits > 0 ? Math.round((correctSubmits / totalSubmits) * 100) : 0,
-          totalSubmissions: totalSubmits,
-        });
-        setRecentActivities(activities.slice(0, 8));
-      } catch (err) {
-        console.error('[StudentDashboard] Failed to fetch recent activity', err);
-        if (!cancelled) {
-          setActivityStats({ problemsSolved: 0, successRate: 0, totalSubmissions: 0 });
-          setRecentActivities([]);
-        }
-      } finally {
-        if (!cancelled) setActivityLoading(false);
-      }
-    };
-
-    fetchActivity();
-    return () => {
-      cancelled = true;
-    };
-  }, [classIdsString, user?.id, classes]);
-
-  // Filter classes for the current user
-  const myClasses = user?.id
-    ? classes.filter((cls) => {
-        const isEnrolled = cls.students.some((s) => s._id === user.id);
-        console.log('[StudentDashboard] Checking class enrollment', {
-          classId: cls._id,
-          className: cls.name,
-          userId: user.id,
-          isEnrolled,
-        });
-        return isEnrolled;
-      })
-    : [];
-  console.log('[StudentDashboard] Filtered myClasses', {
-    myClassesCount: myClasses.length,
-    myClasses: myClasses.map((cls) => ({ id: cls._id, name: cls.name })),
-  });
-
-  // Filter upcoming assignments (show all assignments, sorted by due date)
-  const upcomingAssignments = assignments
-    .map((assignment) => {
-      const dueDate = assignment.dueDate ? new Date(assignment.dueDate) : null;
-      const isPast = dueDate ? dueDate < new Date() : false;
-      console.log('[StudentDashboard] Processing assignment', {
-        assignmentId: assignment._id,
-        questionId: assignment.questionId?._id || assignment.questionId,
-        dueDate: assignment.dueDate,
-        isPast,
-      });
-      return assignment;
-    })
-    .sort((a, b) => {
-      // Sort by due date, with future dates first, then past dates
-      const dateA = a.dueDate ? new Date(a.dueDate).getTime() : 0;
-      const dateB = b.dueDate ? new Date(b.dueDate).getTime() : 0;
-      return dateB - dateA; // Most recent first
-    })
-    .slice(0, 5);
-  
-  // Debug logging
-  console.log('[StudentDashboard] Debug Info:', {
-    totalAssignments: assignments.length,
-    upcomingAssignmentsCount: upcomingAssignments.length,
-    myClassesCount: myClasses.length,
-    assignments: assignments,
-    upcomingAssignments: upcomingAssignments,
-  });
-
-  // Log render state
-  console.log('[StudentDashboard] Rendering', {
-    user: user ? { id: user.id, name: user.name } : null,
-    status,
-    error,
-    classesCount: classes.length,
-    myClassesCount: myClasses.length,
-    assignmentsCount: assignments.length,
-    upcomingAssignmentsCount: upcomingAssignments.length,
-  });
-
-  // Function to get appropriate icon based on class name
-  const getClassIcon = (className) => {
-    const lowerName = className.toLowerCase();
-    
-    if (lowerName.includes('javascript') || lowerName.includes('js')) {
-      return <DiJavascript className="w-5 h-5" style={{ color: '#EAB308' }} />;
-    } else if (lowerName.includes('java') || lowerName.includes('object-oriented programming') || lowerName.includes('oop')) {
-      return <FaJava className="w-5 h-5" style={{ color: '#EF4444' }} />;
-    } else if (lowerName.includes('python')) {
-      return <FaPython className="w-5 h-5" style={{ color: '#3B82F6' }} />;
-    } else if (lowerName.includes('software engineering') || lowerName.includes('engineering')) {
-      return <GiNotebook className="w-5 h-5" style={{ color: '#059669' }} />;
-    } else if (lowerName.includes('competitive programming')) {
-      return <VscCode className="w-5 h-5" style={{ color: '#8B5CF6' }} />;
-    } else if (lowerName.includes('introduction to programming') || lowerName.includes('introduction to progra')) {
-      return <FaBookOpen className="w-5 h-5" style={{ color: '#6B7280' }} />;
-    } else if (lowerName.includes('algorithm')) {
-      return <FaProjectDiagram className="w-5 h-5" style={{ color: '#F97316' }} />;
-    } else {
-      // Default book icon for other classes
-      return (
-        <svg className="w-5 h-5" style={{ color: '#6B7280' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-        </svg>
-      );
-    }
-  };
+  const stats = data?.stats || { problemsSolved: 0, successRate: 0, totalSubmissions: 0 };
+  const classes = data?.classes || [];
+  const exams = data?.upcomingExams || [];
+  const assignments = data?.assignments || [];
+  const activity = data?.recentActivity || [];
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8">
-      {/* Professional Header */}
-      <header className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>
-              Welcome back, {user?.name || 'Student'}
-            </h1>
-            <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
-              {new Date().toLocaleDateString('en-US', { 
-                weekday: 'long', 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-              })}
-            </p>
-          </div>
-        </div>
+    <div className="h-full flex flex-col px-4 sm:px-5 py-5 gap-5 overflow-y-auto">
+      <header className="shrink-0 flex items-center gap-2">
+        <h1 className={type.pageTitle}>Dashboard</h1>
+        <Button
+          variant="secondary"
+          icon={RefreshCw}
+          onClick={load}
+          disabled={loading}
+          aria-label="Refresh"
+          title="Refresh"
+          className={`ml-auto h-9 w-9 justify-center p-0! ${loading ? '[&>svg]:animate-spin' : ''}`}
+        />
       </header>
 
-      {/* Loading State */}
-      {status === 'loading' && (
-        <div className="flex justify-center items-center py-16 backdrop-blur-sm rounded-xl shadow-lg" style={{ backgroundColor: 'var(--card-white)' }}>
-          <div className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--text-primary)', borderTopColor: 'transparent' }}></div>
-        </div>
-      )}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        <Kpi icon={CheckCircle2} tone="ok" label="Solved" value={loading ? '—' : stats.problemsSolved} hint="Unique problems" to="/student/take-class" />
+        <Kpi icon={Award} tone="accent" label="Success rate" value={loading ? '—' : `${stats.successRate}%`} hint="On submitted answers" to="/student/take-class" />
+        <Kpi icon={ClipboardList} tone="info" label="Submissions" value={loading ? '—' : stats.totalSubmissions} hint="Practice + assignments" to="/student/take-class" />
+        <Kpi icon={School} tone="warn" label="Classes" value={loading ? '—' : classes.length} hint="Enrolled" to="/student/classes" />
+      </div>
 
-      {/* Error State */}
-      {error && (
-        <div className="flex items-center p-4 mb-6 bg-red-50/80 backdrop-blur-sm rounded-xl shadow-sm border border-red-200">
-          <svg
-            className="h-6 w-6 text-red-500 mr-3"
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-          >
-            <path
-              fillRule="evenodd"
-              d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-              clipRule="evenodd"
-            />
-          </svg>
-          <div>
-            <h3 className="text-sm font-semibold text-red-800">Error</h3>
-            <p className="mt-1 text-sm text-red-700">{error}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Main Dashboard Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* My Classes Card */}
-        <div className="lg:col-span-2 backdrop-blur-sm border rounded-2xl shadow-lg transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 hover:scale-[1.02]" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-          <div className="px-6 py-4 border-b border-gray-200" style={{ backgroundColor: 'var(--background-light)' }}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <svg className="w-5 h-5" style={{ color: 'var(--primary-blue)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                </svg>
-                <h2 className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>My Classes</h2>
-              </div>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: 'var(--accent-blue)', color: 'white' }}>
-                {myClasses.length}
-              </span>
-            </div>
-          </div>
-
-          {status === 'succeeded' && myClasses.length === 0 ? (
-            <div className="p-8 text-center">
-              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-              </svg>
-              <h3 className="mt-4 text-sm font-medium" style={{ color: 'var(--text-primary)' }}>No classes enrolled</h3>
-              <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>You haven't joined any classes yet.</p>
-            </div>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+        <section className="xl:col-span-2 min-w-0">
+          <SectionHeader title="My classes" action={<ViewAll to="/student/classes" />} />
+          {!loading && classes.length === 0 ? (
+            <EmptyState icon={GraduationCap} title="No classes yet" message="When you are enrolled, your classes show up here." />
           ) : (
-            <div className="divide-y divide-gray-200">
-              {myClasses.map((cls) => (
-                <Link
-                  key={cls._id}
-                  to={`/student/classes/${cls._id}`}
-                  className="block hover:border-blue-400 transition-all duration-200 transform hover:scale-[1.01] hover:shadow-md"
-                  style={{ 
-                    '--hover-bg': 'var(--background-light)',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'var(--background-light)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                  }}
-                  onClick={() =>
-                    console.log('[StudentDashboard] Navigating to class', {
-                      classId: cls._id,
-                      className: cls.name,
-                    })
-                  }
-                >
-                  <div className="px-6 py-4 flex items-center">
-                    <div className="flex-shrink-0 h-10 w-10 rounded-lg flex items-center justify-center transition-colors duration-200" style={{ backgroundColor: 'var(--background-light)' }}>
-                      {getClassIcon(cls.name)}
-                    </div>
-                    <div className="ml-4 flex-1 min-w-0">
-                      <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{cls.name}</p>
-                      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{cls.students.length} students</p>
-                    </div>
-                    <div className="flex-shrink-0">
-                      <svg className="h-5 w-5 text-gray-400 hover:text-indigo-500 transition-colors duration-200 transform hover:translate-x-1" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Upcoming Exams Card */}
-        {upcomingExams.length > 0 && (
-          <div className="backdrop-blur-sm border rounded-2xl shadow-lg transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 hover:scale-[1.02]" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-            <div className="px-6 py-4 border-b border-gray-200" style={{ backgroundColor: 'var(--background-light)' }}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <FaClock className="w-5 h-5" style={{ color: 'var(--highlight-blue)' }} />
-                  <h2 className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>Upcoming Exams</h2>
-                </div>
-              </div>
-            </div>
-            <div className="divide-y divide-gray-200">
-              {upcomingExams.map((exam) => (
-                <Link
-                  key={exam._id}
-                  to={`/student/classes/${exam.classId}/exams`}
-                  className="block p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>{exam.title}</h3>
-                      <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>{exam.className}</p>
-                      {exam.proctoring?.startTime && (
-                        <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
-                          Starts: {new Date(exam.proctoring.startTime).toLocaleString()}
-                        </p>
-                      )}
-                    </div>
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      exam.status === 'active' ? 'bg-green-100 text-green-800' :
-                      exam.status === 'scheduled' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {exam.status}
-                    </span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Upcoming Assignments Card */}
-        <div className="backdrop-blur-sm border rounded-2xl shadow-lg transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 hover:scale-[1.02]" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-          <div className="px-6 py-4 border-b border-gray-200" style={{ backgroundColor: 'var(--background-light)' }}>
-            <div className="flex items-center space-x-3">
-              <MdOutlineAssignment className="w-5 h-5" style={{ color: 'var(--highlight-blue)' }} />
-              <h2 className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>Upcoming Assignments</h2>
-            </div>
-          </div>
-          
-          {upcomingAssignments.length === 0 ? (
-            <div className="p-6 text-center">
-              <svg className="mx-auto h-10 w-10 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-              <h3 className="mt-3 text-sm font-medium" style={{ color: 'var(--text-primary)' }}>No upcoming assignments</h3>
-              <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>You're all caught up.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-200">
-              {upcomingAssignments.map((assignment) => {
-                const cls = classes.find((c) => c._id === assignment.classId);
-                // Handle both string questionId and populated questionId object
-                const questionId = assignment.questionId?._id || assignment.questionId;
-                const question = cls?.questions?.find((q) => q._id === questionId);
-                const plainTitle = stripHtml(question.title);
-
-                console.log('[StudentDashboard] Rendering assignment', {
-                  assignmentId: assignment._id,
-                  questionId: questionId,
-                  rawQuestionId: assignment.questionId,
-                  classId: assignment.classId,
-                  hasClass: !!cls,
-                  classQuestionsCount: cls?.questions?.length || 0,
-                  hasQuestion: !!question,
-                  className: cls?.name,
-                  questionTitle: plainTitle,
-                });
-                if (!question) {
-                  console.warn('[StudentDashboard] Question not found for assignment', {
-                    assignmentId: assignment._id,
-                    questionId: questionId,
-                    rawQuestionId: assignment.questionId,
-                    classId: assignment.classId,
-                    className: cls?.name,
-                    classQuestionsIds: cls?.questions?.map(q => q._id),
-                  });
-                  return null;
-                }
-                return (
-                  <Link
-                    key={assignment._id}
-                    to={`/student/questions/${questionId}/submit`}
-                    state={{ classId: assignment.classId }}
-                    className="block transition-colors duration-150"
-                    style={{ 
-                      '--hover-bg': 'var(--background-light)',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = 'var(--background-light)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                    }}
-                    onClick={() =>
-                      console.log('[StudentDashboard] Navigating to question submission', {
-                        questionId: questionId,
-                        classId: assignment.classId,
-                      })
-                    }
-                  >
-                    <div className="px-6 py-4">
-                      <h4 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{plainTitle || 'Untitled Question'}</h4>
-                      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Class: {cls?.name}</p>
-                      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        Due: {new Date(assignment.dueDate).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Recent Activity Card */}
-        <div className="lg:col-span-3 backdrop-blur-sm border rounded-2xl shadow-lg transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 hover:scale-[1.02]" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-          <div className="px-6 py-4 border-b border-gray-200" style={{ backgroundColor: 'var(--background-light)' }}>
-            <h2 className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>Recent Activity</h2>
-          </div>
-          
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="text-center hover:transform hover:scale-105 transition-all duration-200">
-                <div className="flex items-center justify-center mb-2">
-                  <FaCheckCircle className="w-6 h-6 text-green-500 mr-2" />
-                  <div className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {activityLoading ? '—' : activityStats.problemsSolved}
-                  </div>
-                </div>
-                <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Problems Solved</div>
-              </div>
-              
-              <div className="text-center hover:transform hover:scale-105 transition-all duration-200">
-                <div className="flex items-center justify-center mb-2">
-                  <FaChartLine className="w-6 h-6 text-blue-500 mr-2" />
-                  <div className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {activityLoading ? '—' : `${activityStats.successRate}%`}
-                  </div>
-                </div>
-                <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Success Rate</div>
-              </div>
-              
-              <div className="text-center hover:transform hover:scale-105 transition-all duration-200">
-                <div className="flex items-center justify-center mb-2">
-                  <FaClock className="w-6 h-6 text-orange-500 mr-2" />
-                  <div className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {activityLoading ? '—' : activityStats.totalSubmissions}
-                  </div>
-                </div>
-                <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Submissions</div>
-              </div>
-            </div>
-            
-            <div className="mt-6">
-              {activityLoading ? (
-                <div className="flex justify-center py-4">
-                  <div className="w-8 h-8 border-4 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--text-primary)', borderTopColor: 'transparent' }} />
-                </div>
-              ) : recentActivities.length === 0 ? (
-                <p className="text-sm text-center" style={{ color: 'var(--text-secondary)' }}>
-                  No recent activity to display.
-                </p>
-              ) : (
-                <ul className="divide-y divide-gray-200 border rounded-xl overflow-hidden" style={{ borderColor: 'var(--card-border)' }}>
-                  {recentActivities.map((item) => (
-                    <li key={item.id}>
-                      <Link
-                        to={`/student/questions/${item.questionId}/submit`}
-                        state={{ classId: item.classId }}
-                        className="flex items-start gap-3 px-4 py-3 transition-colors"
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = 'var(--background-light)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'transparent';
-                        }}
-                      >
-                        <div className="mt-0.5 flex-shrink-0">
-                          {item.isCorrect ? (
-                            <FaCheckCircle className="w-4 h-4 text-green-500" />
-                          ) : (
-                            <FaTimesCircle className="w-4 h-4 text-red-400" />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                            {item.questionTitle}
-                          </p>
-                          <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                            {item.isCorrect ? 'Solved' : 'Attempted'} · {item.className}
-                          </p>
-                        </div>
-                        <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
-                          {formatRelativeTime(item.submittedAt)}
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
+            <Table columns={CLASS_COLS}>
+              {(loading && !classes.length ? Array.from({ length: 3 }, (_, i) => ({ _id: i })) : classes).map((cls) =>
+                cls.name ? (
+                  <tr key={cls._id} className={`${tableClass.row} cursor-pointer`} onClick={() => navigate(`/student/classes/${cls._id}`)}>
+                    <td className={tableClass.td}>
+                      <p className="text-sm font-semibold text-fg truncate">{cls.name}</p>
+                      <p className={`${type.meta} truncate`}>{cls.description || `${cls.studentCount} students`}</p>
+                    </td>
+                    <td className={`${tableClass.td} hidden sm:table-cell text-body`}>{cls.teacherName || '—'}</td>
+                    <td className={`${tableClass.td} hidden md:table-cell text-body`}>
+                      {cls.questionCount} questions · {cls.assignmentCount} assignments
+                    </td>
+                    <td className={`${tableClass.td} text-right`} onClick={(e) => e.stopPropagation()}>
+                      <Button variant="soft" icon={Play} onClick={() => navigate('/student/take-class', { state: { classId: cls._id } })}>
+                        Practice
+                      </Button>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={cls._id}>
+                    {CLASS_COLS.map((col, i) => (
+                      <td key={i} className={`${tableClass.td} ${col.className || ''}`}>
+                        <div className="h-3 rounded bg-hover animate-pulse w-2/3" />
+                      </td>
+                    ))}
+                  </tr>
+                ),
               )}
-            </div>
-          </div>
-        </div>
+            </Table>
+          )}
+        </section>
+
+        <section className="min-w-0">
+          <SectionHeader title="Upcoming exams" action={<ViewAll to="/student/exams" />} />
+          {!loading && exams.length === 0 ? (
+            <EmptyState icon={Award} title="No exams soon" message="Open exams and upcoming windows appear here." />
+          ) : (
+            <Table columns={EXAM_COLS}>
+              {(loading && !exams.length ? Array.from({ length: 3 }, (_, i) => ({ _id: i })) : exams).map((exam) =>
+                exam.title ? (
+                  <tr key={exam._id} className={`${tableClass.row} cursor-pointer`} onClick={() => navigate(`/student/exams/${exam._id}`)}>
+                    <td className={tableClass.td}>
+                      <p className="text-sm font-semibold text-fg truncate">{exam.title}</p>
+                      <p className={`${type.meta} truncate`}>{exam.className}</p>
+                    </td>
+                    <td className={`${tableClass.td} hidden md:table-cell whitespace-nowrap text-body`}>{formatWhen(exam.startTime)}</td>
+                    <td className={tableClass.td}>
+                      <StatusChip kind={exam.phase === 'live' ? 'ok' : 'info'}>{exam.phase === 'live' ? 'Open' : 'Upcoming'}</StatusChip>
+                    </td>
+                    <td className={`${tableClass.td} text-right`}>
+                      <Button variant="soft" onClick={() => navigate(`/student/exams/${exam._id}`)}>
+                        {exam.attemptStatus === 'in_progress' ? 'Resume' : exam.phase === 'live' ? 'Start' : 'Details'}
+                      </Button>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={exam._id}>
+                    {EXAM_COLS.map((col, i) => (
+                      <td key={i} className={`${tableClass.td} ${col.className || ''}`}>
+                        <div className="h-3 rounded bg-hover animate-pulse w-2/3" />
+                      </td>
+                    ))}
+                  </tr>
+                ),
+              )}
+            </Table>
+          )}
+        </section>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+        <section className="xl:col-span-2 min-w-0">
+          <SectionHeader title="Assignments" />
+          {!loading && assignments.length === 0 ? (
+            <EmptyState icon={ClipboardList} title="No assignments" message="Assigned questions from your classes appear here." />
+          ) : (
+            <Table columns={ASSIGN_COLS}>
+              {(loading && !assignments.length ? Array.from({ length: 3 }, (_, i) => ({ _id: i })) : assignments).map((row) =>
+                row.questionTitle ? (
+                  <tr
+                    key={row._id}
+                    className={`${tableClass.row} cursor-pointer`}
+                    onClick={() => navigate(`/student/questions/${row.questionId}/submit?classId=${row.classId}`, { state: { classId: row.classId } })}
+                  >
+                    <td className={tableClass.td}>
+                      <p className="text-sm font-semibold text-fg truncate">{row.questionTitle}</p>
+                      <p className={`${type.meta} truncate`}>{row.className}</p>
+                    </td>
+                    <td className={`${tableClass.td} hidden sm:table-cell whitespace-nowrap`}>
+                      {row.dueDate ? (
+                        <span className={new Date(row.dueDate) < new Date() ? 'text-bad' : 'text-body'}>{formatWhen(row.dueDate)}</span>
+                      ) : (
+                        <span className="text-muted">No due date</span>
+                      )}
+                    </td>
+                    <td className={`${tableClass.td} text-right`}>
+                      <Button variant="soft">Open</Button>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={row._id}>
+                    {ASSIGN_COLS.map((col, i) => (
+                      <td key={i} className={`${tableClass.td} ${col.className || ''}`}>
+                        <div className="h-3 rounded bg-hover animate-pulse w-2/3" />
+                      </td>
+                    ))}
+                  </tr>
+                ),
+              )}
+            </Table>
+          )}
+        </section>
+
+        <section className="min-w-0">
+          <SectionHeader title="Recent activity" />
+          <Card className="p-0! overflow-hidden">
+            {loading && !activity.length ? (
+              <div className="p-4 space-y-2">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="h-10 rounded-xl bg-hover animate-pulse" />
+                ))}
+              </div>
+            ) : activity.length === 0 ? (
+              <p className="px-4 py-8 text-center text-xs text-muted">No recent submissions.</p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {activity.map((item) => (
+                  <li key={item.id}>
+                    <Link
+                      to={`/student/questions/${item.questionId}/submit?classId=${item.classId}`}
+                      state={{ classId: item.classId }}
+                      className="flex items-start gap-3 px-4 py-3 hover:bg-hover"
+                    >
+                      {item.isCorrect ? <CheckCircle2 className="w-4 h-4 text-ok mt-0.5 shrink-0" /> : <CircleX className="w-4 h-4 text-bad mt-0.5 shrink-0" />}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-fg truncate">{item.questionTitle}</p>
+                        <p className={type.meta}>
+                          {item.isCorrect ? 'Solved' : 'Attempted'} · {item.className}
+                        </p>
+                      </div>
+                      <span className="text-[11px] text-muted shrink-0">{timeAgo(item.submittedAt)}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </section>
       </div>
     </div>
   );

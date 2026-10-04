@@ -9,7 +9,7 @@ const LeaderboardTable = ({ leaderboard }) => {
     <div className="overflow-x-auto rounded-lg border" style={{ borderColor: 'var(--card-border)' }}>
       <table className="min-w-full rounded-lg shadow-md" style={{ backgroundColor: 'var(--card-white)' }}>
         <thead>
-          <tr className="bg-indigo-600 text-white">
+          <tr className="bg-accent text-on-accent">
             <th className="py-2 px-4 text-left">Rank</th>
             <th className="py-2 px-4 text-left">Student</th>
             <th className="py-2 px-4 text-left">Problems Solved</th>

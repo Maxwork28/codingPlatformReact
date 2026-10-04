@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { parseBulkIo } from '../utils/parseBulkIo';
+import { PlusIcon, Trash2Icon } from 'lucide-react';
 
 const fieldClass =
-  'w-full px-3 py-2 rounded-lg border font-mono text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500';
+  'w-full px-3 py-2 rounded-lg border font-mono text-sm focus:ring-2 focus:ring-accent focus:border-accent';
 
 const BulkIoPairsEditor = ({
   items,
@@ -67,14 +67,14 @@ const BulkIoPairsEditor = ({
         <button
           type="button"
           onClick={() => setBulkOpen((open) => !open)}
-          className="text-sm font-medium text-indigo-600 hover:text-indigo-800"
+          className="text-sm font-medium text-accent-ink hover:text-accent"
         >
           {bulkOpen ? 'Hide paste box' : 'Paste many at once'}
         </button>
         <button
           type="button"
           onClick={addItem}
-          className="inline-flex items-center px-3 py-1.5 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
+          className="inline-flex items-center px-3 py-1.5 text-sm font-semibold text-on-accent bg-accent rounded-lg hover:bg-accent-hover"
         >
           <PlusIcon className="h-4 w-4 mr-1" />
           {addLabel}
@@ -87,8 +87,8 @@ const BulkIoPairsEditor = ({
           style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--background-light)' }}
         >
           <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-            Separate input and output with <code className="px-1 rounded bg-gray-200 dark:bg-gray-700">---</code>
-            {' '}and cases with <code className="px-1 rounded bg-gray-200 dark:bg-gray-700">===</code>
+            Separate input and output with <code className="px-1 rounded bg-hover">---</code>
+            {' '}and cases with <code className="px-1 rounded bg-hover">===</code>
           </p>
           <textarea
             value={bulkText}
@@ -105,7 +105,7 @@ const BulkIoPairsEditor = ({
             <button
               type="button"
               onClick={applyBulk}
-              className="px-3 py-1.5 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
+              className="px-3 py-1.5 text-sm font-semibold text-on-accent bg-accent rounded-lg hover:bg-accent-hover"
             >
               Parse & add
             </button>
@@ -148,7 +148,7 @@ const BulkIoPairsEditor = ({
                     style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)', color: 'var(--text-primary)' }}
                     placeholder="stdin"
                   />
-                  {errors[idx] && <p className="mt-1 text-xs text-red-600">{errors[idx]}</p>}
+                  {errors[idx] && <p className="mt-1 text-xs text-bad">{errors[idx]}</p>}
                 </td>
                 <td className="px-3 py-2">
                   <textarea
@@ -179,7 +179,7 @@ const BulkIoPairsEditor = ({
                         type="checkbox"
                         checked={Boolean(item.isPublic)}
                         onChange={(e) => updateItem(idx, 'isPublic', e.target.checked)}
-                        className="h-4 w-4 text-indigo-600 rounded"
+                        className="h-4 w-4 text-accent-ink rounded"
                         title="Public"
                       />
                     </td>
@@ -188,7 +188,7 @@ const BulkIoPairsEditor = ({
                         type="checkbox"
                         checked={Boolean(item.isLargeTestCase)}
                         onChange={(e) => updateItem(idx, 'isLargeTestCase', e.target.checked)}
-                        className="h-4 w-4 text-amber-600 rounded"
+                        className="h-4 w-4 text-warn rounded"
                         title="Large (TLE/MLE)"
                       />
                     </td>
@@ -199,10 +199,10 @@ const BulkIoPairsEditor = ({
                     type="button"
                     onClick={() => removeItem(idx)}
                     disabled={items.length <= minItems}
-                    className="p-1.5 rounded-full text-red-600 hover:bg-red-50 disabled:opacity-40"
+                    className="p-1.5 rounded-full text-bad hover:bg-bad-soft disabled:opacity-40"
                     aria-label="Remove"
                   >
-                    <TrashIcon className="h-4 w-4" />
+                    <Trash2Icon className="h-4 w-4" />
                   </button>
                 </td>
               </tr>
@@ -226,9 +226,9 @@ export const QuestionFormStepper = ({ step, steps, onStepChange }) => (
           onClick={() => onStepChange(item.id)}
           className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors ${
             active
-              ? 'bg-indigo-600 text-white border-indigo-600'
+              ? 'bg-accent text-on-accent border-accent'
               : done
-                ? 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                ? 'bg-accent-soft text-accent-ink border-accent-line'
                 : ''
           }`}
           style={

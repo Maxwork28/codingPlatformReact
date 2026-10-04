@@ -1,379 +1,558 @@
-import React, { useEffect, useState } from 'react';
-import { useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
-import { ChartBarIcon, UsersIcon, AcademicCapIcon, UserGroupIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
-import { getCounts } from '../../../common/services/api';
-import { IoBookSharp, IoPerson } from "react-icons/io5";
-import { FaRegQuestionCircle, FaClipboardList } from "react-icons/fa";
-import { PiStudentFill } from "react-icons/pi";
-import { MdOutlineQuiz, MdOutlineAssignment, MdOutlineSchool } from "react-icons/md";
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { formatDistanceToNowStrict } from 'date-fns';
+import {
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
+  Ban,
+  CheckCircle2,
+  ChevronRight,
+  ClipboardList,
+  FilePen,
+  FileQuestion,
+  GraduationCap,
+  LayoutDashboard,
+  Play,
+  Plus,
+  RefreshCw,
+  School,
+  Send,
+  Upload,
+  UserX,
+  Users,
+  XCircle,
+} from 'lucide-react';
+import { getAdminDashboard } from '../../../common/services/api';
+import { Button, Card, EmptyState, Table } from '../../../common/ui/primitives';
+import { table as tableClass, type } from '../../../common/ui/format';
+import { useStaffBase } from '../components/classDetails/helpers';
+
+const tones = {
+  accent: 'bg-accent-soft text-accent-ink border-accent-line',
+  ok: 'bg-ok-soft text-ok border-ok-line',
+  warn: 'bg-warn-soft text-warn border-warn-line',
+  bad: 'bg-bad-soft text-bad border-bad-line',
+  info: 'bg-info-soft text-info border-info-line',
+  quiet: 'bg-quiet-soft text-quiet border-quiet-line',
+};
+
+const plural = (n, word, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
+
+const timeAgo = (value) => (value ? `${formatDistanceToNowStrict(new Date(value))} ago` : '');
+
+const formatTime = (value) =>
+  new Date(value).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+
+const initials = (name = '') =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0].toUpperCase())
+    .join('') || '?';
+
+function SectionHeader({ title, action }) {
+  return (
+    <div className="flex items-center justify-between gap-2 mb-3">
+      <h2 className={type.section}>{title}</h2>
+      {action}
+    </div>
+  );
+}
+
+function ViewAll({ to, children = 'View all' }) {
+  return (
+    <Link to={to} className="flex items-center gap-0.5 text-[11px] font-semibold text-accent-ink hover:underline">
+      {children}
+      <ChevronRight className="w-3 h-3" />
+    </Link>
+  );
+}
+
+function KpiCard({ icon, tone, label, value, hint, trend, to }) {
+  const Icon = icon;
+  return (
+    <Link
+      to={to}
+      className="group bg-surface border border-line rounded-2xl p-4 flex flex-col gap-3 hover:border-line-strong transition"
+    >
+      <div className="flex items-center justify-between">
+        <span className={`w-8 h-8 rounded-lg border flex items-center justify-center ${tones[tone]}`}>
+          <Icon className="w-4 h-4" />
+        </span>
+        {trend}
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">{label}</p>
+        <p className="text-2xl font-bold text-fg leading-tight tabular-nums">{value}</p>
+        <p className={`${type.meta} truncate`}>{hint}</p>
+      </div>
+    </Link>
+  );
+}
+
+function Trend({ current, previous }) {
+  if (!previous) return null;
+  const change = Math.round(((current - previous) / previous) * 100);
+  if (change === 0) return <span className="text-[11px] text-muted">No change</span>;
+  const up = change > 0;
+  const Icon = up ? ArrowUpRight : ArrowDownRight;
+  return (
+    <span
+      className={`flex items-center gap-0.5 text-[11px] font-semibold ${up ? 'text-ok' : 'text-bad'}`}
+      title="Compared with the previous 7 days"
+    >
+      <Icon className="w-3 h-3" />
+      {Math.abs(change)}%
+    </span>
+  );
+}
+
+function ActivityChart({ days }) {
+  const max = Math.max(1, ...days.map((d) => d.total));
+  const total = days.reduce((sum, d) => sum + d.total, 0);
+  const correct = days.reduce((sum, d) => sum + d.correct, 0);
+  const label = (date, opts) => new Date(`${date}T00:00:00`).toLocaleDateString(undefined, opts);
+
+  return (
+    <Card className="lg:col-span-2 flex flex-col">
+      <SectionHeader
+        title="Submissions · last 14 days"
+        action={
+          <div className="flex items-center gap-3 text-[11px] text-muted">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-sm bg-ok" /> Correct
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-sm bg-bad/60" /> Incorrect
+            </span>
+          </div>
+        }
+      />
+      <div className="flex items-baseline gap-4 mb-4">
+        <p>
+          <span className="text-2xl font-bold text-fg tabular-nums">{total}</span>{' '}
+          <span className={type.body}>submissions</span>
+        </p>
+        <p>
+          <span className="text-2xl font-bold text-fg tabular-nums">{total ? Math.round((correct / total) * 100) : 0}%</span>{' '}
+          <span className={type.body}>correct</span>
+        </p>
+      </div>
+      <div className="flex-1 min-h-40 flex items-end gap-1 sm:gap-1.5" role="img" aria-label={`${total} submissions in the last 14 days`}>
+        {days.map((d, i) => {
+          const isToday = i === days.length - 1;
+          return (
+            <div key={d.date} className="flex-1 h-full flex flex-col justify-end items-center gap-1.5 group">
+              <div
+                className="w-full max-w-8 flex flex-col justify-end rounded-md overflow-hidden bg-hover/60 h-full"
+                title={`${label(d.date, { weekday: 'short', day: 'numeric', month: 'short' })}: ${d.total} submissions, ${d.correct} correct`}
+              >
+                <div className="bg-bad/60 group-hover:bg-bad/80 transition" style={{ height: `${((d.total - d.correct) / max) * 100}%` }} />
+                <div className="bg-ok group-hover:brightness-110 transition" style={{ height: `${(d.correct / max) * 100}%` }} />
+              </div>
+              <span className={`text-[10px] tabular-nums ${isToday ? 'text-fg font-semibold' : 'text-subtle'}`}>
+                {isToday ? 'Today' : i % 2 === days.length % 2 ? label(d.date, { day: 'numeric' }) : '\u00a0'}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+function AttentionList({ attention, base, isTeacher }) {
+  const items = [
+    attention.drafts > 0 && {
+      icon: FilePen,
+      tone: 'warn',
+      text: `${plural(attention.drafts, 'question draft')} waiting to be published`,
+      to: `${base}/questions/drafts`,
+    },
+    attention.scoresAwaitingRelease > 0 && {
+      icon: Send,
+      tone: 'info',
+      text: `${plural(attention.scoresAwaitingRelease, 'finished exam')} with unreleased scores`,
+      to: attention.firstAwaitingRelease
+        ? `${base}/classes/${attention.firstAwaitingRelease.classId}/exams/${attention.firstAwaitingRelease._id}/report`
+        : `${base}/exams`,
+    },
+    !isTeacher && attention.classesWithoutTeacher > 0 && {
+      icon: AlertTriangle,
+      tone: 'bad',
+      text: `${plural(attention.classesWithoutTeacher, 'active class', 'active classes')} without a teacher`,
+      to: `${base}/classes?status=active`,
+    },
+    !isTeacher && attention.unenrolledStudents > 0 && {
+      icon: UserX,
+      tone: 'warn',
+      text: `${plural(attention.unenrolledStudents, 'student')} not in any class`,
+      to: '/admin/students?filter=unenrolled',
+    },
+    attention.blockedStudents > 0 && {
+      icon: Ban,
+      tone: 'bad',
+      text: `${plural(attention.blockedStudents, 'student')} blocked from a class`,
+      to: isTeacher ? `${base}/classes` : '/admin/students?filter=blocked',
+    },
+    attention.inactiveClasses > 0 && {
+      icon: School,
+      tone: 'quiet',
+      text: `${plural(attention.inactiveClasses, 'inactive class', 'inactive classes')}`,
+      to: `${base}/classes?status=inactive`,
+    },
+  ].filter(Boolean);
+
+  return (
+    <Card className="flex flex-col">
+      <SectionHeader title="Needs attention" />
+      {items.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 py-8 text-center">
+          <CheckCircle2 className="w-8 h-8 text-ok" />
+          <p className={type.cardTitle}>All clear</p>
+          <p className={type.body}>Nothing needs your attention right now.</p>
+        </div>
+      ) : (
+        <ul className="-mx-2 space-y-0.5">
+          {items.map((item) => {
+            const Icon = item.icon;
+            return (
+              <li key={item.text}>
+                <Link to={item.to} className="flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-hover transition group">
+                  <span className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 ${tones[item.tone]}`}>
+                    <Icon className="w-3.5 h-3.5" />
+                  </span>
+                  <span className="flex-1 text-xs text-body">{item.text}</span>
+                  <ChevronRight className="w-3.5 h-3.5 text-subtle group-hover:text-fg" />
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+const PHASES = [
+  { id: 'live', label: 'Live', tone: 'text-ok' },
+  { id: 'scheduled', label: 'Scheduled', tone: 'text-info' },
+  { id: 'draft', label: 'Draft', tone: 'text-warn' },
+  { id: 'completed', label: 'Completed', tone: 'text-muted' },
+];
+
+function ExamsPanel({ exams, upcoming, base }) {
+  const navigate = useNavigate();
+  return (
+    <Card className="lg:col-span-2 flex flex-col">
+      <SectionHeader title="Live & upcoming exams" action={<ViewAll to={`${base}/exams`}>All exams</ViewAll>} />
+      <div className="grid grid-cols-4 gap-2 mb-4">
+        {PHASES.map((p) => (
+          <div key={p.id} className="rounded-xl border border-line bg-inset px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted">{p.label}</p>
+            <p className={`text-lg font-bold tabular-nums ${exams[p.id] ? p.tone : 'text-subtle'}`}>{exams[p.id] || 0}</p>
+          </div>
+        ))}
+      </div>
+      {upcoming.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center gap-1 py-6 text-center">
+          <ClipboardList className="w-6 h-6 text-muted" />
+          <p className={type.cardTitle}>No live or upcoming exams</p>
+          <p className={type.body}>Schedule an exam from a class or start one from a template.</p>
+        </div>
+      ) : (
+        <ul className="divide-y divide-line -mx-1">
+          {upcoming.map((exam) => {
+            const live = exam.phase === 'live';
+            const progress = exam.enrolled ? Math.min(100, Math.round((exam.started / exam.enrolled) * 100)) : 0;
+            return (
+              <li key={exam._id}>
+                <button
+                  type="button"
+                  onClick={() => navigate(`${base}/classes/${exam.classId}/exams/${exam._id}/report`)}
+                  className="w-full text-left flex items-center gap-3 px-1 py-2.5 rounded-lg hover:bg-hover transition"
+                >
+                  <span
+                    className={`shrink-0 w-20 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider ${live ? 'text-ok' : 'text-info'}`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${live ? 'bg-ok animate-pulse' : 'bg-info'}`} />
+                    {live ? 'Live' : 'Scheduled'}
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-xs font-semibold text-fg truncate">{exam.title}</span>
+                    <span className={`block ${type.meta} truncate`}>
+                      {exam.className || 'Unknown class'}
+                      {live
+                        ? exam.endTime && ` · ends ${formatTime(exam.endTime)}`
+                        : exam.startTime && ` · starts ${formatTime(exam.startTime)}`}
+                    </span>
+                  </span>
+                  {live ? (
+                    <span className="hidden sm:flex flex-col items-end gap-1 w-32 shrink-0">
+                      <span className="text-[11px] text-body tabular-nums">
+                        {exam.started}/{exam.enrolled} started · {exam.submitted} done
+                      </span>
+                      <span className="w-full h-1.5 rounded-full bg-hover overflow-hidden">
+                        <span className="block h-full bg-ok rounded-full" style={{ width: `${progress}%` }} />
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="hidden sm:block text-[11px] text-muted whitespace-nowrap">
+                      {exam.startTime ? `in ${formatDistanceToNowStrict(new Date(exam.startTime))}` : 'No start time'}
+                    </span>
+                  )}
+                  <ChevronRight className="w-3.5 h-3.5 text-subtle shrink-0" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function RecentSubmissions({ items, base, isTeacher }) {
+  return (
+    <Card className="flex flex-col">
+      <SectionHeader title="Recent submissions" action={<ViewAll to={isTeacher ? `${base}/classes` : '/admin/students?sort=recent'}>{isTeacher ? 'Classes' : 'Students'}</ViewAll>} />
+      {items.length === 0 ? (
+        <p className={`${type.body} py-6 text-center`}>No submissions yet.</p>
+      ) : (
+        <ul className="space-y-3">
+          {items.map((s) => (
+            <li key={s._id} className="flex items-start gap-2.5">
+              <span className="w-7 h-7 rounded-full bg-accent-soft text-accent-ink border border-accent-line text-[10px] font-bold flex items-center justify-center shrink-0">
+                {initials(s.studentName)}
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-body truncate">
+                  <span className="font-semibold text-fg">{s.studentName}</span>
+                  {s.inExam && <span className="text-subtle"> · exam</span>}
+                </p>
+                <p className={`${type.meta} truncate`} title={s.questionTitle}>
+                  {s.questionTitle}
+                </p>
+              </div>
+              <div className="flex flex-col items-end shrink-0">
+                {s.isCorrect ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-ok" aria-label="Correct" />
+                ) : (
+                  <XCircle className="w-3.5 h-3.5 text-bad" aria-label="Incorrect" />
+                )}
+                <span className="text-[10px] text-subtle whitespace-nowrap mt-0.5">{timeAgo(s.submittedAt)}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+const CLASS_COLUMNS = [
+  { label: 'Class' },
+  { label: 'Students', className: 'text-right' },
+  { label: 'Teachers', className: 'text-right hidden md:table-cell' },
+  { label: 'Exams', className: 'text-right hidden md:table-cell' },
+  { label: 'Submissions (7d)', className: 'text-right' },
+  { label: 'Correct (7d)', className: 'hidden sm:table-cell' },
+];
+
+function ClassActivity({ classes, base }) {
+  const navigate = useNavigate();
+  return (
+    <section>
+      <SectionHeader title="Most active classes this week" action={<ViewAll to={`${base}/classes`}>All classes</ViewAll>} />
+      <Table columns={CLASS_COLUMNS}>
+        {classes.map((c) => (
+          <tr key={c._id} onClick={() => navigate(`${base}/classes/${c._id}`)} className={`${tableClass.row} cursor-pointer`}>
+            <td className={tableClass.td}>
+              <span className="text-sm font-semibold text-fg">{c.name}</span>
+              {c.status !== 'active' && <span className={`${type.meta} ml-1.5`}>inactive</span>}
+              {c.status === 'active' && c.teachers === 0 && <span className="text-[11px] text-bad ml-1.5">no teacher</span>}
+            </td>
+            <td className={`${tableClass.td} text-right tabular-nums`}>{c.students}</td>
+            <td className={`${tableClass.td} text-right tabular-nums hidden md:table-cell`}>{c.teachers}</td>
+            <td className={`${tableClass.td} text-right tabular-nums hidden md:table-cell`}>{c.exams}</td>
+            <td className={`${tableClass.td} text-right tabular-nums`}>{c.submissions7d}</td>
+            <td className={`${tableClass.td} hidden sm:table-cell`}>
+              {c.accuracy7d == null ? (
+                <span className="text-subtle">—</span>
+              ) : (
+                <div className="flex items-center gap-2 w-40">
+                  <div className="flex-1 h-1.5 rounded-full bg-hover overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${c.accuracy7d >= 70 ? 'bg-ok' : c.accuracy7d >= 40 ? 'bg-warn' : 'bg-bad'}`}
+                      style={{ width: `${c.accuracy7d}%` }}
+                    />
+                  </div>
+                  <span className="text-[11px] text-body tabular-nums w-8 text-right">{c.accuracy7d}%</span>
+                </div>
+              )}
+            </td>
+          </tr>
+        ))}
+      </Table>
+    </section>
+  );
+}
+
+function DashboardSkeleton() {
+  const block = 'rounded-2xl bg-surface border border-line animate-pulse';
+  return (
+    <div className="space-y-4" aria-busy="true">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        {Array.from({ length: 5 }, (_, i) => (
+          <div key={i} className={`${block} h-32`} />
+        ))}
+      </div>
+      <div className="grid lg:grid-cols-3 gap-4">
+        <div className={`${block} h-72 lg:col-span-2`} />
+        <div className={`${block} h-72`} />
+      </div>
+    </div>
+  );
+}
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
-  const { classes, status: classesStatus, error: classesError } = useSelector((state) => state.classes);
+  const { base, isTeacher } = useStaffBase();
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const [counts, setCounts] = useState({
-    teachers: 0,
-    students: 0,
-    questions: 0,
-    classes: 0,
-    activeClasses: 0,
-    inactiveClasses: 0,
-    exams: 0,
-    examDrafts: 0,
-    examScheduled: 0,
-    examActive: 0,
-    examCompleted: 0,
-    examTemplates: 0,
-    examAttempts: 0,
-    totalSubmissions: 0
-  });
-  const [classAnalytics, setClassAnalytics] = useState([]);
-  const [countsStatus, setCountsStatus] = useState('idle');
-  const [countsError, setCountsError] = useState(null);
-
-  useEffect(() => {
-    const fetchCounts = async () => {
-      setCountsStatus('loading');
-      try {
-        const response = await getCounts();
-        setCounts(response.data.counts || {});
-        setClassAnalytics(response.data.classAnalytics || []);
-        setCountsStatus('succeeded');
-      } catch (error) {
-        setCountsError(error || 'Failed to fetch counts');
-        setCountsStatus('failed');
-      }
-    };
-
-    fetchCounts();
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await getAdminDashboard();
+      setData(response.data);
+    } catch (err) {
+      setError(typeof err === 'string' ? err : 'Failed to load dashboard');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  if (classesStatus === 'loading' || countsStatus === 'loading') {
-    return (
-      <div className="flex justify-center items-center min-h-screen">
-        <div className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--text-primary)', borderTopColor: 'transparent' }}></div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const updatedAt = useMemo(
+    () => (data?.generatedAt ? new Date(data.generatedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : ''),
+    [data],
+  );
+
+  const k = data?.kpis;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h2 className="text-3xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
-          Admin Dashboard
-        </h2>
-        <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
-          Comprehensive overview of your platform's statistics and class analytics
-        </p>
-      </div>
-
-      {/* Error State */}
-      {(classesError || countsError) && (
-        <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
-          <p className="text-sm text-red-800 dark:text-red-200">{classesError || countsError}</p>
+    <div className="px-4 sm:px-5 py-5 space-y-4">
+      <header className="flex flex-wrap items-center gap-2">
+        <h1 className={`${type.pageTitle} mr-2`}>Dashboard</h1>
+        {updatedAt && <span className={type.meta}>Updated {updatedAt}</span>}
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="secondary"
+            icon={RefreshCw}
+            onClick={load}
+            disabled={loading}
+            aria-label="Refresh"
+            title="Refresh"
+            className={`h-9 w-9 justify-center p-0! ${loading ? '[&>svg]:animate-spin' : ''}`}
+          />
+          {isTeacher ? (
+            <Button variant="secondary" icon={Play} className="h-9" onClick={() => navigate('/teacher/take-class')}>
+              Take class
+            </Button>
+          ) : (
+            <Button variant="secondary" icon={Upload} className="h-9" onClick={() => navigate('/admin/upload')}>
+              Import users
+            </Button>
+          )}
+          <Button icon={Plus} className="h-9" onClick={() => navigate(`${base}/questions/create`)}>
+            New question
+          </Button>
         </div>
-      )}
+      </header>
 
-      {/* Main Statistics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {/* Classes Card */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Classes</p>
-              <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{counts.classes || 0}</p>
-              <div className="flex items-center gap-3 mt-2">
-                <span className="text-xs text-green-600 dark:text-green-400">
-                  {counts.activeClasses || 0} active
-                </span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {counts.inactiveClasses || 0} inactive
-                </span>
-              </div>
-            </div>
-            <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-              <IoBookSharp className="h-8 w-8 text-blue-600 dark:text-blue-400" />
-            </div>
-          </div>
-        </div>
-
-        {/* Students Card */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Students</p>
-              <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{counts.students || 0}</p>
-            </div>
-            <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-lg">
-              <IoPerson className="h-8 w-8 text-green-600 dark:text-green-400" />
-            </div>
-          </div>
-        </div>
-
-        {/* Questions Card */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Questions</p>
-              <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{counts.questions || 0}</p>
-            </div>
-            <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-              <FaRegQuestionCircle className="h-8 w-8 text-purple-600 dark:text-purple-400" />
-            </div>
-          </div>
-        </div>
-
-        {/* Teachers Card */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Teachers</p>
-              <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{counts.teachers || 0}</p>
-            </div>
-            <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
-              <PiStudentFill className="h-8 w-8 text-orange-600 dark:text-orange-400" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Exam Statistics Section */}
-      <div className="mb-8">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Exam Statistics</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Total Exams */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Exams</p>
-              <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
-                <MdOutlineQuiz className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
-              </div>
-            </div>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{counts.exams || 0}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              {counts.examTemplates || 0} templates available
+      {error && !data ? (
+        <EmptyState
+          icon={LayoutDashboard}
+          title="Couldn't load the dashboard"
+          message={error}
+          action={<Button variant="secondary" onClick={load}>Try again</Button>}
+        />
+      ) : !data ? (
+        <DashboardSkeleton />
+      ) : (
+        <>
+          {error && (
+            <p className="rounded-xl border border-bad-line bg-bad-soft px-3 py-2 text-xs text-bad">
+              Refresh failed: {error}. Showing data from {updatedAt}.
             </p>
+          )}
+
+          <div className={`grid grid-cols-2 ${isTeacher ? 'lg:grid-cols-4' : 'lg:grid-cols-5'} gap-3`}>
+            <KpiCard
+              icon={Users}
+              tone="accent"
+              label="Students"
+              value={k.students}
+              hint={`${k.activeStudents7d} active this week · ${k.newStudents7d} new`}
+              to={isTeacher ? `${base}/classes` : '/admin/students'}
+            />
+            {!isTeacher && (
+              <KpiCard
+                icon={GraduationCap}
+                tone="info"
+                label="Teachers"
+                value={k.teachers}
+                hint={`${k.teacherCreators} can create questions`}
+                to="/admin/teachers"
+              />
+            )}
+            <KpiCard
+              icon={School}
+              tone="ok"
+              label="Active classes"
+              value={k.activeClasses}
+              hint={`of ${plural(k.classes, 'class', 'classes')}`}
+              to={`${base}/classes`}
+            />
+            <KpiCard
+              icon={FileQuestion}
+              tone="warn"
+              label="Question bank"
+              value={k.questions}
+              hint={`${plural(k.templates, 'exam template')}`}
+              to={`${base}/questions`}
+            />
+            <KpiCard
+              icon={Send}
+              tone="quiet"
+              label="Submissions (7 days)"
+              value={k.submissions7d}
+              hint={`${k.submissionsPrev7d} the week before`}
+              trend={<Trend current={k.submissions7d} previous={k.submissionsPrev7d} />}
+              to={isTeacher ? `${base}/classes` : '/admin/students?sort=recent'}
+            />
           </div>
 
-          {/* Exam Status Breakdown */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Exam Status</p>
-              <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
-                <FaClipboardList className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600 dark:text-gray-400">Draft</span>
-                <span className="font-semibold text-gray-900 dark:text-white">{counts.examDrafts || 0}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600 dark:text-gray-400">Scheduled</span>
-                <span className="font-semibold text-gray-900 dark:text-white">{counts.examScheduled || 0}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600 dark:text-gray-400">Active</span>
-                <span className="font-semibold text-gray-900 dark:text-white">{counts.examActive || 0}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600 dark:text-gray-400">Completed</span>
-                <span className="font-semibold text-gray-900 dark:text-white">{counts.examCompleted || 0}</span>
-              </div>
-            </div>
+          <div className="grid lg:grid-cols-3 gap-4">
+            <ActivityChart days={data.activity} />
+            <AttentionList attention={data.attention} base={base} isTeacher={isTeacher} />
           </div>
 
-          {/* Exam Attempts */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Exam Attempts</p>
-              <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                <MdOutlineAssignment className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-              </div>
-            </div>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{counts.examAttempts || 0}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Total student attempts
-            </p>
+          <div className="grid lg:grid-cols-3 gap-4">
+            <ExamsPanel exams={data.exams} upcoming={data.upcomingExams} base={base} />
+            <RecentSubmissions items={data.recentSubmissions} base={base} isTeacher={isTeacher} />
           </div>
 
-          {/* Total Submissions */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Submissions</p>
-              <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-                <ChartBarIcon className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-              </div>
-            </div>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{counts.totalSubmissions || 0}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              All question submissions
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Class Analytics Table */}
-      {classAnalytics.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700">
-          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex justify-between items-center">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Class Analytics
-                </h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  Detailed breakdown of classes, students, questions, and exams
-                </p>
-              </div>
-              <button
-                onClick={() => navigate('/admin/classes')}
-                className="px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline"
-              >
-                View All →
-              </button>
-            </div>
-          </div>
-          
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-              <thead className="bg-gray-50 dark:bg-gray-900/50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Class Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Students
-                  </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Teachers
-                  </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Questions
-                  </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Assignments
-                  </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Exams
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {classAnalytics.map((cls) => (
-                  <tr 
-                    key={cls.id} 
-                    className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
-                    onClick={() => navigate(`/admin/classes/${cls.id}`)}
-                  >
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 h-10 w-10 flex items-center justify-center bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
-                          <MdOutlineSchool className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-                        </div>
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900 dark:text-white">
-                            {cls.name}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        cls.status === 'active' 
-                          ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' 
-                          : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                      }`}>
-                        {cls.status || 'inactive'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="text-sm font-medium text-gray-900 dark:text-white">
-                        {cls.studentCount}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="text-sm font-medium text-gray-900 dark:text-white">
-                        {cls.teacherCount}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="text-sm font-medium text-gray-900 dark:text-white">
-                        {cls.questionCount}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="text-sm font-medium text-gray-900 dark:text-white">
-                        {cls.assignmentCount}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-center">
-                        <div className="text-sm font-medium text-gray-900 dark:text-white mb-1">
-                          {cls.examCount || 0}
-                        </div>
-                        {cls.examStats && (cls.examStats.draft > 0 || cls.examStats.active > 0 || cls.examStats.completed > 0) && (
-                          <div className="flex justify-center gap-1">
-                            {cls.examStats.draft > 0 && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300" title="Draft">
-                                {cls.examStats.draft}
-                              </span>
-                            )}
-                            {cls.examStats.active > 0 && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" title="Active">
-                                {cls.examStats.active}
-                              </span>
-                            )}
-                            {cls.examStats.completed > 0 && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" title="Completed">
-                                {cls.examStats.completed}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/admin/classes/${cls.id}`);
-                        }}
-                        className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-300"
-                      >
-                        View →
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {classAnalytics.length === 0 && countsStatus === 'succeeded' && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-12 text-center">
-          <MdOutlineSchool className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-4 text-lg font-medium text-gray-900 dark:text-white">No classes found</h3>
-          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-            Get started by creating your first class
-          </p>
-          <button
-            onClick={() => navigate('/admin/classes')}
-            className="mt-6 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-          >
-            Create Class
-          </button>
-        </div>
+          {data.topClasses.length > 0 && <ClassActivity classes={data.topClasses} base={base} />}
+        </>
       )}
     </div>
   );

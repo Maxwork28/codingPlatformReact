@@ -1,131 +1,86 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
-import { fetchClasses } from '../../../common/components/redux/classSlice';
-import { useDispatch } from 'react-redux';
-import { Combobox } from '@headlessui/react';
-import { CheckIcon, ChevronUpDownIcon } from '@heroicons/react/20/solid';
+import React, { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
+import { Button, Card } from '../../../common/ui/primitives';
+import { labelClass, type } from '../../../common/ui/format';
+import ClassPicker from '../components/ClassPicker';
+
+const STEPS = [
+  ['Pick a source class', 'The template is filed under it, but you can create exams from it for any class.'],
+  ['Build the layout', 'Add questions and sections, set points, duration and proctoring rules.'],
+  ['Reuse it', 'Create exams from the template in a few clicks; only the schedule is set per exam.'],
+];
 
 const CreateExamTemplate = () => {
   const navigate = useNavigate();
-  const dispatch = useDispatch();
-  const { classes } = useSelector((state) => state.classes);
+  const base = useLocation().pathname.startsWith('/teacher') ? '/teacher' : '/admin';
   const [selectedClass, setSelectedClass] = useState(null);
-  const [query, setQuery] = useState('');
+  const back = () => navigate(`${base}/exams/templates`);
 
-  useEffect(() => {
-    if (classes.length === 0) {
-      dispatch(fetchClasses(''));
-    }
-  }, [dispatch, classes.length]);
-
-  const handleContinue = () => {
-    if (selectedClass) {
-      // Navigate to CreateExam with classId and template mode
-      navigate(`/admin/classes/${selectedClass._id}/exams/create?template=true`);
-    }
+  const handleContinue = (e) => {
+    e.preventDefault();
+    if (selectedClass) navigate(`${base}/classes/${selectedClass._id}/exams/create?template=true`);
   };
 
-  // Filter classes based on search query
-  const filteredClasses = query === ''
-    ? classes
-    : classes.filter((cls) =>
-        cls.name.toLowerCase().includes(query.toLowerCase())
-      );
-
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
-      <div className="container mx-auto px-4 max-w-2xl">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8">
-          <h1 className="text-3xl font-bold mb-6">Create Exam Template</h1>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Select a class to create a template for. Templates can be reused across multiple exams.
-          </p>
+    <div className="w-full px-4 sm:px-5 py-5 space-y-4">
+      <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          icon={ArrowLeft}
+          className="h-9 w-9 justify-center p-0!"
+          onClick={back}
+          aria-label="Back to exam templates"
+          title="Back to exam templates"
+        />
+        <h1 className={type.pageTitle}>New exam template</h1>
+      </div>
 
-          <div className="mb-6">
-            <label className="block text-sm font-medium mb-2">
-              Select Class *
+      <div className="grid lg:grid-cols-[1fr_20rem] xl:grid-cols-[1fr_22rem] gap-5 items-start">
+        <Card as="form" onSubmit={handleContinue} className="space-y-5">
+          <div className="space-y-1.5">
+            <label htmlFor="template-class" className={labelClass}>
+              Source class
             </label>
-            <Combobox value={selectedClass} onChange={setSelectedClass}>
-              <div className="relative">
-                <Combobox.Input
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                  displayValue={(cls) => cls?.name || ''}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search or select a class..."
-                />
-                <Combobox.Button className="absolute inset-y-0 right-0 flex items-center pr-2">
-                  <ChevronUpDownIcon
-                    className="h-5 w-5 text-gray-400"
-                    aria-hidden="true"
-                  />
-                </Combobox.Button>
-                <Combobox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white dark:bg-gray-800 py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm">
-                  {filteredClasses.length === 0 && query !== '' ? (
-                    <div className="relative cursor-default select-none px-4 py-2 text-gray-700 dark:text-gray-300">
-                      No class found.
-                    </div>
-                  ) : (
-                    filteredClasses.map((cls) => (
-                      <Combobox.Option
-                        key={cls._id}
-                        value={cls}
-                        className={({ active }) =>
-                          `relative cursor-default select-none py-2 pl-10 pr-4 ${
-                            active
-                              ? 'bg-blue-600 text-white'
-                              : 'text-gray-900 dark:text-gray-300'
-                          }`
-                        }
-                      >
-                        {({ selected, active }) => (
-                          <>
-                            <span
-                              className={`block truncate ${
-                                selected ? 'font-medium' : 'font-normal'
-                              }`}
-                            >
-                              {cls.name}
-                            </span>
-                            {selected ? (
-                              <span
-                                className={`absolute inset-y-0 left-0 flex items-center pl-3 ${
-                                  active ? 'text-white' : 'text-blue-600'
-                                }`}
-                              >
-                                <CheckIcon className="h-5 w-5" aria-hidden="true" />
-                              </span>
-                            ) : null}
-                          </>
-                        )}
-                      </Combobox.Option>
-                    ))
-                  )}
-                </Combobox.Options>
-              </div>
-            </Combobox>
+            <ClassPicker id="template-class" value={selectedClass} onChange={setSelectedClass} autoFocus />
+            <p className={type.meta}>
+              The template is filed under this class. You can still create exams from it for any class.
+            </p>
           </div>
 
-          <div className="flex gap-4">
-            <button
-              onClick={handleContinue}
-              disabled={!selectedClass}
-              className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Continue to Create Template
-            </button>
-            <button
-              onClick={() => navigate('/admin/exams/templates')}
-              className="px-6 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-            >
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="secondary" onClick={back}>
               Cancel
-            </button>
+            </Button>
+            <Button type="submit" icon={ArrowRight} disabled={!selectedClass}>
+              Continue to builder
+            </Button>
           </div>
-        </div>
+        </Card>
+
+        <Card className="space-y-3">
+          <h2 className={type.section}>How it works</h2>
+          <ol className="space-y-3">
+            {STEPS.map(([title, text], i) => (
+              <li key={title} className="flex gap-3">
+                <span
+                  className={`h-6 w-6 shrink-0 rounded-lg text-[11px] font-bold flex items-center justify-center ${
+                    i === 0 ? 'bg-accent text-on-accent' : 'bg-accent-soft text-accent-ink'
+                  }`}
+                >
+                  {i + 1}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-fg">{title}</p>
+                  <p className={`${type.meta} mt-0.5`}>{text}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </Card>
       </div>
     </div>
   );
 };
 
 export default CreateExamTemplate;
-

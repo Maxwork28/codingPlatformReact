@@ -1,1658 +1,332 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Slate, Editable, withReact, useSlate } from 'slate-react';
-import { createEditor, Transforms, Editor, Text, Range } from 'slate';
-import { withHistory } from 'slate-history';
-import isHotkey from 'is-hotkey';
-import { ChevronDownIcon, ChevronUpIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import CodeEditor from '../../student/components/CodeEditor';
-import { teacherTestQuestion } from '../../../common/services/api';
-import BulkIoPairsEditor, { QuestionFormStepper } from '../../../common/components/BulkIoPairsEditor';
+import { AlertCircle, ArrowLeft, Check, CircleDot, ClipboardPaste, Loader2, Save } from 'lucide-react';
+import { Button, Card } from '../../../common/ui/primitives';
+import { type } from '../../../common/ui/format';
+import { confirmAction, notify } from '../../../common/ui/Toast';
 import PasteFullQuestion from '../../../common/components/PasteFullQuestion';
-import TestSolutionResults from '../../../common/components/TestSolutionResults';
-import TestSolutionLimitControls from '../../../common/components/TestSolutionLimitControls';
-import { parseOptionalPoints, pointsFieldValue } from '../../../common/utils/optionalPoints';
 import { plainTextToSlate, STARTER_STUBS } from '../../../common/utils/parsePastedQuestion';
-import {
-  withQuestionImages,
-  serializeImageHtml,
-  deserializeImgNode,
-  appendImageElements,
-} from '../../../common/utils/questionRichTextImages';
-import QuestionImageElement from '../../../common/components/QuestionImageElement';
-import InsertQuestionImageButton from '../../../common/components/InsertQuestionImageButton';
-import QuestionImageAttach from '../../../common/components/QuestionImageAttach';
+import { errorText } from './classDetails/helpers';
+import { buildPayload, defaultDriverCode, formFromQuestion, isCodingType, sectionsFor, validate } from './questionForm/model';
+import { AnswerSection, BasicsSection, StatementSection } from './questionForm/basicSections';
+import { CodeSection, IoSection, LanguagesSection, SolutionSection, TestsSection } from './questionForm/codingSections';
 
-// Enhanced withFormatting to properly handle formatting and multi-line paste
-const withFormatting = editor => {
-  const { insertData: originalInsertData, isInline, isVoid } = editor;
-  
-  editor.isInline = element => {
-    return element.type === 'link' ? true : isInline(element);
-  };
-  
-  editor.isVoid = element => {
-    return element.type === 'code-block' ? true : isVoid(element);
-  };
-  
-  // Override insertData to properly handle multi-line plain text paste
-  editor.insertData = data => {
-    try {
-      const text = data.getData('text/plain');
-      const html = data.getData('text/html');
-      
-      // If we have HTML content, use original Slate behavior (it handles HTML well)
-      if (html && html.trim() && html.includes('<')) {
-        originalInsertData(data);
-        return;
-      }
-      
-      // For plain text, handle multi-line paste
-      if (text && text.trim()) {
-        const lines = text.split(/\r?\n/);
-        
-        // Single line - use simple insert
-        if (lines.length <= 1) {
-          Transforms.insertText(editor, text);
-          return;
-        }
-        
-        // Multi-line: ensure we have a valid selection
-        if (!editor.selection) {
-          const end = Editor.end(editor, []);
-          Transforms.select(editor, end);
-        }
-        
-        // Delete selected content first if any
-        if (editor.selection && !Range.isCollapsed(editor.selection)) {
-          Transforms.delete(editor);
-        }
-        
-        // Insert all lines as separate paragraphs
-        // Convert all lines to paragraph nodes first
-        const paragraphNodes = lines
-          .filter(line => line !== undefined && line !== null)
-          .map(line => ({
-            type: 'paragraph',
-            children: [{ text: line || '' }]
-          }));
-        
-        if (paragraphNodes.length > 0) {
-          // Insert all paragraphs at once
-          // First paragraph replaces current content or inserts at cursor
-          // Subsequent paragraphs are inserted after
-          if (paragraphNodes.length === 1) {
-            // Single paragraph: just insert the text
-            Transforms.insertText(editor, lines[0] || '');
-          } else {
-            // Multiple paragraphs: insert first one, then the rest
-            const [firstParagraph, ...restParagraphs] = paragraphNodes;
-            
-            // Insert first paragraph text
-            Transforms.insertText(editor, firstParagraph.children[0].text || '');
-            
-            // Insert remaining paragraphs
-            restParagraphs.forEach((paragraph, index) => {
-              // Insert paragraph break and then the paragraph node
-              Transforms.insertNodes(editor, paragraph);
-            });
-          }
-        }
-        
-        return;
-      }
-      
-      // Fallback: use original behavior
-      originalInsertData(data);
-    } catch (error) {
-      console.error('[withFormatting] Error in insertData:', error);
-      // Fallback to original on error
-      try {
-        originalInsertData(data);
-      } catch (fallbackError) {
-        console.error('[withFormatting] Fallback also failed:', fallbackError);
-      }
-    }
-  };
-  
-  return editor;
+const SECTION_COMPONENTS = {
+  basics: BasicsSection,
+  statement: StatementSection,
+  answer: AnswerSection,
+  io: IoSection,
+  tests: TestsSection,
+  languages: LanguagesSection,
+  code: CodeSection,
+  solution: SolutionSection,
 };
 
-const serializeToHTML = nodes => {
-  if (!nodes || !Array.isArray(nodes) || nodes.length === 0) {
-    return '';
-  }
-
-  return nodes.map(node => {
-    if (Text.isText(node)) {
-      let text = node.text;
-      if (node.bold) text = `<strong>${text}</strong>`;
-      if (node.italic) text = `<em>${text}</em>`;
-      if (node.code) text = `<code class="bg-gray-100 px-1 rounded">${text}</code>`;
-      return text;
-    }
-
-    const children = serializeToHTML(node.children);
-    switch (node.type) {
-      case 'image':
-        return serializeImageHtml(node);
-      case 'paragraph':
-        return `<p>${children}</p>`;
-      case 'code-block':
-        return `<pre class="bg-gray-900 text-white p-4 rounded-lg font-mono text-sm">${children}</pre>`;
-      case 'bulleted-list':
-        return `<ul class="list-disc pl-6">${children}</ul>`;
-      case 'numbered-list':
-        return `<ol class="list-decimal pl-6">${children}</ol>`;
-      case 'list-item':
-        return `<li>${children}</li>`;
-      default:
-        return children;
-    }
-  }).join('');
-};
-
-const deserializeFromHTML = (input) => {
-  console.log('[deserializeFromHTML] Input:', { input, type: typeof input });
-
-  if (!input || input === '' || input === null || typeof input !== 'string') {
-    console.warn('[deserializeFromHTML] Returning default node for invalid input:', input);
-    return [{ type: 'paragraph', children: [{ text: '' }] }];
-  }
-
-  if (!input.includes('<') || !input.includes('>')) {
-    console.log('[deserializeFromHTML] Treating input as plain text:', input);
-    return [{ type: 'paragraph', children: [{ text: input.trim() }] }];
-  }
-
-  try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(input, 'text/html');
-    const body = doc.body;
-
-    const deserializeNode = (node) => {
-      if (node.nodeType === Node.TEXT_NODE) {
-        return node.textContent ? [{ text: node.textContent.trim() }] : [{ text: '' }];
-      }
-      if (node.nodeType !== Node.ELEMENT_NODE) {
-        return [{ text: '' }];
-      }
-
-      const children = Array.from(node.childNodes).flatMap(deserializeNode).filter(child => child);
-      if (children.length === 0) {
-        children.push({ text: '' });
-      }
-
-      switch (node.tagName.toLowerCase()) {
-        case 'img':
-          return deserializeImgNode(node);
-        case 'p':
-          return [{ type: 'paragraph', children }];
-        case 'pre':
-          return [{ type: 'code-block', children }];
-        case 'ul':
-          return [{ type: 'bulleted-list', children: children.length ? children : [{ type: 'list-item', children: [{ text: '' }] }] }];
-        case 'ol':
-          return [{ type: 'numbered-list', children: children.length ? children : [{ type: 'list-item', children: [{ text: '' }] }] }];
-        case 'li':
-          return [{ type: 'list-item', children }];
-        case 'strong':
-          return children.map(child => ({ ...child, bold: true }));
-        case 'em':
-          return children.map(child => ({ ...child, italic: true }));
-        case 'code':
-          return children.map(child => ({ ...child, code: true }));
-        default:
-          return children;
-      }
-    };
-
-    const nodes = Array.from(body.childNodes).flatMap(deserializeNode).filter(node => node);
-    const result = nodes.length ? nodes : [{ type: 'paragraph', children: [{ text: '' }] }];
-    console.log('[deserializeFromHTML] Output:', result);
-    return result;
-  } catch (err) {
-    console.warn('[deserializeFromHTML] Error parsing HTML, treating as plain text:', err, { input });
-    return [{ type: 'paragraph', children: [{ text: input.trim() }] }];
-  }
-};
-
-const Leaf = ({ attributes, children, leaf }) => {
-  if (leaf.bold) {
-    children = <strong>{children}</strong>;
-  }
-  if (leaf.italic) {
-    children = <em>{children}</em>;
-  }
-  if (leaf.code) {
-    children = <code className="bg-gray-100 px-1 rounded">{children}</code>;
-  }
-  return <span {...attributes}>{children}</span>;
-};
-
-const Element = ({ attributes, children, element }) => {
-  switch (element.type) {
-    case 'image':
-      return <QuestionImageElement attributes={attributes} children={children} element={element} />;
-    case 'code-block':
-      return <pre className="bg-gray-900 text-white p-4 rounded-lg font-mono text-sm" {...attributes}>{children}</pre>;
-    case 'bulleted-list':
-      return <ul className="list-disc pl-6" {...attributes}>{children}</ul>;
-    case 'numbered-list':
-      return <ol className="list-decimal pl-6" {...attributes}>{children}</ol>;
-    case 'list-item':
-      return <li {...attributes}>{children}</li>;
-    default:
-      return <p {...attributes}>{children}</p>;
-  }
-};
-
-const Toolbar = ({ allowImages = false }) => {
-  const editor = useSlate();
-  const marks = Editor.marks(editor) || {};
-  const toggleMark = (mark) => {
-    const isActive = marks[mark];
-    if (isActive) {
-      Editor.removeMark(editor, mark);
-    } else {
-      Editor.addMark(editor, mark, true);
-    }
-  };
-  const toggleBlock = (block) => {
-    const isActive = isBlockActive(editor, block);
-    const isList = ['bulleted-list', 'numbered-list'].includes(block);
-    Transforms.unwrapNodes(editor, {
-      match: n => ['bulleted-list', 'numbered-list'].includes(n.type),
-      split: true,
-    });
-    const newType = isActive ? 'paragraph' : isList ? 'list-item' : block;
-    Transforms.setNodes(editor, { type: newType });
-    if (!isActive && isList) {
-      Transforms.wrapNodes(editor, { type: block, children: [] });
-    }
-  };
-  const isBlockActive = (editor, block) => {
-    const [match] = Editor.nodes(editor, {
-      match: n => n.type === block,
-    });
-    return !!match;
-  };
-
-  return (
-    <div className="flex space-x-1 p-2 bg-gray-50 border-b border-gray-200 rounded-t-lg">
-      <button
-        type="button"
-        onMouseDown={e => { e.preventDefault(); toggleMark('bold'); }}
-        className={`px-2 py-1 rounded ${marks.bold ? 'bg-indigo-100 text-indigo-800' : 'bg-white'} hover:bg-indigo-100 transition-colors`}
-        aria-label="Bold"
-      >
-        <strong>B</strong>
-      </button>
-      <button
-        type="button"
-        onMouseDown={e => { e.preventDefault(); toggleMark('italic'); }}
-        className={`px-2 py-1 rounded ${marks.italic ? 'bg-indigo-100 text-indigo-800' : 'bg-white'} hover:bg-indigo-100 transition-colors`}
-        aria-label="Italic"
-      >
-        <em>I</em>
-      </button>
-      <button
-        type="button"
-        onMouseDown={e => { e.preventDefault(); toggleMark('code'); }}
-        className={`px-2 py-1 rounded ${marks.code ? 'bg-indigo-100 text-indigo-800' : 'bg-white'} hover:bg-indigo-100 transition-colors`}
-        aria-label="Code"
-      >
-        <code>Code</code>
-      </button>
-      <button
-        type="button"
-        onMouseDown={e => { e.preventDefault(); toggleBlock('code-block'); }}
-        className={`px-2 py-1 rounded ${isBlockActive(editor, 'code-block') ? 'bg-indigo-100 text-indigo-800' : 'bg-white'} hover:bg-indigo-100 transition-colors`}
-        aria-label="Code Block"
-      >
-        Code Block
-      </button>
-      <button
-        type="button"
-        onMouseDown={e => { e.preventDefault(); toggleBlock('bulleted-list'); }}
-        className={`px-2 py-1 rounded ${isBlockActive(editor, 'bulleted-list') ? 'bg-indigo-100 text-indigo-800' : 'bg-white'} hover:bg-indigo-100 transition-colors`}
-        aria-label="Bulleted List"
-      >
-        Bullets
-      </button>
-      <button
-        type="button"
-        onMouseDown={e => { e.preventDefault(); toggleBlock('numbered-list'); }}
-        className={`px-2 py-1 rounded ${isBlockActive(editor, 'numbered-list') ? 'bg-indigo-100 text-indigo-800' : 'bg-white'} hover:bg-indigo-100 transition-colors`}
-        aria-label="Numbered List"
-      >
-        Numbers
-      </button>
-      {allowImages && <InsertQuestionImageButton />}
-    </div>
-  );
-};
-
-const RichTextEditor = ({ value, onChange, placeholder, className, allowImages = false }) => {
-  const editor = useMemo(
-    () => withHistory((allowImages ? withQuestionImages : (e) => e)(withFormatting(withReact(createEditor())))),
-    [allowImages]
-  );
-  const renderElement = useCallback(props => <Element {...props} />, []);
-  const renderLeaf = useCallback(props => <Leaf {...props} />, []);
-
-  const initialValue = useMemo(() => {
-    if (Array.isArray(value) && value.length > 0 && value.every(node => node.type && Array.isArray(node.children))) {
-      console.log('[RichTextEditor] Valid initial value:', value);
-      return value;
-    }
-    console.warn('[RichTextEditor] Invalid initial value, using default:', value);
-    return [{ type: 'paragraph', children: [{ text: '' }] }];
-  }, [value]);
-
-  const handleChange = newValue => {
-    if (Array.isArray(newValue) && newValue.length > 0 && newValue.every(node => node.type && Array.isArray(node.children))) {
-      console.log('[RichTextEditor] Value changed:', newValue);
-      onChange(newValue);
-    } else {
-      console.warn('[RichTextEditor] Invalid Slate value, ignoring update:', newValue);
-    }
-  };
-
-  const handleKeyDown = event => {
-    if (isHotkey('mod+b', event)) {
-      event.preventDefault();
-      Editor.addMark(editor, 'bold', true);
-    }
-    if (isHotkey('mod+i', event)) {
-      event.preventDefault();
-      Editor.addMark(editor, 'italic', true);
-    }
-    if (isHotkey('mod+`', event)) {
-      event.preventDefault();
-      Editor.addMark(editor, 'code', true);
-    }
-  };
-
-  const handleCopy = useCallback((event) => {
-    const selection = window.getSelection();
-    const selectedText = selection ? selection.toString() : '';
-
-    if (!selectedText || !event.clipboardData) {
-      return;
-    }
-
-    event.clipboardData.setData('text/plain', selectedText);
-    event.preventDefault();
-  }, []);
-
-  const handleCut = useCallback((event) => {
-    if (!editor.selection || !event.clipboardData) {
-      return;
-    }
-
-    const selectedText = Editor.string(editor, editor.selection);
-    if (!selectedText) {
-      return;
-    }
-
-    event.clipboardData.setData('text/plain', selectedText);
-    Editor.deleteFragment(editor);
-    event.preventDefault();
-  }, [editor]);
-
-  // Paste handler - let Slate's insertData (via withFormatting) handle it
-  // We don't need to prevent default, as Slate will call insertData
-  const handlePaste = useCallback((event) => {
-    // Let Slate handle paste normally through insertData
-    // The withFormatting wrapper will properly handle multi-line content
-    // No need to prevent default or stop propagation
-  }, []);
-
-  return (
-    <div className={`border border-gray-200 rounded-lg bg-white ${className}`}>
-      <Slate editor={editor} initialValue={initialValue} onChange={handleChange}>
-        <Toolbar allowImages={allowImages} />
-        <Editable
-          renderElement={renderElement}
-          renderLeaf={renderLeaf}
-          placeholder={placeholder}
-          onKeyDown={handleKeyDown}
-          onCopy={handleCopy}
-          onCut={handleCut}
-          className="p-3 min-h-[100px] focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-b-lg"
-        />
-      </Slate>
-    </div>
-  );
-};
-
-const CollapsibleSection = ({ title, children, defaultOpen = true }) => {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
-
-  return (
-    <div className="border border-gray-200 rounded-lg">
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex justify-between items-center p-4 bg-gray-50 hover:bg-gray-100 transition-colors rounded-t-lg focus:outline-none"
-      >
-        <span className="text-sm font-semibold text-gray-800">{title}</span>
-        {isOpen ? (
-          <ChevronUpIcon className="h-5 w-5 text-gray-600" />
-        ) : (
-          <ChevronDownIcon className="h-5 w-5 text-gray-600" />
-        )}
-      </button>
-      {isOpen && (
-        <div className="p-4 bg-white rounded-b-lg">
-          {children}
-        </div>
-      )}
-    </div>
-  );
-};
-
-const AdminQuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) => {
-  const [type, setType] = useState(initialData?.type || 'singleCorrectMcq');
-  const [title, setTitle] = useState(deserializeFromHTML(initialData?.title || ''));
-  const [description, setDescription] = useState(deserializeFromHTML(initialData?.description || ''));
-  const [points, setPoints] = useState(pointsFieldValue(initialData?.points));
-  const [difficulty, setDifficulty] = useState(initialData?.difficulty || 'easy');
-  const [tags, setTags] = useState(initialData?.tags || '');
-  const [constraints, setConstraints] = useState(deserializeFromHTML(initialData?.constraints || ''));
-  const [inputFormat, setInputFormat] = useState(deserializeFromHTML(initialData?.inputFormat || ''));
-  const [outputFormat, setOutputFormat] = useState(deserializeFromHTML(initialData?.outputFormat || ''));
-  const [sampleIo, setSampleIo] = useState(() => {
-    if (Array.isArray(initialData?.sampleIo) && initialData.sampleIo.length > 0) {
-      return initialData.sampleIo.map((p) => ({ input: p.input ?? '', output: p.output ?? '', explanation: p.explanation ?? '' }));
-    }
-    return [{ input: '', output: '', explanation: '' }];
-  });
-  const [options, setOptions] = useState(
-    (Array.isArray(initialData?.options) ? initialData.options : ['', '', '', '']).map(opt => deserializeFromHTML(opt || ''))
-  );
-  const [correctOption, setCorrectOption] = useState(initialData?.correctOption || 0);
-  const [correctOptions, setCorrectOptions] = useState(initialData?.correctOptions || []);
-  const [codeSnippet, setCodeSnippet] = useState(deserializeFromHTML(initialData?.codeSnippet || ''));
-  const [correctAnswer, setCorrectAnswer] = useState(deserializeFromHTML(initialData?.correctAnswer || ''));
-  const [starterCode, setStarterCode] = useState(
-    initialData?.starterCode?.map(sc => ({ language: sc.language, code: sc.code })) ||
-      initialData?.templateCode?.map(tc => ({ language: tc.language, code: tc.code })) ||
-      []
-  );
-  const [driverCode, setDriverCode] = useState(
-    initialData?.driverCode?.map(dc => ({ language: dc.language, code: dc.code || '' })) || []
-  );
-  const [testCases, setTestCases] = useState(
-    (Array.isArray(initialData?.testCases) ? initialData.testCases : [{ input: '', expectedOutput: '', isPublic: true }]).map(tc => ({
-      input: tc.input || '',
-      expectedOutput: tc.expectedOutput || '',
-      isPublic: tc.isPublic !== undefined ? tc.isPublic : true,
-      isLargeTestCase: tc.isLargeTestCase || false,
-    }))
-  );
-  const [timeLimit, setTimeLimit] = useState(initialData?.timeLimit || 2);
-  const [memoryLimit, setMemoryLimit] = useState(initialData?.memoryLimit || 256);
-  const [maxAttempts, setMaxAttempts] = useState(initialData?.maxAttempts || '');
-  const [explanation, setExplanation] = useState(deserializeFromHTML(initialData?.explanation || ''));
-  const [languages, setLanguages] = useState(initialData?.languages || ['javascript']);
-  const [classIds, setClassIds] = useState(
-    initialData?.classes?.map(c => c.classId?.toString()) || (defaultClassId ? [defaultClassId] : [])
-  );
-  const [inputErrors, setInputErrors] = useState(testCases.map(() => ''));
-  
-  const buildSolutionCodesFromInitial = (data, langs = []) => {
-    if (Array.isArray(data?.solutionCodes) && data.solutionCodes.length > 0) {
-      const fromApi = data.solutionCodes.map((s) => ({ language: s.language, code: s.code || '' }));
-      const langList = langs.length > 0 ? langs : fromApi.map((s) => s.language);
-      return langList.map((lang) => {
-        const existing = fromApi.find((s) => s.language === lang);
-        return existing || { language: lang, code: '' };
-      });
-    }
-    const primaryLang = data?.solutionLanguage || langs[0] || 'javascript';
-    const primaryCode = data?.solutionCode || '';
-    if (langs.length > 0) {
-      return langs.map((lang) => ({ language: lang, code: lang === primaryLang ? primaryCode : '' }));
-    }
-    return primaryCode ? [{ language: primaryLang, code: primaryCode }] : [];
-  };
-  const [solutionCodes, setSolutionCodes] = useState(() =>
-    buildSolutionCodesFromInitial(initialData, initialData?.languages || ['javascript'])
-  );
-  const [solutionLanguage, setSolutionLanguage] = useState(
-    initialData?.solutionLanguage || initialData?.languages?.[0] || 'javascript'
-  );
-  const activeSolutionCode = solutionCodes.find((s) => s.language === solutionLanguage)?.code ?? '';
-  const [testResults, setTestResults] = useState(null);
-  const [isTestingSolution, setIsTestingSolution] = useState(false);
-  const limitOptionsRef = useRef(null);
+/**
+ * Full-page question editor shared by "new question" and "edit question".
+ * `onSave(payload)` must resolve on success and throw (string or Error) on failure.
+ */
+export default function AdminQuestionForm({
+  initialQuestion = null,
+  questionId = null,
+  heading,
+  badges = null,
+  backTo = '/admin/questions',
+  saveLabel = 'Save',
+  onSave,
+  extraActions,
+  allowImport = false,
+}) {
   const navigate = useNavigate();
-  const [formStep, setFormStep] = useState(1);
-  const [editorPasteKey, setEditorPasteKey] = useState(0);
-  const isCodingType = type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver';
-  const formSteps = isCodingType
-    ? [
-        { id: 1, label: 'Basics' },
-        { id: 2, label: 'I/O & tests' },
-        { id: 3, label: 'Code' },
-      ]
-    : [
-        { id: 1, label: 'Basics' },
-        { id: 2, label: 'Answers' },
-      ];
-  const totalFormSteps = formSteps.length;
+  const [form, setForm] = useState(() => formFromQuestion(initialQuestion));
+  const [saved, setSaved] = useState(form);
+  const [editorKey, setEditorKey] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [showIssues, setShowIssues] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [active, setActive] = useState('basics');
+  const scrollRef = useRef(null);
 
-  useEffect(() => {
-    setFormStep((s) => Math.min(s, totalFormSteps));
-  }, [totalFormSteps]);
+  const set = useCallback((key, value) => {
+    setForm((prev) => ({ ...prev, [key]: typeof value === 'function' ? value(prev[key]) : value }));
+  }, []);
+  const bumpEditors = useCallback(() => setEditorKey((k) => k + 1), []);
 
-  // Keep form state in sync when editing (initialData load or question id change)
-  useEffect(() => {
-    if (!initialData) return;
-    setType(initialData.type || 'singleCorrectMcq');
-    setTitle(deserializeFromHTML(initialData.title || ''));
-    setDescription(deserializeFromHTML(initialData.description || ''));
-    setPoints(pointsFieldValue(initialData.points));
-    setDifficulty(initialData.difficulty || 'easy');
-    setTags(
-      typeof initialData.tags === 'string'
-        ? initialData.tags
-        : Array.isArray(initialData.tags)
-          ? initialData.tags.join(', ')
-          : ''
-    );
-    setConstraints(deserializeFromHTML(initialData.constraints || ''));
-    setInputFormat(deserializeFromHTML(initialData.inputFormat || ''));
-    setOutputFormat(deserializeFromHTML(initialData.outputFormat || ''));
-    setSampleIo(
-      Array.isArray(initialData.sampleIo) && initialData.sampleIo.length > 0
-        ? initialData.sampleIo.map((p) => ({ input: p.input ?? '', output: p.output ?? '', explanation: p.explanation ?? '' }))
-        : [{ input: '', output: '', explanation: '' }]
-    );
-    setOptions((Array.isArray(initialData.options) ? initialData.options : ['', '', '', '']).map(opt => deserializeFromHTML(opt || '')));
-    setCorrectOption(initialData.correctOption ?? 0);
-    setCorrectOptions(Array.isArray(initialData.correctOptions) ? initialData.correctOptions : []);
-    setCodeSnippet(deserializeFromHTML(initialData.codeSnippet || ''));
-    setCorrectAnswer(deserializeFromHTML(initialData.correctAnswer || ''));
-    setStarterCode(
-      initialData.starterCode?.map(sc => ({ language: sc.language, code: sc.code })) ||
-        initialData.templateCode?.map(tc => ({ language: tc.language, code: tc.code })) ||
-        []
-    );
-    setDriverCode(initialData.driverCode?.map(dc => ({ language: dc.language, code: dc.code || '' })) || []);
-    const tCases = (Array.isArray(initialData.testCases) ? initialData.testCases : [{ input: '', expectedOutput: '', isPublic: true }]).map(tc => ({
-      input: tc.input ?? '',
-      expectedOutput: tc.expectedOutput ?? '',
-      isPublic: tc.isPublic !== undefined ? tc.isPublic : true,
-      isLargeTestCase: tc.isLargeTestCase || false,
-    }));
-    setTestCases(tCases);
-    setInputErrors(tCases.map(() => ''));
-    setTimeLimit(initialData.timeLimit || 2);
-    setMemoryLimit(initialData.memoryLimit || 256);
-    setMaxAttempts(initialData.maxAttempts ?? '');
-    setExplanation(deserializeFromHTML(initialData.explanation || ''));
-    setLanguages(Array.isArray(initialData.languages) && initialData.languages.length > 0 ? initialData.languages : ['javascript']);
-    setClassIds(
-      initialData.classes?.map(c => c.classId?.toString()) || (defaultClassId ? [defaultClassId] : [])
-    );
-    setSolutionCodes(buildSolutionCodesFromInitial(initialData, initialData.languages || ['javascript']));
-    setSolutionLanguage(initialData.solutionLanguage || initialData.languages?.[0] || 'javascript');
-  }, [initialData, defaultClassId]);
-
-  const supportedLanguages = ['javascript', 'c', 'cpp', 'java', 'python', 'php', 'ruby', 'go'];
-
-  // Sync starterCode with selected languages (new languages start empty — no default template)
-  useEffect(() => {
-    if (type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver') {
-      setStarterCode((prevStarterCode) =>
-        languages.map((lang) => {
-          const existing = prevStarterCode.find((sc) => sc.language === lang);
-          return existing || { language: lang, code: '' };
-        })
-      );
-    } else {
-      setStarterCode([]);
-    }
-  }, [languages, type]);
-
-  // Sync solutionCodes with selected languages (preserve code per language)
-  useEffect(() => {
-    if (type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver') {
-      setSolutionCodes((prev) =>
-        languages.map((lang) => {
-          const existing = prev.find((s) => s.language === lang);
-          return existing || { language: lang, code: '' };
-        })
-      );
-    } else {
-      setSolutionCodes([]);
-    }
-  }, [languages, type]);
-
-  // Sync driverCode with selected languages (LeetCode-style only)
-  useEffect(() => {
-    if (type === 'codingWithDriver') {
-      const getDefaultDriverCode = (lang) => {
-        if (lang === 'python') {
-          return 'import json\n\n{{USER_CODE}}\n\nif __name__ == "__main__":\n    data = json.loads(input())\n    result = your_function(data)\n    print(result)';
-        }
-        return '{{USER_CODE}}\n\nconst fs = require(\'fs\');\nconst data = JSON.parse(fs.readFileSync(0, \'utf8\').trim());\nconst result = yourFunction(data);\nconsole.log(typeof result === \'object\' ? JSON.stringify(result) : result);\n';
-      };
-      setDriverCode((prev) =>
-        languages.map((lang) => {
-          const existing = prev.find((dc) => dc.language === lang);
-          return existing || { language: lang, code: getDefaultDriverCode(lang) };
-        })
-      );
-    } else {
-      setDriverCode([]);
-    }
-  }, [languages, type]);
-
-  // Sync solution language with available languages
-  useEffect(() => {
-    if (languages.length > 0 && !languages.includes(solutionLanguage)) {
-      setSolutionLanguage(languages[0]);
-    }
-  }, [languages, solutionLanguage]);
-
-  const validateTestCaseInput = () => '';
-
-  // Update input errors when test cases or languages change
-  useEffect(() => {
-    if (type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver') {
-      const errors = testCases.map(tc => languages.some(lang => lang === 'c' || lang === 'cpp')
-        ? validateTestCaseInput(tc.input, 'c')
-        : '');
-      setInputErrors(errors);
-    } else {
-      setInputErrors(testCases.map(() => ''));
-    }
-  }, [testCases, languages, type]);
-
-  const handleAddTestCase = () => {
-    setTestCases([...testCases, { input: '', expectedOutput: '', isPublic: true, isLargeTestCase: false }]);
-    setInputErrors([...inputErrors, '']);
-  };
-
-  const handleTestCaseChange = (index, field, value) => {
-    const updatedTestCases = [...testCases];
-    updatedTestCases[index] = { ...updatedTestCases[index], [field]: value };
-    setTestCases(updatedTestCases);
-
-    if (field === 'input' && (languages.includes('c') || languages.includes('cpp'))) {
-      const updatedErrors = [...inputErrors];
-      updatedErrors[index] = validateTestCaseInput(value, 'c');
-      setInputErrors(updatedErrors);
-    }
-  };
-
-  const handleRemoveTestCase = (index) => {
-    setTestCases(testCases.filter((_, i) => i !== index));
-    setInputErrors(inputErrors.filter((_, i) => i !== index));
-  };
-
-  const handleOptionChange = (index, value) => {
-    const updatedOptions = [...options];
-    updatedOptions[index] = value;
-    setOptions(updatedOptions);
-  };
-
-  const handleAddOption = () => {
-    setOptions([...options, deserializeFromHTML('')]);
-  };
-
-  const handleRemoveOption = (index) => {
-    setOptions(options.filter((_, i) => i !== index));
-    if (type === 'singleCorrectMcq' && correctOption >= index && correctOption > 0) {
-      setCorrectOption(correctOption - 1);
-    }
-    if (type === 'multipleCorrectMcq') {
-      setCorrectOptions(correctOptions.filter(idx => idx !== index).map(idx => idx > index ? idx - 1 : idx));
-    }
-  };
-
-  const handleCorrectOptionToggle = (index) => {
-    setCorrectOptions(prev =>
-      prev.includes(index) ? prev.filter(idx => idx !== index) : [...prev, index]
-    );
-  };
-
-  const handleSampleIoChange = (index, field, value) => {
-    const next = [...sampleIo];
-    next[index] = { ...next[index], [field]: value };
-    setSampleIo(next);
-  };
-
-  const handleAddSampleIo = () => {
-    setSampleIo([...sampleIo, { input: '', output: '', explanation: '' }]);
-  };
-
-  const handleRemoveSampleIo = (index) => {
-    if (sampleIo.length <= 1) return;
-    setSampleIo(sampleIo.filter((_, i) => i !== index));
-  };
-
-  const handleLanguageToggle = (lang) => {
-    setLanguages(prev =>
-      prev.includes(lang) ? prev.filter(l => l !== lang) : [...prev, lang]
-    );
-  };
-
-  const handleClassToggle = (classId) => {
-    setClassIds(prev =>
-      prev.includes(classId) ? prev.filter(id => id !== classId) : [...prev, classId]
-    );
-  };
-
-  const handleStarterCodeChange = (index, value) => {
-    const updatedStarterCode = [...starterCode];
-    updatedStarterCode[index].code = value;
-    setStarterCode(updatedStarterCode);
-  };
-
-  const handleDriverCodeChange = (index, value) => {
-    const updatedDriverCode = [...driverCode];
-    updatedDriverCode[index].code = value;
-    setDriverCode(updatedDriverCode);
-  };
-
-  const handleSolutionCodeChange = (code) => {
-    setSolutionCodes((prev) =>
-      prev.map((s) => (s.language === solutionLanguage ? { ...s, code } : s))
-    );
-  };
-
-  const applyPastedQuestion = (parsed) => {
-    const langs = parsed.languages?.length ? parsed.languages : ['python'];
-    setType('coding');
-    setTitle(plainTextToSlate(parsed.title));
-    setDescription(plainTextToSlate(parsed.description));
-    setInputFormat(plainTextToSlate(parsed.inputFormat));
-    setOutputFormat(plainTextToSlate(parsed.outputFormat));
-    setConstraints(plainTextToSlate(parsed.constraints));
-    setExplanation(plainTextToSlate(parsed.explanation));
-    setDifficulty(parsed.difficulty || 'easy');
-    if (parsed.points !== '' && parsed.points != null) setPoints(parsed.points);
-    setSampleIo(parsed.sampleIo?.length ? parsed.sampleIo : [{ input: '', output: '', explanation: '' }]);
-    setTestCases(
-      parsed.testCases?.length
-        ? parsed.testCases
-        : [{ input: '', expectedOutput: '', isPublic: true, isLargeTestCase: false }]
-    );
-    setLanguages(langs);
-    setStarterCode(
-      parsed.starterCode?.length
-        ? parsed.starterCode
-        : langs.map((language) => ({ language, code: STARTER_STUBS[language] || '// Write your code here' }))
-    );
-    setSolutionCodes(
-      parsed.solutionCodes?.length
-        ? parsed.solutionCodes
-        : langs.map((language) => ({ language, code: '' }))
-    );
-    setSolutionLanguage(parsed.solutionLanguage || langs[0]);
-    setFormStep(1);
-    setEditorPasteKey((k) => k + 1);
-  };
-
-  // Test solution against test cases (client-side validation)
-  const handleTestSolution = async () => {
-    console.log('========================================');
-    console.log('[AdminQuestionForm] ====== TEST SOLUTION START ======');
-    console.log('[AdminQuestionForm] Current state:', {
-      solutionCodeLength: activeSolutionCode?.length || 0,
-      solutionLanguage,
-      testCasesCount: testCases?.length || 0,
-      questionId: initialData?._id,
-      questionType: type,
-      initialData: initialData ? {
-        _id: initialData._id,
-        type: initialData.type,
-        title: initialData.title,
-        languages: initialData.languages,
-        isDraft: initialData.isDraft,
-        status: initialData.status
-      } : null
+  const payload = useMemo(() => buildPayload(form), [form]);
+  const savedPayload = useMemo(() => buildPayload(saved), [saved]);
+  const dirty = JSON.stringify(payload) !== JSON.stringify(savedPayload);
+  const issues = useMemo(() => validate(form), [form]);
+  const errors = issues.filter((i) => i.level === 'error');
+  const sections = sectionsFor(form.type);
+  const issuesBySection = useMemo(() => {
+    const map = {};
+    issues.forEach((i) => {
+      (map[i.section] ||= []).push(i);
     });
+    return map;
+  }, [issues]);
 
-    if (!activeSolutionCode.trim()) {
-      console.error('[AdminQuestionForm] ERROR: Solution code is empty');
-      alert('Please write a solution first');
-      return;
-    }
-    if (testCases.length === 0) {
-      console.error('[AdminQuestionForm] ERROR: No test cases found');
-      alert('Please add at least one test case');
-      return;
-    }
-    if (testCases.some(tc => !tc.input.trim() || !tc.expectedOutput.trim())) {
-      console.error('[AdminQuestionForm] ERROR: Some test cases are incomplete:', testCases.map((tc, idx) => ({
-        index: idx,
-        hasInput: !!tc.input?.trim(),
-        hasOutput: !!tc.expectedOutput?.trim()
-      })));
-      alert('All test cases must have input and expected output');
-      return;
-    }
+  const scrollTo = (id) => {
+    setActive(id);
+    document.getElementById(`section-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
-    // Check if question exists (for drafts that have been saved)
-    if (!initialData?._id) {
-      console.error('[AdminQuestionForm] ERROR: Question ID is missing. initialData:', initialData);
-      alert('Please save the draft first before testing. The question needs to be saved to test the solution.');
-      return;
+  const save = useCallback(async () => {
+    if (saving) return false;
+    if (errors.length) {
+      setShowIssues(true);
+      notify(`Fix ${errors.length} issue${errors.length === 1 ? '' : 's'} before saving`, 'error');
+      document.getElementById(`section-${errors[0].section}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return false;
     }
-
-    // Check if it's a coding question
-    if (type !== 'coding' && type !== 'fillInTheBlanksCoding' && type !== 'codingWithDriver') {
-      console.error('[AdminQuestionForm] ERROR: Not a coding question. Type:', type);
-      alert('Solution testing is only available for coding questions');
-      return;
-    }
-
-    console.log('[AdminQuestionForm] All validations passed. Starting test...');
-    setIsTestingSolution(true);
-    setTestResults(null);
-
+    setSaving(true);
     try {
-      console.log('[AdminQuestionForm] Calling teacherTestQuestion API with:', {
-        questionId: initialData._id,
-        solutionCodeLength: activeSolutionCode.length,
-        solutionLanguage,
-        classId: null
-      });
-      
-      // Call the teacher test API (which also works for admins and drafts)
-      const response = await teacherTestQuestion(
-        initialData._id,
-        activeSolutionCode,
-        null, // classId is optional for drafts
-        solutionLanguage,
-        limitOptionsRef.current || {}
-      );
-
-      console.log('[AdminQuestionForm] API call successful. Processing response...');
-      console.log('[AdminQuestionForm] Response data:', {
-        hasTestResults: !!response.data.testResults,
-        testResultsCount: response.data.testResults?.length || 0,
-        passedTestCases: response.data.passedTestCases,
-        totalTestCases: response.data.totalTestCases,
-        isCorrect: response.data.isCorrect,
-        publicTestCases: response.data.publicTestCases,
-        hiddenTestCases: response.data.hiddenTestCases,
-        fullResponse: response.data
-      });
-
-      const { testResults, passedTestCases, totalTestCases, isCorrect, publicTestCases, hiddenTestCases } = response.data;
-
-      if (!testResults || !Array.isArray(testResults) || testResults.length === 0) {
-        console.error('[AdminQuestionForm] ERROR: Invalid test results in response:', response.data);
-        throw new Error('Invalid test results received from server');
-      }
-
-      console.log('[AdminQuestionForm] Setting test results in state');
-      setTestResults({
-        message: isCorrect 
-          ? `✅ All ${totalTestCases} test cases passed! (${publicTestCases} public, ${hiddenTestCases} hidden)`
-          : `⚠️ ${passedTestCases}/${totalTestCases} test cases passed (${publicTestCases} public, ${hiddenTestCases} hidden)`,
-        results: testResults,
-        totalTestCases,
-        passedTestCases,
-        isCorrect,
-        publicTestCases,
-        hiddenTestCases
-      });
-      
-      console.log('[AdminQuestionForm] ====== TEST SOLUTION SUCCESS ======');
-      console.log('========================================');
+      await onSave(payload);
+      setSaved(form);
+      setShowIssues(false);
+      return true;
     } catch (err) {
-      console.error('[AdminQuestionForm] ====== ERROR TESTING SOLUTION ======');
-      console.error('[AdminQuestionForm] Error type:', err.constructor.name);
-      console.error('[AdminQuestionForm] Error message:', err.message);
-      console.error('[AdminQuestionForm] Error stack:', err.stack);
-      console.error('[AdminQuestionForm] Error response:', err.response?.data);
-      console.error('[AdminQuestionForm] Error response status:', err.response?.status);
-      console.error('[AdminQuestionForm] Full error:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
-      console.error('========================================');
-      
-      const errorMessage = err.response?.data?.error || err.message || 'Failed to test solution';
-      setTestResults({
-        error: true,
-        message: `Error: ${errorMessage}`
-      });
+      notify(errorText(err, 'Failed to save the question'), 'error');
+      return false;
     } finally {
-      setIsTestingSolution(false);
+      setSaving(false);
     }
-  };
+  }, [saving, errors, onSave, payload, form]);
 
-  const handleFormSubmit = (e) => {
-    e.preventDefault();
-
-    // Validation
-    if (!serializeToHTML(title).trim()) {
-      alert('Title is required.');
-      return;
-    }
-
-    if (!serializeToHTML(description).trim()) {
-      alert('Description is required.');
-      return;
-    }
-
-    if (points !== '' && points != null && parseOptionalPoints(points) == null) {
-      alert('Points must be a non-negative number when provided.');
-      return;
-    }
-
-    if (maxAttempts && (isNaN(maxAttempts) || maxAttempts <= 0)) {
-      alert('Max attempts must be a positive number.');
-      return;
-    }
-
-    if (type === 'singleCorrectMcq') {
-      if (options.length < 2 || !options.every(opt => serializeToHTML(opt).trim())) {
-        alert('Single correct MCQ requires at least two non-empty options.');
-        return;
+  // Ctrl/Cmd+S saves; leaving the tab with unsaved work asks first.
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        save();
       }
-      if (correctOption >= options.length) {
-        alert('Correct option index is invalid.');
-        return;
-      }
-    }
-
-    if (type === 'multipleCorrectMcq') {
-      if (options.length < 2 || !options.every(opt => serializeToHTML(opt).trim())) {
-        alert('Multiple correct MCQ requires at least two non-empty options.');
-        return;
-      }
-      if (correctOptions.length === 0) {
-        alert('Multiple correct MCQ requires at least one correct option.');
-        return;
-      }
-      if (correctOptions.some(idx => idx >= options.length)) {
-        alert('One or more correct option indices are invalid.');
-        return;
-      }
-    }
-
-    if (type === 'fillInTheBlanks' && !serializeToHTML(correctAnswer).trim()) {
-      alert('Fill in the blanks requires a non-empty correct answer.');
-      return;
-    }
-
-    if (type === 'fillInTheBlanksCoding') {
-      if (!serializeToHTML(codeSnippet).trim()) {
-        alert('Fill in the blanks (coding) requires a non-empty code snippet.');
-        return;
-      }
-      if (!serializeToHTML(correctAnswer).trim()) {
-        alert('Fill in the blanks (coding) requires a non-empty correct answer.');
-        return;
-      }
-    }
-
-    if (type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver') {
-      if (languages.length === 0) {
-        alert('Please select at least one language for coding questions.');
-        return;
-      }
-      if (!languages.every(lang => supportedLanguages.includes(lang))) {
-        alert('One or more selected languages are not supported.');
-        return;
-      }
-      if (testCases.length === 0) {
-        alert('Please add at least one test case for coding questions.');
-        return;
-      }
-      if (testCases.some(tc => !tc.input.trim() || !tc.expectedOutput.trim())) {
-        alert('All test cases must have non-empty input and expected output.');
-        return;
-      }
-      if (inputErrors.some(error => error)) {
-        alert('Please fix test case input errors before submitting.');
-        return;
-      }
-      if (starterCode.length !== languages.length) {
-        alert('Please provide starter code for all selected languages.');
-        return;
-      }
-      if (starterCode.some(sc => !sc.language || !sc.code.trim())) {
-        alert('All starter codes must have a valid language and non-empty code.');
-        return;
-      }
-      if (type === 'codingWithDriver') {
-        if (driverCode.length === 0 || driverCode.some(dc => !dc.code?.trim())) {
-          alert('Please provide driver code for all selected languages.');
-          return;
-        }
-        const missingPlaceholder = driverCode.filter(dc => !dc.code.includes('{{USER_CODE}}') && !dc.code.includes('// USER_CODE_HERE') && !dc.code.includes('# USER_CODE_HERE'));
-        if (missingPlaceholder.length > 0) {
-          alert('Driver code must contain {{USER_CODE}} or // USER_CODE_HERE or # USER_CODE_HERE.');
-          return;
-        }
-      }
-      if (timeLimit <= 0) {
-        alert('Time limit must be a positive number.');
-        return;
-      }
-      if (memoryLimit <= 0) {
-        alert('Memory limit must be a positive number.');
-        return;
-      }
-    }
-
-    const questionData = {
-      type,
-      title: serializeToHTML(title),
-      description: serializeToHTML(description),
-      points: parseOptionalPoints(points),
-      difficulty,
-      tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag),
-      constraints: serializeToHTML(constraints),
-      explanation: serializeToHTML(explanation),
-      classIds,
     };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [save]);
 
-    const codingTypes = ['fillInTheBlanksCoding', 'coding', 'codingWithDriver'];
-    if (codingTypes.includes(type)) {
-      questionData.inputFormat = serializeToHTML(inputFormat);
-      questionData.outputFormat = serializeToHTML(outputFormat);
-      questionData.sampleIo = sampleIo
-        .filter((p) => (p.input || '').trim() !== '' || (p.output || '').trim() !== '')
-        .map((p) => ({
-          input: p.input || '',
-          output: p.output || '',
-          explanation: String(p.explanation || '').trim(),
-        }));
-      questionData.explanation = '';
-      questionData.examples = [];
-    } else {
-      questionData.inputFormat = '';
-      questionData.outputFormat = '';
-      questionData.sampleIo = [];
-      questionData.examples = [];
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const onUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onUnload);
+    return () => window.removeEventListener('beforeunload', onUnload);
+  }, [dirty]);
+
+  // Highlight the section in view (desktop, where the form scrolls inside its own pane).
+  const onScroll = () => {
+    const root = scrollRef.current;
+    if (!root) return;
+    const top = root.getBoundingClientRect().top;
+    let current = sections[0]?.id;
+    for (const s of sections) {
+      const el = document.getElementById(`section-${s.id}`);
+      if (el && el.getBoundingClientRect().top - top <= 80) current = s.id;
     }
-
-    if (type === 'singleCorrectMcq') {
-      questionData.options = options.map(opt => serializeToHTML(opt));
-      questionData.correctOption = Number(correctOption);
-    } else if (type === 'multipleCorrectMcq') {
-      questionData.options = options.map(opt => serializeToHTML(opt));
-      questionData.correctOptions = correctOptions;
-    } else if (type === 'fillInTheBlanks' || type === 'fillInTheBlanksCoding') {
-      questionData.codeSnippet = serializeToHTML(codeSnippet);
-      questionData.correctAnswer = serializeToHTML(correctAnswer);
-    }
-
-    if (type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver') {
-      questionData.languages = languages;
-      questionData.starterCode = starterCode.map(sc => ({
-        language: sc.language,
-        code: sc.code,
-      }));
-      questionData.testCases = testCases.map(tc => ({
-        input: tc.input,
-        expectedOutput: tc.expectedOutput,
-        isPublic: tc.isPublic,
-        isLargeTestCase: tc.isLargeTestCase,
-      }));
-      questionData.timeLimit = Number(timeLimit);
-      questionData.memoryLimit = Number(memoryLimit);
-      const filledSolutions = solutionCodes.filter((s) => (s.code || '').trim());
-      if (filledSolutions.length > 0) {
-        questionData.solutionCodes = filledSolutions;
-        const primary = filledSolutions.find((s) => s.language === solutionLanguage) || filledSolutions[0];
-        questionData.solutionCode = primary.code;
-        questionData.solutionLanguage = primary.language;
-      }
-      if (type === 'codingWithDriver') {
-        // Backend expects templateCode + driverCode for LeetCode-style questions.
-        questionData.templateCode = starterCode.map(sc => ({
-          language: sc.language,
-          code: sc.code,
-        }));
-        questionData.driverCode = driverCode.map(dc => ({ language: dc.language, code: dc.code }));
-      }
-    }
-
-    if (maxAttempts) {
-      questionData.maxAttempts = Number(maxAttempts);
-    }
-
-    console.log('[AdminQuestionForm] Submitting:', questionData);
-    onSubmit(questionData);
+    if (current && current !== active) setActive(current);
   };
+
+  const leave = async () => {
+    if (dirty && !(await confirmAction('You have unsaved changes. Leave without saving?', { title: 'Discard changes', confirmLabel: 'Discard', danger: true }))) return;
+    navigate(backTo);
+  };
+
+  const changeType = async (next) => {
+    if (initialQuestion?.type && initialQuestion.type !== next && form.type === initialQuestion.type) {
+      const ok = await confirmAction(
+        'Changing the type changes which fields are saved. Answers that only apply to the current type are removed when you save.',
+        { title: 'Change question type', confirmLabel: 'Change type' },
+      );
+      if (!ok) return;
+    }
+    setForm((prev) => {
+      if (next !== 'codingWithDriver') return { ...prev, type: next };
+      const driver = { ...prev.driver };
+      prev.languages.forEach((l) => {
+        if (!String(driver[l] || '').trim()) driver[l] = defaultDriverCode(l);
+      });
+      return { ...prev, type: next, driver };
+    });
+  };
+
+  const applyImport = (parsed) => {
+    const langs = parsed.languages?.length ? parsed.languages : ['python'];
+    setForm((prev) => ({
+      ...prev,
+      type: 'coding',
+      title: parsed.title || '',
+      description: plainTextToSlate(parsed.description),
+      inputFormat: plainTextToSlate(parsed.inputFormat),
+      outputFormat: plainTextToSlate(parsed.outputFormat),
+      constraints: plainTextToSlate(parsed.constraints),
+      explanation: plainTextToSlate(parsed.explanation),
+      difficulty: parsed.difficulty || prev.difficulty,
+      points: parsed.points !== '' && parsed.points != null ? String(parsed.points) : prev.points,
+      sampleIo: parsed.sampleIo?.length ? parsed.sampleIo : prev.sampleIo,
+      testCases: parsed.testCases?.length ? parsed.testCases : prev.testCases,
+      languages: langs,
+      starter: Object.fromEntries(
+        langs.map((l) => [l, parsed.starterCode?.find((s) => s.language === l)?.code || STARTER_STUBS[l] || '']),
+      ),
+      solutions: Object.fromEntries((parsed.solutionCodes || []).map((s) => [s.language, s.code || ''])),
+      solutionLanguage: parsed.solutionLanguage || langs[0],
+    }));
+    bumpEditors();
+    setImportOpen(false);
+    notify('Question imported. Review each section, then save.', 'success');
+  };
+
+  const onLimitsSaved = (timeLimit, memoryLimit) => {
+    set('timeLimit', String(timeLimit));
+    set('memoryLimit', String(memoryLimit));
+    setSaved((prev) => ({ ...prev, timeLimit: String(timeLimit), memoryLimit: String(memoryLimit) }));
+  };
+
+  const sectionProps = (id) => ({
+    id,
+    form,
+    set,
+    editorKey,
+    issues: issuesBySection[id] || [],
+    showIssues,
+    ...(id === 'basics' ? { onTypeChange: changeType } : {}),
+    ...(id === 'statement' ? { bumpEditors } : {}),
+    ...(id === 'solution' ? { questionId, dirty, onLimitsSaved } : {}),
+  });
+
+  const status = saving ? (
+    <span className="inline-flex items-center gap-1.5 text-[11px] text-muted">
+      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…
+    </span>
+  ) : dirty ? (
+    <span className="inline-flex items-center gap-1.5 text-[11px] text-warn">
+      <CircleDot className="w-3.5 h-3.5" /> Unsaved changes
+    </span>
+  ) : questionId ? (
+    <span className="inline-flex items-center gap-1.5 text-[11px] text-ok">
+      <Check className="w-3.5 h-3.5" /> All changes saved
+    </span>
+  ) : null;
 
   return (
-    <form onSubmit={handleFormSubmit} className="space-y-6">
-      <PasteFullQuestion onApply={applyPastedQuestion} />
-      <QuestionFormStepper step={formStep} steps={formSteps} onStepChange={setFormStep} />
-
-      {formStep === 1 && (
-      <>
-      <CollapsibleSection title="Basic Information">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Question Type</label>
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value)}
-              className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
-              required
-            >
-              <option value="singleCorrectMcq">Single Correct MCQ</option>
-              <option value="multipleCorrectMcq">Multiple Correct MCQ</option>
-              <option value="fillInTheBlanks">Fill in the Blanks</option>
-              <option value="fillInTheBlanksCoding">Fill in the Blanks (Coding)</option>
-              <option value="coding">Coding Problem</option>
-              <option value="codingWithDriver">Coding (LeetCode-style)</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Points (optional)</label>
-            <input
-              type="number"
-              value={points}
-              onChange={(e) => setPoints(e.target.value)}
-              className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
-              min="0"
-              placeholder="Leave blank if not scored"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Max Attempts (optional)</label>
-            <input
-              type="number"
-              value={maxAttempts}
-              onChange={(e) => setMaxAttempts(e.target.value)}
-              className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
-              min="1"
-              placeholder="Leave blank for unlimited"
-            />
-          </div>
-        </div>
-        {classes.length > 0 && (
-          <div className="mt-6">
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Assign to Classes</label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {classes.map(cls => (
-                <div key={cls._id} className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={classIds.includes(cls._id)}
-                    onChange={() => handleClassToggle(cls._id)}
-                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                    id={`class-${cls._id}`}
-                  />
-                  <label htmlFor={`class-${cls._id}`} className="ml-2 text-sm text-gray-700">{cls.name}</label>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </CollapsibleSection>
-
-      <CollapsibleSection title="Title and Description">
-        <div className="space-y-6">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Title</label>
-            <RichTextEditor
-              key={`title-${editorPasteKey}`}
-              value={title}
-              onChange={setTitle}
-              placeholder="Enter question title"
-              className="w-full"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Description
-              <span className="ml-2 font-normal text-gray-500">
-                (use Image in the toolbar, or paste a screenshot)
-              </span>
-            </label>
-            <RichTextEditor
-              key={`description-${editorPasteKey}`}
-              value={description}
-              onChange={setDescription}
-              placeholder="Provide detailed question description"
-              className="w-full"
-              allowImages
-            />
-            <QuestionImageAttach
-              onUploaded={(items) => {
-                setDescription((prev) => appendImageElements(prev, items));
-                setEditorPasteKey((k) => k + 1);
-              }}
-            />
-          </div>
-          {!['coding', 'fillInTheBlanksCoding', 'codingWithDriver'].includes(type) && (
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Explanation (optional)</label>
-            <RichTextEditor
-              key={`explanation-${editorPasteKey}`}
-              value={explanation}
-              onChange={setExplanation}
-              placeholder="Provide explanation for the solution"
-              className="w-full"
-            />
-          </div>
+    <div className="lg:h-full flex flex-col gap-4 px-4 sm:px-5 py-5">
+      <header className="shrink-0 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <button
+          type="button"
+          onClick={leave}
+          className="w-9 h-9 shrink-0 rounded-xl border border-line bg-surface text-muted hover:text-fg hover:bg-hover flex items-center justify-center"
+          aria-label="Back"
+          title="Back"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <h1 className={`${type.pageTitle} min-w-0 truncate max-w-full sm:max-w-[32rem]`} title={form.title || heading}>
+          {form.title.trim() || heading}
+        </h1>
+        {badges}
+        {status}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {allowImport && (
+            <Button variant="ghost" icon={ClipboardPaste} className="h-9" onClick={() => setImportOpen((v) => !v)}>
+              Import from text
+            </Button>
           )}
+          {extraActions?.({ dirty, saving, save })}
+          <Button icon={saving ? Loader2 : Save} className={`h-9 ${saving ? '[&>svg]:animate-spin' : ''}`} onClick={save} disabled={saving || (!dirty && Boolean(questionId))} title="Ctrl+S">
+            {saveLabel}
+          </Button>
         </div>
-      </CollapsibleSection>
+      </header>
 
-      <CollapsibleSection title="Metadata">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Difficulty</label>
-            <select
-              value={difficulty}
-              onChange={(e) => setDifficulty(e.target.value)}
-              className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
-              required
-            >
-              <option value="easy">Easy</option>
-              <option value="medium">Medium</option>
-              <option value="hard">Hard</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Tags (comma-separated)</label>
-            <input
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
-              placeholder="e.g., array, sorting, algorithm"
-            />
-          </div>
-        </div>
-      </CollapsibleSection>
-      </>
-      )}
-
-      {formStep === 2 && (
-      <>
-      {(type === 'singleCorrectMcq' || type === 'multipleCorrectMcq') && (
-        <CollapsibleSection title="Multiple Choice Options">
-          <div className="space-y-4">
-            {options.map((option, idx) => (
-              <div key={idx} className="flex items-start gap-3">
-                <RichTextEditor
-                  value={option}
-                  onChange={value => handleOptionChange(idx, value)}
-                  placeholder={`Option ${idx + 1}`}
-                  className="flex-1"
-                />
-                <button
-                  type="button"
-                  onClick={() => handleRemoveOption(idx)}
-                  className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600 disabled:bg-red-300 transition-colors"
-                  disabled={options.length <= 2}
-                  aria-label="Remove option"
-                >
-                  <TrashIcon className="h-5 w-5" />
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={handleAddOption}
-              className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-            >
-              <PlusIcon className="h-5 w-5 mr-2" />
-              Add Option
-            </button>
-            {type === 'singleCorrectMcq' && (
-              <div className="mt-4">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Correct Option</label>
-                <select
-                  value={correctOption}
-                  onChange={(e) => setCorrectOption(e.target.value)}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
-                  required
-                >
-                  {options.map((_, idx) => (
-                    <option key={idx} value={idx}>{`Option ${idx + 1}`}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            {type === 'multipleCorrectMcq' && (
-              <div className="mt-4">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Correct Options (select all that apply)</label>
-                <div className="space-y-2">
-                  {options.map((_, idx) => (
-                    <div key={idx} className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={correctOptions.includes(idx)}
-                        onChange={() => handleCorrectOptionToggle(idx)}
-                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                        id={`correct-option-${idx}`}
-                      />
-                      <label htmlFor={`correct-option-${idx}`} className="ml-2 text-sm text-gray-700">{`Option ${idx + 1}`}</label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </CollapsibleSection>
-      )}
-
-      {(type === 'fillInTheBlanks' || type === 'fillInTheBlanksCoding') && (
-        <CollapsibleSection title="Fill in the Blanks">
-          <div className="space-y-6">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Code Snippet</label>
-              <RichTextEditor
-                value={codeSnippet}
-                onChange={setCodeSnippet}
-                placeholder="Enter code snippet with blanks (e.g., console.log(____);)"
-                className="font-mono"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Correct Answer</label>
-              <RichTextEditor
-                value={correctAnswer}
-                onChange={setCorrectAnswer}
-                placeholder="Enter the correct answer for the blank"
-                className="w-full"
-              />
-            </div>
-          </div>
-        </CollapsibleSection>
-      )}
-
-      {(type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver') && (
-        <>
-          <CollapsibleSection title="Languages">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Supported Languages</label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {supportedLanguages.map(lang => (
-                  <div key={lang} className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={languages.includes(lang)}
-                      onChange={() => handleLanguageToggle(lang)}
-                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                      id={`lang-${lang}`}
-                    />
-                    <label htmlFor={`lang-${lang}`} className="ml-2 text-sm text-gray-700 capitalize">{lang}</label>
-                  </div>
+      <div className="flex-1 lg:min-h-0 flex gap-4">
+        <nav className="hidden lg:flex w-52 shrink-0 flex-col gap-3 overflow-y-auto" aria-label="Form sections">
+          <Card className="p-2">
+            <ul className="space-y-0.5">
+              {sections.map((s, idx) => {
+                const list = issuesBySection[s.id] || [];
+                const err = list.some((i) => i.level === 'error');
+                const warn = list.some((i) => i.level !== 'error');
+                const on = active === s.id;
+                return (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      onClick={() => scrollTo(s.id)}
+                      className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs text-left transition ${
+                        on ? 'bg-accent-soft text-accent-ink font-semibold' : 'text-body hover:bg-hover'
+                      }`}
+                    >
+                      <span
+                        className={`w-5 h-5 shrink-0 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                          err && showIssues ? 'bg-bad-soft text-bad' : err ? 'bg-hover text-muted' : warn ? 'bg-warn-soft text-warn' : 'bg-ok-soft text-ok'
+                        }`}
+                      >
+                        {err ? idx + 1 : warn ? '!' : <Check className="w-3 h-3" />}
+                      </span>
+                      <span className="truncate">{s.label}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+          {errors.length > 0 && (
+            <Card className="p-3">
+              <p className="flex items-center gap-1.5 text-[11px] font-semibold text-fg mb-1.5">
+                <AlertCircle className={`w-3.5 h-3.5 ${showIssues ? 'text-bad' : 'text-muted'}`} />
+                {errors.length} thing{errors.length === 1 ? '' : 's'} left to fill in
+              </p>
+              <ul className="space-y-1">
+                {errors.slice(0, 6).map((i) => (
+                  <li key={`${i.section}-${i.message}`}>
+                    <button type="button" onClick={() => scrollTo(i.section)} className="text-left text-[11px] text-muted hover:text-fg">
+                      {i.message}
+                    </button>
+                  </li>
                 ))}
-              </div>
-            </div>
-          </CollapsibleSection>
-
-          <CollapsibleSection title="I/O format & sample cases" defaultOpen>
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Input format (optional)</label>
-                <p className="text-xs text-gray-500 mb-2">How students should read stdin or arguments (coding questions only).</p>
-                <RichTextEditor
-                  key={`inputFormat-${editorPasteKey}`}
-                  value={inputFormat}
-                  onChange={setInputFormat}
-                  placeholder="e.g. First line: n. Second line: n space-separated integers."
-                  className="w-full"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Output format (optional)</label>
-                <p className="text-xs text-gray-500 mb-2">Expected stdout or printed result shape.</p>
-                <RichTextEditor
-                  key={`outputFormat-${editorPasteKey}`}
-                  value={outputFormat}
-                  onChange={setOutputFormat}
-                  placeholder="e.g. Print a single integer on one line."
-                  className="w-full"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Sample input / output</label>
-                <p className="text-xs text-gray-500 mb-2">Shown to students. Each sample has its own explanation, next to that input and output.</p>
-                <BulkIoPairsEditor
-                  items={sampleIo}
-                  onChange={setSampleIo}
-                  emptyItem={{ input: '', output: '', explanation: '' }}
-                  inputKey="input"
-                  outputKey="output"
-                  explanationKey="explanation"
-                  minItems={1}
-                  addLabel="Add sample"
-                />
-              </div>
-            </div>
-          </CollapsibleSection>
-
-          <CollapsibleSection title="Constraints">
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Constraints</label>
-                <RichTextEditor
-                  key={`constraints-${editorPasteKey}`}
-                  value={constraints}
-                  onChange={setConstraints}
-                  placeholder="e.g., 1 <= n <= 10^5"
-                  className="w-full"
-                />
-              </div>
-            </div>
-          </CollapsibleSection>
-
-          <CollapsibleSection title="Test Cases">
-            <p className="text-xs text-gray-500 mb-3">Paste many cases at once, or edit rows. Public cases are shown to students.</p>
-            <BulkIoPairsEditor
-              items={testCases}
-              onChange={setTestCases}
-              emptyItem={{ input: '', expectedOutput: '', isPublic: true, isLargeTestCase: false }}
-              inputKey="input"
-              outputKey="expectedOutput"
-              showFlags
-              minItems={1}
-              addLabel="Add test case"
-              errors={inputErrors}
-            />
-          </CollapsibleSection>
-
-          <CollapsibleSection title="Limits">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Time Limit (seconds)</label>
-                <input
-                  type="number"
-                  value={timeLimit}
-                  onChange={(e) => setTimeLimit(e.target.value)}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
-                  required
-                  min="0.1"
-                  max="5"
-                  step="0.1"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Memory Limit (MB)</label>
-                <input
-                  type="number"
-                  value={memoryLimit}
-                  onChange={(e) => setMemoryLimit(e.target.value)}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
-                  required
-                  min="16"
-                  max="1024"
-                  step="1"
-                />
-              </div>
-            </div>
-          </CollapsibleSection>
-        </>
-      )}
-      </>
-      )}
-
-      {formStep === 3 && isCodingType && (
-        <>
-          <CollapsibleSection title="Starter Code">
-            <div className="space-y-4">
-              {starterCode.map((sc, idx) => (
-                <CollapsibleSection key={sc.language} title={`Starter Code for ${sc.language}`} defaultOpen={false}>
-                  <textarea
-                    value={sc.code}
-                    onChange={(e) => handleStarterCodeChange(idx, e.target.value)}
-                    className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
-                    rows={10}
-                    placeholder={`Starter code for ${sc.language}`}
-                  />
-                </CollapsibleSection>
-              ))}
-              {starterCode.length === 0 && (
-                <p className="text-sm text-gray-500">Select languages in the previous step first.</p>
-              )}
-            </div>
-          </CollapsibleSection>
-
-          {type === 'codingWithDriver' && (
-            <CollapsibleSection title="Driver Code (LeetCode-style)" defaultOpen={false}>
-              <div className="space-y-4">
-                <p className="text-sm text-gray-600">
-                  Include <code className="bg-gray-100 px-1 rounded">{'{{USER_CODE}}'}</code>, <code className="bg-gray-100 px-1 rounded">// USER_CODE_HERE</code>, or <code className="bg-gray-100 px-1 rounded"># USER_CODE_HERE</code> where student code is injected.
-                </p>
-                {driverCode.map((dc, idx) => (
-                  <CollapsibleSection key={dc.language} title={`Driver for ${dc.language}`} defaultOpen={false}>
-                    <textarea
-                      value={dc.code}
-                      onChange={(e) => handleDriverCodeChange(idx, e.target.value)}
-                      className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 font-mono text-sm"
-                      rows={12}
-                      placeholder={`Driver code for ${dc.language}`}
-                    />
-                  </CollapsibleSection>
-                ))}
-              </div>
-            </CollapsibleSection>
+              </ul>
+            </Card>
           )}
+          <p className={`${type.meta} px-1`}>Ctrl+S saves from anywhere.</p>
+        </nav>
 
-          <CollapsibleSection title="Solution Code (Optional)">
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Solution Language</label>
-                <select
-                  value={solutionLanguage}
-                  onChange={(e) => setSolutionLanguage(e.target.value)}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
-                >
-                  {languages.map(lang => (
-                    <option key={lang} value={lang}>
-                      {lang.charAt(0).toUpperCase() + lang.slice(1)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Solution Code</label>
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                  <CodeEditor
-                    key={`solution-${solutionLanguage}-${initialData?._id || 'new'}`}
-                    value={activeSolutionCode}
-                    onChange={handleSolutionCodeChange}
-                    language={solutionLanguage}
-                    disabled={false}
-                    isFillInTheBlanks={false}
-                  />
-                </div>
-                <p className="mt-2 text-xs text-gray-500">
-                  Write the solution code here. Save the draft first, then you can test it against all test cases (including hidden ones).
-                </p>
-              </div>
-              <TestSolutionLimitControls
-                question={{ _id: initialData?._id, type, timeLimit, memoryLimit }}
-                testResults={testResults}
-                optionsRef={limitOptionsRef}
-                getBenchmarkPayload={() => ({
-                  questionId: initialData?._id,
-                  answer: activeSolutionCode,
-                  classId: null,
-                  language: solutionLanguage,
-                })}
-                onSaved={(nextTime, nextMemory) => {
-                  setTimeLimit(nextTime);
-                  setMemoryLimit(nextMemory);
-                }}
-              />
-              <div className="flex items-center gap-3">
+        <div ref={scrollRef} onScroll={onScroll} className="flex-1 min-w-0 lg:overflow-y-auto space-y-4 pb-16 lg:pr-1">
+          <div className="lg:hidden flex gap-1.5 overflow-x-auto">
+            {sections.map((s) => {
+              const err = (issuesBySection[s.id] || []).some((i) => i.level === 'error');
+              return (
                 <button
+                  key={s.id}
                   type="button"
-                  onClick={handleTestSolution}
-                  disabled={isTestingSolution || !activeSolutionCode.trim() || testCases.length === 0}
-                  className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  onClick={() => scrollTo(s.id)}
+                  className={`shrink-0 px-3 h-8 rounded-lg border text-[11px] font-semibold ${
+                    err && showIssues ? 'border-bad-line text-bad bg-bad-soft' : 'border-line text-body bg-surface'
+                  }`}
                 >
-                  {isTestingSolution ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Testing...
-                    </>
-                  ) : (
-                    'Test Solution'
-                  )}
+                  {s.label}
                 </button>
-              </div>
-              {testResults && <TestSolutionResults testResults={testResults} />}
-            </div>
-          </CollapsibleSection>
-        </>
-      )}
+              );
+            })}
+          </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setFormStep((s) => Math.max(1, s - 1))}
-            disabled={formStep === 1}
-            className="px-4 py-2 rounded-lg text-sm font-semibold border disabled:opacity-40"
-            style={{ color: 'var(--text-primary)', borderColor: 'var(--card-border)', backgroundColor: 'var(--background-light)' }}
-          >
-            Back
-          </button>
-          {initialData && initialData._id && (
-            <button
-              type="button"
-              onClick={() => navigate(`/admin/questions/${initialData._id}/preview`)}
-              className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold border"
-              style={{ color: 'var(--text-primary)', borderColor: 'var(--card-border)', backgroundColor: 'var(--card-white)' }}
-            >
-              Preview as Student
-            </button>
+          {allowImport && importOpen && (
+            <Card className="p-4">
+              <PasteFullQuestion onApply={applyImport} />
+            </Card>
           )}
-        </div>
-        <div className="flex gap-3">
-          {formStep < totalFormSteps && (
-            <button
-              type="button"
-              onClick={() => setFormStep((s) => Math.min(totalFormSteps, s + 1))}
-              className="px-4 py-2 rounded-lg text-sm font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200"
-            >
-              Next
-            </button>
+
+          {sections.map((s) => {
+            const Section = SECTION_COMPONENTS[s.id];
+            return <Section key={s.id} {...sectionProps(s.id)} />;
+          })}
+
+          {isCodingType(form.type) && !questionId && (
+            <p className={`${type.meta} text-center`}>Save the draft to unlock solution testing and limit benchmarking.</p>
           )}
-          <button
-            type="submit"
-            className="inline-flex items-center px-6 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-          >
-            {initialData ? (initialData.status === 'draft' || initialData.isDraft ? 'Update Draft' : 'Update Question') : 'Save as Draft'}
-          </button>
         </div>
       </div>
-    </form>
+    </div>
   );
-};
-
-export default AdminQuestionForm;
+}

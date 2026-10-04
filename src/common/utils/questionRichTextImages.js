@@ -1,6 +1,7 @@
 import { Transforms } from 'slate';
 import { API_BASE_URL } from '../constants';
 import { uploadQuestionImage } from '../services/api';
+import { notify } from '../ui/Toast';
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -105,7 +106,7 @@ export function withQuestionImages(editor) {
       files.forEach((file) => {
         insertImageFile(editor, file).catch((err) => {
           console.error('[question image paste]', err);
-          window.alert(err.message || 'Failed to add image');
+          notify(err.message || 'Failed to add image');
         });
       });
       return;

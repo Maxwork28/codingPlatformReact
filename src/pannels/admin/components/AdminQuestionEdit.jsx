@@ -1,304 +1,161 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
-import { adminSearchQuestionsById, adminEditQuestion, getDraftQuestion, updateDraftQuestion, publishDraftQuestion } from '../../../common/services/api';
-import QuestionForm from '../components/AdminQuestionForm';
+import React, { useCallback, useEffect, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { AlertTriangle, ArrowLeft, Eye, RefreshCw, Rocket } from 'lucide-react';
+import { adminEditQuestion, adminSearchQuestionsById, publishDraftQuestion } from '../../../common/services/api';
+import { Button, Card, StatusChip } from '../../../common/ui/primitives';
+import { type } from '../../../common/ui/format';
+import { confirmAction, notify } from '../../../common/ui/Toast';
+import QuestionForm from './AdminQuestionForm';
+import { errorText } from './classDetails/helpers';
+
+const OBJECT_ID = /^[0-9a-f]{24}$/i;
+
+function LoadingShell() {
+  return (
+    <div className="h-full flex flex-col gap-4 px-4 sm:px-5 py-5 animate-pulse">
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-xl bg-hover" />
+        <div className="h-6 w-72 rounded-lg bg-hover" />
+        <div className="ml-auto h-9 w-24 rounded-xl bg-hover" />
+      </div>
+      <div className="flex-1 flex gap-4">
+        <div className="hidden lg:block w-52 rounded-2xl bg-surface border border-line" />
+        <div className="flex-1 space-y-4">
+          <div className="h-56 rounded-2xl bg-surface border border-line" />
+          <div className="h-72 rounded-2xl bg-surface border border-line" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const AdminQuestionEdit = () => {
   const { questionId } = useParams();
   const navigate = useNavigate();
-  const [initialData, setInitialData] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
-  const [isDraft, setIsDraft] = useState(false);
+  const base = useLocation().pathname.startsWith('/teacher') ? '/teacher' : '/admin';
+  const [question, setQuestion] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [publishing, setPublishing] = useState(false);
 
-  console.log('[AdminQuestionEdit] Component mounted', { questionId });
-
-  // Removed clipboard unfflock handler - it was interfering with paste functionality
-  // Native paste events ubjbwork fine without this handler
-
-  useEffect(() => {
-    const fetchQuestion = async () => {
-      try {
-        setIsLoading(true);
-        console.log('[AdminQuestionEdit] Fetching question with ID:', questionId);
-        
-        // Try to fetch as draft first
-        let question = null;
-        let draft = false;
-        try {
-          const draftResponse = await getDraftQuestion(questionId);
-          question = draftResponse.data.question;
-          draft = true;
-          setIsDraft(true);
-          console.log('[AdminQuestionEdit] Question fetched as draft');
-        } catch (draftErr) {
-          // If not a draft, fetch as regular question
-          console.log('[AdminQuestionEdit] Not a draft, fetching as regular question');
-          const response = await adminSearchQuestionsById(questionId);
-          question = response.data.question;
-          draft = false;
-          setIsDraft(false);
-        }
-        
-        console.log('[AdminQuestionEdit] Question fetched:', {
-          id: question._id,
-          title: question.title,
-          description: question.description,
-          options: question.options,
-          tags: question.tags,
-          tagsType: typeof question.tags,
-          tagsIsArray: Array.isArray(question.tags),
-          isDraft: draft,
-        });
-
-        // Prepare initialData for QuestionForm (strings or HTML, as AdminQuestionForm will deserialize)
-        const starterFromApi =
-          Array.isArray(question.starterCode) && question.starterCode.length > 0
-            ? question.starterCode
-            : Array.isArray(question.templateCode) && question.templateCode.length > 0
-              ? question.templateCode
-              : [];
-        const preparedData = {
-          _id: question._id, // Include _id for preview functionality
-          type: question.type || 'singleCorrectMcq',
-          title: question.title || '',
-          description: question.description || '',
-          points: question.points ?? '',
-          difficulty: question.difficulty || 'easy',
-          tags: Array.isArray(question.tags) ? question.tags.join(', ') : (typeof question.tags === 'string' ? question.tags : ''),
-          constraints: question.constraints || '',
-          inputFormat: question.inputFormat || '',
-          outputFormat: question.outputFormat || '',
-          sampleIo: Array.isArray(question.sampleIo) && question.sampleIo.length > 0
-            ? question.sampleIo.map((p) => ({ input: p.input ?? '', output: p.output ?? '', explanation: p.explanation ?? '' }))
-            : [{ input: '', output: '', explanation: '' }],
-          functionSignature: question.functionSignature || '',
-          languages: Array.isArray(question.languages) ? question.languages : (question.language ? [question.language] : ['javascript']),
-          options: question.options?.length >= 2 ? question.options : ['', '', '', ''],
-          correctOption: question.correctOption ?? 0,
-          correctOptions: Array.isArray(question.correctOptions) ? question.correctOptions : [],
-          codeSnippet: question.codeSnippet || '',
-          correctAnswer: question.correctAnswer || '',
-          starterCode: starterFromApi,
-          templateCode: Array.isArray(question.templateCode) ? question.templateCode : [],
-          driverCode: Array.isArray(question.driverCode) ? question.driverCode : [],
-          testCases: question.testCases?.length > 0 ? question.testCases : [{ input: '', expectedOutput: '', isPublic: true }],
-          timeLimit: question.timeLimit || 2,
-          memoryLimit: question.memoryLimit || 256,
-          maxAttempts: question.maxAttempts ?? '',
-          explanation: question.explanation || '',
-          classes: question.classes || [],
-          solutionCode: question.solutionCode || '',
-          solutionLanguage: question.solutionLanguage || question.languages?.[0] || 'javascript',
-          solutionCodes: Array.isArray(question.solutionCodes)
-            ? question.solutionCodes.map((s) => ({ language: s.language, code: s.code || '' }))
-            : question.solutionCode && question.solutionLanguage
-              ? [{ language: question.solutionLanguage, code: question.solutionCode }]
-              : [],
-          status: question.status || (draft ? 'draft' : 'published'),
-          isDraft: draft,
-        };
-        console.log('[AdminQuestionEdit] initialData set:', preparedData);
-        setInitialData(preparedData);
-      } catch (err) {
-        console.error('[AdminQuestionEdit] Fetch error:', err.message, err.response?.data);
-        setError(err.response?.data?.error || 'Failed to load question');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    console.log('[AdminQuestionEdit] Initiating fetchQuestion');
-    fetchQuestion();
-  }, [questionId]);
-
-  const handleSubmit = async (questionData) => {
-    setIsLoading(true);
-    setError('');
-    setMessage('');
-    try {
-      console.log('[AdminQuestionEdit] Submitting updated question:', { questionId, data: questionData, isDraft });
-      if (isDraft) {
-        // Update draft
-        await updateDraftQuestion(questionId, questionData);
-        setMessage('Draft updated successfully!');
-        console.log('[AdminQuestionEdit] Draft updated successfully, navigating to /admin/questions/drafts');
-        setTimeout(() => navigate('/admin/questions/drafts'), 2000);
-      } else {
-        // Update published question
-        await adminEditQuestion(questionId, questionData);
-        setMessage('Question updated successfully!');
-        console.log('[AdminQuestionEdit] Question updated successfully, navigating to /admin/questions');
-        setTimeout(() => navigate('/admin/questions'), 2000);
-      }
-    } catch (err) {
-      console.error('[AdminQuestionEdit] Update error:', err.message, err.response?.data);
-      setError(err.response?.data?.error || 'Failed to update question');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handlePublish = async () => {
-    if (!window.confirm('Are you sure you want to publish this draft?')) {
+  const load = useCallback(async () => {
+    if (!OBJECT_ID.test(questionId || '')) {
+      setLoadError("This link doesn't point to a valid question.");
+      setLoading(false);
       return;
     }
-    setIsLoading(true);
-    setError('');
-    setMessage('');
+    setLoading(true);
+    setLoadError('');
     try {
-      console.log('[AdminQuestionEdit] Publishing draft:', questionId);
-      await publishDraftQuestion(questionId);
-      setMessage('Draft published successfully!');
-      setIsDraft(false);
-      console.log('[AdminQuestionEdit] Draft published successfully, navigating to /admin/questions/drafts');
-      setTimeout(() => navigate('/admin/questions/drafts'), 2000);
+      const res = await adminSearchQuestionsById(questionId);
+      setQuestion(res.data.question);
     } catch (err) {
-      console.error('[AdminQuestionEdit] Publish error:', err.message, err.response?.data);
-      setError(err.response?.data?.error || 'Failed to publish draft');
+      setLoadError(errorText(err, 'Failed to load question'));
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
+  }, [questionId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (loading) return <LoadingShell />;
+
+  if (loadError || !question) {
+    return (
+      <div className="h-full flex items-center justify-center px-4">
+        <Card className="max-w-sm w-full p-6 text-center space-y-3">
+          <span className="mx-auto w-10 h-10 rounded-xl bg-bad-soft text-bad flex items-center justify-center">
+            <AlertTriangle className="w-5 h-5" />
+          </span>
+          <p className={type.cardTitle}>Couldn't open this question</p>
+          <p className={type.body}>{loadError || 'Question not found.'}</p>
+          <div className="flex justify-center gap-2 pt-1">
+            <Button variant="secondary" icon={ArrowLeft} onClick={() => navigate(`${base}/questions`)}>
+              Question bank
+            </Button>
+            {OBJECT_ID.test(questionId || '') && (
+              <Button icon={RefreshCw} onClick={load}>
+                Try again
+              </Button>
+            )}
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  const isDraft = question.isDraft || question.status === 'draft';
+
+  const save = async (payload) => {
+    const res = await adminEditQuestion(questionId, payload);
+    if (res.data?.question) setQuestion((prev) => ({ ...prev, updatedAt: res.data.question.updatedAt }));
+    notify(isDraft ? 'Draft saved' : 'Question updated', 'success');
   };
 
-  if (isLoading) {
-    return (
-      <div className="fixed inset-0 bg-gray-600 bg-opacity-60 flex items-center justify-center z-50">
-        <div className="backdrop-blur-sm p-8 rounded-2xl shadow-xl max-w-sm w-full" style={{ backgroundColor: 'var(--card-white)' }}>
-          <div className="flex items-center justify-center">
-            <svg
-              className="animate-spin h-10 w-10 text-indigo-600"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              ></circle>
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-            <span className="ml-4 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Loading...</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6 p-4 rounded-xl bg-red-50/80 backdrop-blur-sm border border-red-200 shadow-sm">
-          <div className="flex items-center">
-            <svg
-              className="h-6 w-6 text-red-500"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <p className="ml-3 text-sm font-semibold text-red-800">{error}</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const extraActions = ({ dirty, saving, save: saveForm }) => (
+    <>
+      <Button
+        variant="secondary"
+        icon={Eye}
+        className="h-9"
+        disabled={saving}
+        onClick={async () => {
+          if (dirty && !(await saveForm())) return;
+          navigate(`${base}/questions/${questionId}/preview`, { state: { returnTo: `${base}/questions/${questionId}/edit` } });
+        }}
+      >
+        {dirty ? 'Save & preview' : 'Preview'}
+      </Button>
+      {isDraft && (
+        <Button
+          variant="publish"
+          icon={Rocket}
+          className="h-9"
+          disabled={saving || publishing}
+          onClick={async () => {
+            const ok = await confirmAction('Publish this question? It moves to the question bank and can be added to classes and exams.', {
+              title: 'Publish question',
+              confirmLabel: 'Publish',
+            });
+            if (!ok) return;
+            if (dirty && !(await saveForm())) return;
+            setPublishing(true);
+            try {
+              await publishDraftQuestion(questionId);
+              setQuestion((prev) => ({ ...prev, isDraft: false, status: 'published' }));
+              notify('Question published', 'success');
+            } catch (err) {
+              notify(errorText(err, 'Failed to publish'), 'error');
+            } finally {
+              setPublishing(false);
+            }
+          }}
+        >
+          {publishing ? 'Publishing…' : 'Publish'}
+        </Button>
+      )}
+    </>
+  );
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center">
-          <Link
-            to={isDraft ? "/admin/questions/drafts" : "/admin/questions"}
-            className="mr-4 p-2 rounded-full transition-all duration-200"
-            style={{ backgroundColor: 'var(--background-light)' }}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5"
-              style={{ color: 'var(--text-secondary)' }}
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </Link>
-          <h2 className="text-3xl font-bold tracking-tight" style={{ color: 'var(--text-heading)' }}>
-            {isDraft ? 'Edit Draft' : 'Edit Question'}
-          </h2>
-        </div>
-        {isDraft && (
-          <button
-            onClick={handlePublish}
-            className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all"
-          >
-            <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-            Publish Draft
-          </button>
-        )}
-      </div>
-
-      {message && (
-        <div className="mb-6 p-4 rounded-xl bg-green-50/80 backdrop-blur-sm border border-green-200 shadow-sm">
-          <div className="flex items-center">
-            <svg
-              className="h-6 w-6 text-green-500"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <p className="ml-3 text-sm font-semibold text-green-800">{message}</p>
-          </div>
-        </div>
-      )}
-
-      {initialData && (
-        <div className="backdrop-blur-sm rounded-2xl shadow-lg p-6 border" style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}>
-          {isDraft && (
-            <div className="mb-6 p-4 rounded-xl bg-yellow-50 border border-yellow-200 flex items-center">
-              <svg className="h-5 w-5 text-yellow-600 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <p className="text-sm font-semibold text-yellow-800">
-                This is a draft question. Update it and publish when ready.
-              </p>
-            </div>
-          )}
-          <QuestionForm
-            key={questionId}
-            onSubmit={handleSubmit}
-            initialData={initialData}
-            classes={[]} // No classes for admin
-            defaultClassId={null}
-          />
-        </div>
-      )}
-    </div>
+    <QuestionForm
+      key={question._id}
+      initialQuestion={question}
+      questionId={question._id}
+      heading="Edit question"
+      backTo={isDraft ? `${base}/questions/drafts` : `${base}/questions`}
+      badges={
+        <span className="flex items-center gap-1.5">
+          {isDraft ? <StatusChip kind="warning">Draft</StatusChip> : <StatusChip kind="pass">Published</StatusChip>}
+          {question.isExamOnly && <StatusChip kind="info">Exam-only</StatusChip>}
+        </span>
+      }
+      saveLabel={isDraft ? 'Save draft' : 'Save changes'}
+      onSave={save}
+      extraActions={extraActions}
+    />
   );
 };
 

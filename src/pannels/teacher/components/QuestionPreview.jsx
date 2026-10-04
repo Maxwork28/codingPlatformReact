@@ -10,6 +10,7 @@ import {
   hasSavedSolution,
   solutionCodeForLanguage,
 } from '../../../common/utils/solutionCodes';
+import { notify } from '../../../common/ui/Toast';
 
 export const buildSolutionCodesFromQuestion = buildCodes;
 
@@ -158,23 +159,23 @@ const QuestionPreview = () => {
   const handleTestSolution = async () => {
     const q = previewQuestion;
     if (!activeSolutionCode.trim()) {
-      alert('Please write a solution first');
+      notify('Please write a solution first');
       return;
     }
     if (!q.testCases || q.testCases.length === 0) {
-      alert('Please add at least one test case');
+      notify('Please add at least one test case');
       return;
     }
     if (q.testCases.some((tc) => !tc.input?.trim() || !tc.expectedOutput?.trim())) {
-      alert('All test cases must have input and expected output');
+      notify('All test cases must have input and expected output');
       return;
     }
     if (!q._id) {
-      alert('Question ID is required to test the solution');
+      notify('Question ID is required to test the solution');
       return;
     }
     if (!RUNNABLE_TYPES.includes(q.type)) {
-      alert('Solution testing is only available for coding questions');
+      notify('Solution testing is only available for coding questions');
       return;
     }
 
@@ -222,14 +223,14 @@ const QuestionPreview = () => {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-gray-600 bg-opacity-60 flex items-center justify-center z-50">
-        <div className="bg-white/90 backdrop-blur-sm p-8 rounded-2xl shadow-xl max-w-sm w-full">
+      <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+        <div className="bg-surface backdrop-blur-sm p-8 rounded-2xl shadow-xl max-w-sm w-full">
           <div className="flex items-center justify-center">
-            <svg className="animate-spin h-10 w-10 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <svg className="animate-spin h-10 w-10 text-accent-ink" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
             </svg>
-            <span className="ml-4 text-lg font-semibold text-gray-800">Loading...</span>
+            <span className="ml-4 text-lg font-semibold text-fg">Loading...</span>
           </div>
         </div>
       </div>
@@ -238,10 +239,10 @@ const QuestionPreview = () => {
 
   if (error) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6 p-4 rounded-xl bg-red-50/80 backdrop-blur-sm border border-red-200 shadow-sm">
-          <p className="text-sm font-semibold text-red-800">{error}</p>
-          <button type="button" onClick={() => navigate(returnTo)} className="mt-3 text-sm text-indigo-600 hover:underline">
+      <div className="w-full px-4 sm:px-5 py-8">
+        <div className="mb-6 p-4 rounded-xl bg-bad-soft backdrop-blur-sm border border-bad-line shadow-sm">
+          <p className="text-sm font-semibold text-bad">{error}</p>
+          <button type="button" onClick={() => navigate(returnTo)} className="mt-3 text-sm text-accent-ink hover:underline">
             ← Back
           </button>
         </div>
@@ -251,9 +252,9 @@ const QuestionPreview = () => {
 
   if (!previewQuestion) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
-          <p className="text-center text-gray-800 font-semibold">Question not found</p>
+      <div className="w-full px-4 sm:px-5 py-8">
+        <div className="bg-surface backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-line">
+          <p className="text-center text-fg font-semibold">Question not found</p>
         </div>
       </div>
     );
@@ -262,26 +263,26 @@ const QuestionPreview = () => {
   const isRunnable = RUNNABLE_TYPES.includes(previewQuestion.type);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="w-full px-4 sm:px-5 py-8">
       <div className="flex items-center mb-8">
         <button
           type="button"
           onClick={() => navigate(returnTo)}
-          className="mr-4 p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200"
+          className="mr-4 p-2 rounded-full bg-inset hover:bg-line-strong transition-all duration-200"
           aria-label="Go back"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-600" viewBox="0 0 20 20" fill="currentColor">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-muted" viewBox="0 0 20 20" fill="currentColor">
             <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
           </svg>
         </button>
-        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight">
+        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-accent to-accent-hover tracking-tight">
           Student Preview
         </h1>
       </div>
 
-      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
-        <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-          <p className="text-sm text-blue-800">
+      <div className="bg-surface backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-line">
+        <div className="mb-4 p-3 bg-info-soft rounded-lg border border-info-line">
+          <p className="text-sm text-info">
             <strong>Preview Mode:</strong> This is how students will see this question. You can test the solution here; student submissions are disabled.
           </p>
         </div>
@@ -289,30 +290,30 @@ const QuestionPreview = () => {
         <div className="mb-6 flex flex-wrap gap-2 items-center text-sm">
           <span className="px-3 py-1.5 rounded-full font-semibold bg-slate-800 text-white">{questionTypeLabel(previewQuestion.type)}</span>
           {previewQuestion?.isDraft || previewQuestion?.status === 'draft' ? (
-            <span className="px-3 py-1.5 rounded-full font-medium bg-amber-100 text-amber-900">Draft</span>
+            <span className="px-3 py-1.5 rounded-full font-medium bg-warn-soft text-warn">Draft</span>
           ) : null}
           {previewQuestion?.languages?.length > 0 && (
-            <span className="px-3 py-1.5 rounded-full font-medium bg-indigo-100 text-indigo-900">
+            <span className="px-3 py-1.5 rounded-full font-medium bg-accent-soft text-accent-ink">
               Languages: {previewQuestion.languages.join(', ')}
             </span>
           )}
           {previewQuestion?.testCases?.length > 0 && (
-            <span className="px-3 py-1.5 rounded-full font-medium bg-gray-100 text-gray-800">
+            <span className="px-3 py-1.5 rounded-full font-medium bg-inset text-fg">
               {previewQuestion.testCases.length} test case{previewQuestion.testCases.length === 1 ? '' : 's'}
             </span>
           )}
         </div>
 
         {isRunnable && (
-          <div className="mb-6 border-b border-gray-200">
+          <div className="mb-6 border-b border-line">
             <nav className="flex space-x-8" aria-label="Tabs">
               <button
                 type="button"
                 onClick={() => setActiveTab('preview')}
                 className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                   activeTab === 'preview'
-                    ? 'border-indigo-500 text-indigo-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? 'border-accent text-accent-ink'
+                    : 'border-transparent text-muted hover:text-body hover:border-line-strong'
                 }`}
               >
                 Preview
@@ -322,8 +323,8 @@ const QuestionPreview = () => {
                 onClick={() => setActiveTab('test')}
                 className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                   activeTab === 'test'
-                    ? 'border-indigo-500 text-indigo-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? 'border-accent text-accent-ink'
+                    : 'border-transparent text-muted hover:text-body hover:border-line-strong'
                 }`}
               >
                 Test Solution
@@ -336,14 +337,14 @@ const QuestionPreview = () => {
 
         {activeTab === 'test' && isRunnable && (
           <div>
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">Test Solution</h2>
+            <h2 className="text-2xl font-bold text-fg mb-4">Test Solution</h2>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Solution Language</label>
+                <label className="block text-sm font-semibold text-body mb-2">Solution Language</label>
                 <select
                   value={solutionLanguage}
                   onChange={(e) => setSolutionLanguage(e.target.value)}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
+                  className="w-full px-4 py-2 rounded-lg border border-line focus:ring-2 focus:ring-accent focus:border-accent text-sm transition-all"
                 >
                   {(previewQuestion.languages?.length > 0
                     ? previewQuestion.languages
@@ -357,8 +358,8 @@ const QuestionPreview = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Solution Code</label>
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <label className="block text-sm font-semibold text-body mb-2">Solution Code</label>
+                <div className="border border-line rounded-lg overflow-hidden">
                   <CodeEditor
                     key={`solution-${solutionLanguage}-${previewQuestion._id}`}
                     value={activeSolutionCode}
@@ -368,7 +369,7 @@ const QuestionPreview = () => {
                     isFillInTheBlanks={false}
                   />
                 </div>
-                <p className="mt-2 text-xs text-gray-500">
+                <p className="mt-2 text-xs text-muted">
                   Switch language to view or edit each saved solution. Test runs against all cases, including hidden ones.
                 </p>
               </div>
@@ -391,7 +392,7 @@ const QuestionPreview = () => {
                   type="button"
                   onClick={handleTestSolution}
                   disabled={isTestingSolution || !activeSolutionCode.trim() || !previewQuestion.testCases?.length || !previewQuestion._id}
-                  className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-on-accent bg-accent hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 transition-all disabled:bg-subtle disabled:cursor-not-allowed"
                 >
                   {isTestingSolution ? 'Testing...' : 'Test Solution'}
                 </button>

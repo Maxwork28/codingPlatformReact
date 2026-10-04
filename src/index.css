@@ -3,103 +3,312 @@
 /* App theme uses data-theme on <html>, not prefers-color-scheme */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-/* Light Mode Color Palette */
-:root {
-  --primary-navy: #2C3E50;      /* Primary background (sidebar, header) */
-  --text-primary: #1e293b;      /* Text (slate-800) */
-  --text-secondary: #64748b;    /* Subtle text (slate-500) */
-  --background-light: #f8fafc;  /* Background (slate-50) */
-  --background-content: #ffffff; /* Main content background */
-  --card-white: #ffffff;        /* Cards (white) */
-  --card-border: #e2e8f0;       /* Borders (light gray) */
-  
-  /* Neutral badge (works in both themes) */
-  --pill-muted-bg: #e5e7eb;     /* gray-200 */
-  --pill-muted-text: #374151;   /* gray-700/800 */
-  
-  /* Subject-specific icon colors (20% less saturated) */
-  --python-blue: #2563eb;       /* Python (darker blue) */
-  --data-emerald: #059669;      /* Data Structures (darker green) */
-  --oop-amber: #d97706;         /* OOP (darker amber) */
-  --database-violet: #7c3aed;   /* Database (darker purple) */
-  --competition-red: #dc2626;   /* Competition (darker red) */
-  --software-cyan: #0891b2;     /* Software Eng (darker cyan) */
-  
-  /* Question badges */
-  --badge-slate: #64748b;       /* Question badges (slate-500) */
-  
-  /* Button Gradient */
-  --button-gradient: linear-gradient(to right, #3b82f6, #8b5cf6);
-  
-  /* Highlight colors */
-  --highlight-blue: #3b82f6;
-  --accent-blue: #1d4ed8;
-  --primary-blue: #3b82f6;
-  --primary-indigo: #6366f1;
-  --accent-indigo: #6366f1;
-  --text-heading: #1e293b;
-  --row-hover: #f1f5f9;
-  --tw-ring-offset-color: #ffffff;
-}
-
-/* Dark Mode Color Palette */
-[data-theme="dark"] {
-  --primary-navy: #1a202c;      /* Darker primary background */
-  --text-primary: #f1f5f9;      /* Light text */
-  --text-secondary: #94a3b8;    /* Light subtle text */
-  --background-light: #1e293b;  /* Dark background */
-  --background-content: #0f172a; /* Dark main content background */
-  --card-white: #1e293b;        /* Dark cards */
-  --card-border: #334155;       /* Dark borders */
-  
-  /* Neutral badge (works in both themes) */
-  --pill-muted-bg: #334155;     /* slate-700 */
-  --pill-muted-text: #e2e8f0;   /* gray-200 */
-  
-  /* Subject-specific icon colors (adjusted for dark mode) */
-  --python-blue: #60a5fa;       /* Lighter blue for dark mode */
-  --data-emerald: #34d399;      /* Lighter green for dark mode */
-  --oop-amber: #fbbf24;         /* Lighter amber for dark mode */
-  --database-violet: #a78bfa;   /* Lighter purple for dark mode */
-  --competition-red: #f87171;   /* Lighter red for dark mode */
-  --software-cyan: #22d3ee;     /* Lighter cyan for dark mode */
-  
-  /* Question badges */
-  --badge-slate: #94a3b8;       /* Light badges for dark mode */
-  
-  /* Button Gradient */
-  --button-gradient: linear-gradient(to right, #60a5fa, #a78bfa);
-  
-  /* Highlight colors */
-  --highlight-blue: #60a5fa;
-  --accent-blue: #3b82f6;
-  --primary-blue: #60a5fa;
-  --primary-indigo: #818cf8;
-  --accent-indigo: #818cf8;
-  --text-heading: #f1f5f9;
-  --row-hover: #334155;
-  --tw-ring-offset-color: #0f172a;
-  color-scheme: dark;
-}
-
-html {
-  color-scheme: light;
-  background-color: var(--background-content);
-}
-
+/* -------------------------------------------------------------------------
+ * Semantic tokens. Components use the Tailwind utilities in @theme below
+ * (bg-surface, text-muted, border-line, bg-accent, text-ok, ...), never raw
+ * gray/zinc shades, so both themes come from this one block.
+ * ------------------------------------------------------------------------- */
+:root,
 html[data-theme="dark"] {
+  --bg: #09090b;
+  --surface: #18181b;
+  --inset: rgb(9 9 11 / 0.6);
+  --hover: #27272a;
+  --border: #27272a;
+  --border-strong: #3f3f46;
+  --text: #fafafa;
+  --text-body: #d4d4d8;
+  --muted: #a1a1aa;
+  --subtle: #71717a;
+  --navbar: rgb(9 9 11 / 0.8);
+  --card-shadow: 0 0 #0000;
+
+  --ok: #34d399;
+  --ok-soft: rgb(2 44 34 / 0.6);
+  --ok-line: rgb(6 95 70 / 0.7);
+  --warn: #fbbf24;
+  --warn-soft: rgb(69 26 3 / 0.6);
+  --warn-line: rgb(146 64 14 / 0.7);
+  --bad: #f87171;
+  --bad-soft: rgb(69 10 10 / 0.6);
+  --bad-line: rgb(153 27 27 / 0.7);
+  --info: #67e8f9;
+  --info-soft: rgb(8 51 68 / 0.45);
+  --info-line: rgb(21 94 117 / 0.7);
+  --quiet: #a1a1aa;
+  --quiet-soft: #27272a;
+  --quiet-line: #3f3f46;
+
+  --accent: #06b6d4;
+  --accent-hover: #22d3ee;
+  --on-accent: #09090b;
+  --accent-soft: color-mix(in srgb, var(--accent) 15%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent) 40%, transparent);
+  --accent-ink: color-mix(in srgb, var(--accent) 65%, white);
+
+  /* Subject icon colors */
+  --python-blue: #60a5fa;
+  --data-emerald: #34d399;
+  --oop-amber: #fbbf24;
+  --database-violet: #a78bfa;
+  --competition-red: #f87171;
+  --software-cyan: #22d3ee;
+  --badge-slate: #94a3b8;
+  --button-gradient: linear-gradient(to right, #60a5fa, #a78bfa);
+
+  --scroll-thumb: #3f3f46;
+  --scroll-track: #09090b;
   color-scheme: dark;
 }
 
-html[data-theme="dark"],
-html[data-theme="dark"] body {
-  background-color: var(--background-content);
-  color: var(--text-primary);
+html[data-theme="light"] {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --inset: #f6f7f9;
+  --hover: #eef0f3;
+  --border: #dde1e7;
+  --border-strong: #c3c9d2;
+  --field: #ffffff;
+  --field-line: #c8ced7;
+  --field-line-hover: #a9b1bd;
+  --field-disabled: #f3f4f6;
+  --text: #0f1115;
+  --text-body: #2e333b;
+  --muted: #5d6470;
+  --subtle: #868d99;
+  --navbar: rgb(255 255 255 / 0.88);
+  --card-shadow: 0 1px 2px rgb(16 24 40 / 0.05), 0 1px 3px rgb(16 24 40 / 0.04);
+
+  --ok: #047857;
+  --ok-soft: #ecfdf5;
+  --ok-line: #a7f3d0;
+  --warn: #b45309;
+  --warn-soft: #fffbeb;
+  --warn-line: #fcd88a;
+  --bad: #b91c1c;
+  --bad-soft: #fef2f2;
+  --bad-line: #fbc4c4;
+  --info: #0e7490;
+  --info-soft: #ecfeff;
+  --info-line: #a5f3fc;
+  --quiet: #4b5260;
+  --quiet-soft: #eef0f3;
+  --quiet-line: #dde1e7;
+
+  --accent: #0e7490;
+  --accent-hover: #155e75;
+  --on-accent: #ffffff;
+  --accent-soft: color-mix(in srgb, var(--accent) 9%, white);
+  --accent-line: color-mix(in srgb, var(--accent) 32%, white);
+  --accent-ink: color-mix(in srgb, var(--accent) 85%, black);
+
+  --python-blue: #2563eb;
+  --data-emerald: #059669;
+  --oop-amber: #d97706;
+  --database-violet: #7c3aed;
+  --competition-red: #dc2626;
+  --software-cyan: #0891b2;
+  --badge-slate: #64748b;
+  --button-gradient: linear-gradient(to right, #3b82f6, #8b5cf6);
+
+  --scroll-thumb: #cdd2da;
+  --scroll-track: #f4f5f7;
+  color-scheme: light;
 }
 
-/* Apply Inter font family globally */
-* {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+/* Per-role accent (student cyan, teacher blue, admin purple) */
+html[data-role="teacher"] {
+  --accent: #2563eb;
+  --accent-hover: #3b82f6;
+  --on-accent: #ffffff;
+}
+html[data-role="admin"] {
+  --accent: #9333ea;
+  --accent-hover: #a855f7;
+  --on-accent: #ffffff;
+}
+html[data-theme="light"][data-role="teacher"] { --accent-hover: #1d4ed8; }
+html[data-theme="light"][data-role="admin"] { --accent-hover: #7e22ce; }
+
+/* Legacy variable names still read by inline styles */
+:root {
+  --primary-navy: var(--bg);
+  --background-content: var(--bg);
+  --background-light: var(--inset);
+  --card-white: var(--surface);
+  --card-border: var(--border);
+  --text-primary: var(--text);
+  --text-secondary: var(--muted);
+  --text-heading: var(--text);
+  --row-hover: var(--hover);
+  --pill-muted-bg: var(--quiet-soft);
+  --pill-muted-text: var(--quiet);
+  --highlight-blue: var(--accent);
+  --accent-blue: var(--accent);
+  --primary-blue: var(--accent);
+  --primary-indigo: var(--accent);
+  --accent-indigo: var(--accent);
+  --role-accent: var(--accent);
+  --tw-ring-offset-color: var(--bg);
+}
+
+@theme inline {
+  --color-page: var(--bg);
+  --color-surface: var(--surface);
+  --color-inset: var(--inset);
+  --color-hover: var(--hover);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-fg: var(--text);
+  --color-body: var(--text-body);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-navbar: var(--navbar);
+  --shadow-card: var(--card-shadow);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-on-accent: var(--on-accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-line: var(--accent-line);
+  --color-accent-ink: var(--accent-ink);
+
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-ok-line: var(--ok-line);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-line: var(--warn-line);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-bad-line: var(--bad-line);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-info-line: var(--info-line);
+  --color-quiet: var(--quiet);
+  --color-quiet-soft: var(--quiet-soft);
+  --color-quiet-line: var(--quiet-line);
+}
+
+@layer base {
+  html {
+    /* 13px base shrinks rem type, padding, gaps, and card size together */
+    font-size: 13px;
+    background-color: var(--bg);
+    color: var(--text-body);
+    scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+    scrollbar-width: thin;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--text-body);
+  }
+
+  * {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    color: var(--text);
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    background-color: var(--inset);
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):hover,
+  textarea:hover,
+  select:hover {
+    border-color: var(--border-strong);
+  }
+
+  input:focus,
+  textarea:focus,
+  select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--subtle);
+    opacity: 1;
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--accent);
+  }
+
+  input::file-selector-button {
+    background-color: var(--hover);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    margin-right: 0.75rem;
+  }
+
+  option {
+    background-color: var(--surface);
+    color: var(--text);
+  }
+
+  table {
+    color: var(--text-body);
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-track {
+    background: var(--scroll-track);
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--scroll-thumb);
+    border-radius: 8px;
+    border: 2px solid var(--scroll-track);
+  }
+}
+
+/*
+ * Light theme form fields. Unlayered on purpose so it wins over the bg-inset /
+ * border-line utilities that fields share with panels: on white cards a field
+ * needs a white fill and a clearly darker edge to read as something to type in.
+ * Transparent inline inputs, invalid fields and Ace's hidden textarea keep their own look.
+ */
+html[data-theme="light"]
+  :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="hidden"]), textarea, select):not(
+    [class*="bg-transparent"],
+    [class*="border-bad"],
+    [class*="border-transparent"],
+    [aria-invalid="true"],
+    .ace_text-input
+  ),
+html[data-theme="light"] .field-box:not([class*="border-bad"]) {
+  background-color: var(--field);
+  border-color: var(--field-line);
+}
+html[data-theme="light"]
+  :is(input, textarea, select):not([class*="bg-transparent"], [class*="border-bad"], [class*="border-transparent"], .ace_text-input):hover:not(:focus, :disabled),
+html[data-theme="light"] .field-box:not([class*="border-bad"]):hover:not(:focus-within) {
+  border-color: var(--field-line-hover);
+}
+html[data-theme="light"]
+  :is(input:not([type="checkbox"], [type="radio"], [type="range"]), textarea, select):not([class*="bg-transparent"], [class*="border-transparent"], .ace_text-input):focus,
+html[data-theme="light"] .field-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+html[data-theme="light"] :is(input, textarea, select):disabled:not([class*="bg-transparent"]) {
+  background-color: var(--field-disabled);
 }
 
 /*
@@ -118,6 +327,16 @@ html[data-theme="dark"] body {
   font-feature-settings: "liga" 0, "calt" 0;
   /* Global * color/border transitions make the caret fade instead of blink. */
   transition: none !important;
+}
+
+/* Light Ace (github): match the page tokens instead of Ace's own grays */
+.ace-github {
+  background: var(--surface) !important;
+}
+.ace-github .ace_gutter {
+  background: var(--inset) !important;
+  color: var(--subtle) !important;
+  border-right: 1px solid var(--border);
 }
 
 /* Light Ace (github): keep text readable on the current line; make the caret obvious */
@@ -148,358 +367,49 @@ html[data-theme="dark"] body {
   box-shadow: none;
 }
 
-/* Dark Ace (monokai): keep existing contrast */
-.ace-monokai .ace_marker-layer .ace_active-line,
-.ace-monokai .ace_active-line {
-  background: #3e3d32 !important;
+/* Dark Ace (monokai) sits on the zinc page instead of olive */
+.ace-monokai,
+.ace-monokai .ace_gutter {
+  background: #09090b !important;
 }
+.ace-monokai .ace_gutter {
+  color: #52525b !important;
+}
+.ace-monokai .ace_marker-layer .ace_active-line,
+.ace-monokai .ace_active-line,
 .ace-monokai .ace_gutter-active-line {
-  background: #3e3d32 !important;
+  background: #18181b !important;
 }
 .ace-monokai .ace_cursor {
   color: #f8f8f0 !important;
   border-left: 2px solid #f8f8f0 !important;
 }
 
-/* Ensure headings follow theme colors */
-h1, h2, h3, h4, h5, h6 {
-  color: var(--text-heading);
+/*
+ * Every data table sits in an overflow-x-auto wrapper. Cap long tables so they scroll
+ * inside their own box and keep the column headings pinned. Full-page lists opt out of
+ * the cap with .table-fill and size themselves to the viewport instead.
+ */
+.overflow-x-auto:has(> table) {
+  max-height: 70vh;
+  overflow: auto;
 }
-[data-theme="dark"] h1,
-[data-theme="dark"] h2,
-[data-theme="dark"] h3,
-[data-theme="dark"] h4,
-[data-theme="dark"] h5,
-[data-theme="dark"] h6 {
-  color: var(--text-heading);
+.overflow-x-auto.table-fill:has(> table) {
+  max-height: none;
 }
-
-/* Smooth transitions for theme switching */
-* {
-  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
-}
-
-/* Custom styles can be added below */
-
-/* Ensure placeholder text is visible in dark mode */
-input::placeholder {
-  color: var(--text-secondary);
-  opacity: 1;
+.overflow-x-auto > table > thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: linear-gradient(var(--inset), var(--inset)), var(--surface);
+  box-shadow: inset 0 -1px 0 var(--border);
 }
 
-/* Ensure proper focus states for inputs */
-input:focus {
-  outline: none;
-  border-color: var(--primary-blue);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+.prose {
+  color: var(--text-body);
 }
-
-/* Dark mode specific focus states */
-[data-theme="dark"] input:focus {
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2);
-}
-
-/* Softer, lighter form fields in dark mode (contrast against dark content bg) */
-[data-theme="dark"] input,
-[data-theme="dark"] textarea,
-[data-theme="dark"] select {
-  background-color: #374151; /* gray-700: lighter than content bg */
-  border-color: #4b5563;     /* gray-600 */
-  color: #e5e7eb;            /* gray-200 */
-}
-
-[data-theme="dark"] input:hover,
-[data-theme="dark"] textarea:hover,
-[data-theme="dark"] select:hover {
-  background-color: #3f4957; /* slightly lighter on hover */
-}
-
-[data-theme="dark"] input::file-selector-button {
-  background-color: #4b5563; /* gray-600 button */
-  color: #ffffff;
-}
-
-[data-theme="dark"] input::file-selector-button:hover {
-  background-color: #6b7280; /* gray-500 hover */
-}
-
-[data-theme="dark"] {
-  color: var(--text-primary);
-}
-
-/* -------------------------------------------------------------------------
- * Light-mode Tailwind utilities remapped for data-theme="dark".
- * Many screens only use light classes (tables, menus, icons, cards).
- * ------------------------------------------------------------------------- */
-
-/* Surfaces */
-[data-theme="dark"] .bg-white,
-[data-theme="dark"] .bg-white\/90,
-[data-theme="dark"] .bg-white\/80,
-[data-theme="dark"] .bg-white\/70,
-[data-theme="dark"] .bg-white\/60 {
-  background-color: var(--card-white) !important;
-}
-
-[data-theme="dark"] .bg-gray-50,
-[data-theme="dark"] .bg-gray-50\/80,
-[data-theme="dark"] .bg-gray-50\/90,
-[data-theme="dark"] .bg-gray-100,
-[data-theme="dark"] .bg-slate-50,
-[data-theme="dark"] .bg-slate-100 {
-  background-color: var(--background-light) !important;
-}
-
-[data-theme="dark"] .bg-gray-200 {
-  background-color: #334155 !important;
-}
-
-[data-theme="dark"] .bg-gray-300 {
-  background-color: #475569 !important;
-}
-
-[data-theme="dark"] .bg-gray-900 { background-color: #0f172a !important; }
-[data-theme="dark"] .bg-gray-800 { background-color: #1f2937 !important; }
-[data-theme="dark"] .bg-gray-700 { background-color: #374151 !important; }
-
-[data-theme="dark"] .from-gray-50 {
-  --tw-gradient-from: var(--background-light) !important;
-  --tw-gradient-from-position: 0%;
-}
-[data-theme="dark"] .to-white {
-  --tw-gradient-to: var(--card-white) !important;
-  --tw-gradient-to-position: 100%;
-}
-
-/* Text */
-[data-theme="dark"] .text-black,
-[data-theme="dark"] .text-gray-900,
-[data-theme="dark"] .text-gray-800,
-[data-theme="dark"] .text-slate-900,
-[data-theme="dark"] .text-slate-800 {
-  color: var(--text-primary) !important;
-}
-
-[data-theme="dark"] .text-gray-700,
-[data-theme="dark"] .text-gray-600,
-[data-theme="dark"] .text-gray-500,
-[data-theme="dark"] .text-gray-400,
-[data-theme="dark"] .text-slate-700,
-[data-theme="dark"] .text-slate-600,
-[data-theme="dark"] .text-slate-500,
-[data-theme="dark"] .text-slate-400 {
-  color: var(--text-secondary) !important;
-}
-
-[data-theme="dark"] .text-gray-300 {
-  color: #cbd5e1 !important;
-}
-
-/* Dark-on-pastel text → readable on dark surfaces */
-[data-theme="dark"] .text-indigo-800,
-[data-theme="dark"] .text-indigo-900 { color: #c7d2fe !important; }
-[data-theme="dark"] .text-blue-700,
-[data-theme="dark"] .text-blue-800,
-[data-theme="dark"] .text-blue-900 { color: #93c5fd !important; }
-[data-theme="dark"] .text-green-700,
-[data-theme="dark"] .text-green-800,
-[data-theme="dark"] .text-green-900,
-[data-theme="dark"] .text-emerald-700,
-[data-theme="dark"] .text-emerald-800,
-[data-theme="dark"] .text-emerald-900 { color: #6ee7b7 !important; }
-[data-theme="dark"] .text-red-700,
-[data-theme="dark"] .text-red-800,
-[data-theme="dark"] .text-red-900,
-[data-theme="dark"] .text-rose-700,
-[data-theme="dark"] .text-rose-800,
-[data-theme="dark"] .text-rose-900 { color: #fda4af !important; }
-[data-theme="dark"] .text-yellow-700,
-[data-theme="dark"] .text-yellow-800,
-[data-theme="dark"] .text-yellow-900,
-[data-theme="dark"] .text-amber-700,
-[data-theme="dark"] .text-amber-800,
-[data-theme="dark"] .text-amber-900 { color: #fcd34d !important; }
-[data-theme="dark"] .text-purple-700,
-[data-theme="dark"] .text-purple-800,
-[data-theme="dark"] .text-purple-900 { color: #d8b4fe !important; }
-
-/* Borders / dividers */
-[data-theme="dark"] .border-gray-100,
-[data-theme="dark"] .border-gray-200,
-[data-theme="dark"] .border-gray-300,
-[data-theme="dark"] .border-slate-200,
-[data-theme="dark"] .border-slate-300,
-[data-theme="dark"] .divide-gray-100,
-[data-theme="dark"] .divide-gray-200,
-[data-theme="dark"] .divide-gray-300,
-[data-theme="dark"] .divide-slate-200 {
-  border-color: var(--card-border) !important;
-}
-
-[data-theme="dark"] .divide-gray-100 > :not(:last-child),
-[data-theme="dark"] .divide-gray-200 > :not(:last-child),
-[data-theme="dark"] .divide-gray-300 > :not(:last-child) {
-  border-color: var(--card-border) !important;
-}
-
-/* Hover / focus surfaces used by table rows, menus, icon buttons */
-[data-theme="dark"] .hover\:bg-gray-50:hover,
-[data-theme="dark"] .hover\:bg-gray-100:hover,
-[data-theme="dark"] .hover\:bg-gray-200:hover,
-[data-theme="dark"] .hover\:bg-white:hover,
-[data-theme="dark"] .hover\:bg-white\/90:hover {
-  background-color: var(--row-hover) !important;
-}
-
-[data-theme="dark"] .hover\:text-gray-500:hover,
-[data-theme="dark"] .hover\:text-gray-600:hover,
-[data-theme="dark"] .hover\:text-gray-700:hover,
-[data-theme="dark"] .hover\:text-gray-800:hover,
-[data-theme="dark"] .hover\:text-gray-900:hover {
-  color: var(--text-primary) !important;
-}
-
-[data-theme="dark"] .hover\:text-indigo-800:hover,
-[data-theme="dark"] .hover\:text-indigo-900:hover {
-  color: #a5b4fc !important;
-}
-
-[data-theme="dark"] .hover\:text-red-800:hover,
-[data-theme="dark"] .hover\:text-red-900:hover {
-  color: #fca5a5 !important;
-}
-
-/* Tables that still use light-mode gray utilities */
-[data-theme="dark"] table {
-  color: var(--text-primary);
-}
-
-[data-theme="dark"] thead.bg-gray-50,
-[data-theme="dark"] thead.bg-gray-100 {
-  background-color: var(--background-light) !important;
-}
-
-[data-theme="dark"] thead.bg-gray-50 th,
-[data-theme="dark"] thead.bg-gray-100 th,
-[data-theme="dark"] thead th.text-gray-500,
-[data-theme="dark"] thead th.text-gray-400,
-[data-theme="dark"] thead th.text-gray-600 {
-  color: var(--text-secondary) !important;
-}
-
-[data-theme="dark"] tbody.bg-white {
-  background-color: var(--card-white) !important;
-}
-
-[data-theme="dark"] tbody tr:hover {
-  background-color: var(--row-hover);
-}
-
-[data-theme="dark"] table .text-gray-400,
-[data-theme="dark"] table button.text-gray-400 {
-  color: var(--text-secondary) !important;
-}
-
-/* Colored status pills: keep hue, drop light-mode pastel wash */
-[data-theme="dark"] .bg-indigo-50,
-[data-theme="dark"] .bg-indigo-50\/80,
-[data-theme="dark"] .bg-indigo-50\/90,
-[data-theme="dark"] .bg-indigo-100 {
-  background-color: rgb(49 46 129 / 0.4) !important;
-}
-[data-theme="dark"] .bg-blue-50,
-[data-theme="dark"] .bg-blue-50\/80,
-[data-theme="dark"] .bg-blue-50\/90,
-[data-theme="dark"] .bg-blue-50\/95,
-[data-theme="dark"] .bg-blue-100 {
-  background-color: rgb(30 58 138 / 0.4) !important;
-}
-[data-theme="dark"] .bg-green-50,
-[data-theme="dark"] .bg-green-100,
-[data-theme="dark"] .bg-emerald-50,
-[data-theme="dark"] .bg-emerald-100,
-[data-theme="dark"] .bg-emerald-200 {
-  background-color: rgb(6 78 59 / 0.45) !important;
-}
-[data-theme="dark"] .bg-red-50,
-[data-theme="dark"] .bg-red-50\/80,
-[data-theme="dark"] .bg-red-100,
-[data-theme="dark"] .bg-rose-50,
-[data-theme="dark"] .bg-rose-100,
-[data-theme="dark"] .bg-rose-200 {
-  background-color: rgb(127 29 29 / 0.45) !important;
-}
-[data-theme="dark"] .bg-yellow-50,
-[data-theme="dark"] .bg-yellow-100,
-[data-theme="dark"] .bg-amber-50,
-[data-theme="dark"] .bg-amber-50\/90,
-[data-theme="dark"] .bg-amber-100,
-[data-theme="dark"] .bg-amber-200 {
-  background-color: rgb(120 53 15 / 0.45) !important;
-}
-[data-theme="dark"] .bg-purple-50,
-[data-theme="dark"] .bg-purple-100 {
-  background-color: rgb(88 28 135 / 0.4) !important;
-}
-[data-theme="dark"] .bg-blue-200 { background-color: rgb(30 64 175 / 0.5) !important; }
-
-[data-theme="dark"] .border-blue-200 { border-color: #1e40af !important; }
-[data-theme="dark"] .border-emerald-200 { border-color: #065f46 !important; }
-[data-theme="dark"] .border-rose-200 { border-color: #9f1239 !important; }
-[data-theme="dark"] .border-red-200 { border-color: #991b1b !important; }
-[data-theme="dark"] .border-indigo-200 { border-color: #3730a3 !important; }
-
-/* Menus / dialogs / listboxes that stay light without dark: variants */
-[data-theme="dark"] [data-headlessui-state] .bg-white,
-[data-theme="dark"] [role="menu"],
-[data-theme="dark"] [role="listbox"],
-[data-theme="dark"] [role="dialog"] {
-  color: var(--text-primary);
-}
-
-[data-theme="dark"] .prose {
-  color: var(--text-primary);
-}
-[data-theme="dark"] .prose :where(p, li, strong, em, h1, h2, h3, h4, code) {
+.prose :where(p, li, strong, em, h1, h2, h3, h4, code) {
   color: inherit;
-}
-
-/* Don't restyle Ace token colors */
-[data-theme="dark"] .ace_editor pre,
-[data-theme="dark"] .ace_editor code,
-[data-theme="dark"] .ace_editor {
-  color: unset;
-}
-
-/* Dark mode scrollbar styling */
-[data-theme="dark"] {
-  scrollbar-color: #4b5563 #0b1220; /* thumb color | track color */
-  scrollbar-width: thin;
-}
-
-[data-theme="dark"] *::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-[data-theme="dark"] *::-webkit-scrollbar-track {
-  background: #0b1220; /* near bg-gray-900 */
-}
-[data-theme="dark"] *::-webkit-scrollbar-thumb {
-  background: #374151; /* gray-700 */
-  border-radius: 8px;
-  border: 2px solid #0b1220;
-}
-[data-theme="dark"] *::-webkit-scrollbar-thumb:hover {
-  background: #4b5563; /* gray-600 */
-}
-
-/* Ensure theme toggle icons are always visible */
-.theme-toggle svg {
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
-}
-
-[data-theme="dark"] .theme-toggle svg {
-  filter: drop-shadow(0 1px 2px rgba(255, 255, 255, 0.1));
 }
 
 /* Question description images (create form + student/teacher views) */
@@ -511,4 +421,13 @@ img[src*=".amazonaws.com/"] {
   display: block;
   margin: 0.75rem 0;
   border-radius: 0.5rem;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.15s ease-out;
 }

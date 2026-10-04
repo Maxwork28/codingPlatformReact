@@ -378,18 +378,18 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
     <div
       className={`relative rounded-xl overflow-hidden border shadow-md ${
         fillParent ? 'h-full min-h-0 flex flex-col' : ''
-      } ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}
+      } ${isDark ? 'bg-gray-900 border-line' : 'bg-surface border-line'}`}
     >
       <div
         className={`px-4 py-2 border-b flex justify-between items-center ${
           isDark
-            ? 'bg-gradient-to-r from-gray-800 to-gray-900 border-gray-700'
-            : 'bg-slate-50 border-gray-200'
+            ? 'bg-gradient-to-r from-gray-800 to-gray-900 border-line'
+            : 'bg-inset border-line'
         }`}
       >
         <span
           className={`text-sm font-semibold uppercase tracking-wider ${
-            isDark ? 'text-gray-200' : 'text-slate-700'
+            isDark ? 'text-gray-200' : 'text-body'
           }`}
         >
           {language.charAt(0).toUpperCase() + language.slice(1) || 'Code'}
@@ -399,8 +399,8 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
             type="button"
             className={`text-sm font-medium disabled:cursor-not-allowed transition-colors duration-200 ${
               isDark
-                ? 'text-gray-300 hover:text-white disabled:text-gray-500'
-                : 'text-slate-600 hover:text-slate-900 disabled:text-slate-400'
+                ? 'text-gray-300 hover:text-fg disabled:text-muted'
+                : 'text-muted hover:text-fg disabled:text-muted'
             }`}
             onClick={handleReset}
             disabled={disabled}
@@ -412,8 +412,8 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
               type="button"
               className={`text-sm font-medium disabled:cursor-not-allowed transition-colors duration-200 ${
                 isDark
-                  ? 'text-gray-300 hover:text-white disabled:text-gray-500'
-                  : 'text-slate-600 hover:text-slate-900 disabled:text-slate-400'
+                  ? 'text-gray-300 hover:text-fg disabled:text-muted'
+                  : 'text-muted hover:text-fg disabled:text-muted'
               }`}
               onClick={handleCopy}
               disabled={disabled}

@@ -1,17 +1,19 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { ArrowLeftIcon, PlayIcon, CheckIcon } from '@heroicons/react/24/outline';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { format } from 'date-fns';
+import { ArrowLeft, Check, Play } from 'lucide-react';
 import {
   getQuestion,
-  viewSubmissionCode,
-  teacherTestQuestion,
   markSubmissionCorrect,
+  teacherTestQuestion,
+  viewSubmissionCode,
 } from '../../../common/services/api';
 import CodeEditor from '../../student/components/CodeEditor';
 import TestCaseResultsList, { parseTestCaseResultsList } from '../../student/components/TestCaseResultsList';
-
-const CODING_TYPES = ['coding', 'fillInTheBlanksCoding', 'codingWithDriver'];
+import { Button, EmptyState, StatusChip } from '../../../common/ui/primitives';
+import { confirmAction, notify } from '../../../common/ui/Toast';
+import { type } from '../../../common/ui/format';
+import { RUNNABLE_CODING_TYPES } from './takeClass/helpers';
 
 const QuestionAttemptReview = () => {
   const navigate = useNavigate();
@@ -30,7 +32,7 @@ const QuestionAttemptReview = () => {
   const [markLoading, setMarkLoading] = useState(false);
 
   const attemptMeta = navState.attempt || {};
-  const isCodingQuestion = CODING_TYPES.includes(questionType);
+  const isCodingQuestion = RUNNABLE_CODING_TYPES.includes(questionType);
   const displayCorrect = attemptDetail?.isCorrect ?? attemptMeta.isCorrect;
   const canMarkCorrect = !attemptMeta.isRun && !displayCorrect;
 
@@ -96,90 +98,60 @@ const QuestionAttemptReview = () => {
   };
 
   const handleMarkCorrect = async () => {
-    if (!window.confirm('Mark this submission as correct? This updates the student score and leaderboard.')) {
+    if (!await confirmAction('Mark this submission as correct? This updates the student score and leaderboard.')) {
       return;
     }
     setMarkLoading(true);
     try {
       await markSubmissionCorrect(submissionId);
+      notify('Submission marked as correct');
       await loadDetail();
     } catch (err) {
-      setError(typeof err === 'string' ? err : err?.error || 'Failed to mark as correct');
+      notify(typeof err === 'string' ? err : 'Failed to mark as correct');
     } finally {
       setMarkLoading(false);
     }
   };
 
-  return (
-    <div className="min-h-screen" style={{ backgroundColor: 'var(--background-content)' }}>
-      <div
-        className="border-b px-4 py-4 sm:px-6"
-        style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
-      >
-        <div className="max-w-5xl mx-auto flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={handleBack}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium hover:opacity-90"
-            style={{ borderColor: 'var(--card-border)', color: 'var(--text-primary)' }}
-          >
-            <ArrowLeftIcon className="w-4 h-4" />
-            Back to statistics
-          </button>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-lg sm:text-xl font-bold truncate" style={{ color: 'var(--text-heading)' }}>
-              Review attempt
-            </h1>
-            <p className="text-sm truncate" style={{ color: 'var(--text-secondary)' }}>
-              {navState.studentName || attemptDetail?.studentName || 'Student'}
-              {navState.questionTitle ? ` · ${navState.questionTitle}` : ''}
-            </p>
-          </div>
-        </div>
-      </div>
+  const studentName = navState.studentName || attemptDetail?.studentName || 'Student';
 
-      <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
+  return (
+    <div className="flex flex-col h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)] bg-page">
+      <header className="shrink-0 h-14 px-4 sm:px-5 border-b border-line bg-surface flex items-center gap-2">
+        <Button variant="ghost" icon={ArrowLeft} className="h-9 w-9 justify-center p-0!" onClick={handleBack} aria-label="Back" />
+        <h1 className={`${type.pageTitle} text-xl! truncate min-w-0`}>{studentName}</h1>
+        {navState.questionTitle && <StatusChip kind="neutral">{navState.questionTitle}</StatusChip>}
+        {attemptDetail && (
+          <StatusChip kind={displayCorrect ? 'ok' : 'bad'}>{displayCorrect ? 'Correct' : 'Incorrect'}</StatusChip>
+        )}
+      </header>
+
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-5 py-5 space-y-4">
         {loading && (
           <div className="flex justify-center py-16">
-            <div className="w-10 h-10 border-4 border-t-transparent rounded-full animate-spin border-indigo-600" />
+            <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
           </div>
         )}
 
         {error && !loading && (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-4">
-            <p className="text-red-700">{error}</p>
-            <button type="button" onClick={handleBack} className="mt-3 text-indigo-600 text-sm font-medium hover:underline">
-              Go back
-            </button>
-          </div>
+          <EmptyState title="Couldn't load attempt" message={error} action={<Button variant="secondary" onClick={handleBack}>Go back</Button>} />
         )}
 
         {!loading && !error && attemptDetail && (
           <>
-            <div
-              className="rounded-xl border p-4 grid grid-cols-1 sm:grid-cols-2 gap-4"
-              style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
-            >
+            <div className="rounded-2xl border border-line bg-surface shadow-card p-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase" style={{ color: 'var(--text-secondary)' }}>
-                  Student
-                </p>
-                <p className="font-semibold mt-1" style={{ color: 'var(--text-heading)' }}>
-                  {navState.studentName || attemptDetail.studentName}
-                </p>
-                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  {navState.studentEmail || attemptDetail.studentEmail}
-                </p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Student</p>
+                <p className="font-semibold text-fg mt-1">{studentName}</p>
+                <p className="text-xs text-muted">{navState.studentEmail || attemptDetail.studentEmail || '—'}</p>
               </div>
               <div>
-                <p className="text-xs font-semibold uppercase" style={{ color: 'var(--text-secondary)' }}>
-                  Attempt
-                </p>
-                <p className="font-semibold mt-1" style={{ color: 'var(--text-heading)' }}>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Attempt</p>
+                <p className="font-semibold text-fg mt-1">
                   {attemptMeta.isRun ? 'Test run' : 'Submit'}
                   {attemptMeta.isCustomInput ? ' (custom input)' : ''}
                 </p>
-                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                <p className="text-xs text-muted">
                   {attemptMeta.submittedAt
                     ? format(new Date(attemptMeta.submittedAt), 'MMM d, yyyy h:mm a')
                     : attemptDetail.submittedAt
@@ -187,88 +159,52 @@ const QuestionAttemptReview = () => {
                       : '—'}
                 </p>
               </div>
-              <div className="sm:col-span-2 flex flex-wrap items-center gap-3">
-                <span
-                  className={`text-sm font-semibold px-3 py-1 rounded-full ${
-                    displayCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                  }`}
-                >
-                  {displayCorrect ? 'Correct' : 'Incorrect'}
-                </span>
-                {(attemptDetail.status || attemptMeta.status) && (
-                  <span className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700 uppercase">
-                    {attemptDetail.status || attemptMeta.status}
-                  </span>
-                )}
-                <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  Tests: {attemptDetail.passedTestCases ?? attemptMeta.passedTestCases ?? 0}/
-                  {attemptDetail.totalTestCases ?? attemptMeta.totalTestCases ?? 0}
-                  {!attemptMeta.isRun && (attemptMeta.score != null || attemptDetail.score != null) && (
-                    <> · Score: {attemptDetail.score ?? attemptMeta.score}</>
-                  )}
-                </span>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted">Score</p>
+                <p className="font-semibold text-fg mt-1">
+                  {attemptDetail.passedTestCases ?? attemptMeta.passedTestCases ?? 0}/
+                  {attemptDetail.totalTestCases ?? attemptMeta.totalTestCases ?? 0} tests
+                </p>
+                <p className="text-xs text-muted">
+                  {!attemptMeta.isRun && (attemptMeta.score != null || attemptDetail.score != null)
+                    ? `Score ${attemptDetail.score ?? attemptMeta.score}`
+                    : attemptDetail.status || attemptMeta.status || '—'}
+                </p>
               </div>
             </div>
 
-            <div
-              className="rounded-xl border p-4 sm:p-6 space-y-4"
-              style={{ backgroundColor: 'var(--card-white)', borderColor: 'var(--card-border)' }}
-            >
+            <div className="rounded-2xl border border-line bg-surface shadow-card p-4 sm:p-5 space-y-4">
               {isCodingQuestion ? (
                 <>
-                  <h2 className="text-sm font-semibold" style={{ color: 'var(--text-heading)' }}>
-                    Student code
-                  </h2>
-                  <div className="border rounded-lg overflow-hidden">
-                    <CodeEditor
-                      value={reviewCode}
-                      onChange={setReviewCode}
-                      language={reviewLanguage}
-                      height="420px"
-                    />
+                  <p className={type.section}>Student code</p>
+                  <div className="border border-line rounded-xl overflow-hidden">
+                    <CodeEditor value={reviewCode} onChange={setReviewCode} language={reviewLanguage} height="420px" />
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={handleRunAttempt}
-                      disabled={runLoading || !reviewCode.trim()}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
-                    >
-                      <PlayIcon className="w-5 h-5" />
+                    <Button icon={Play} disabled={runLoading || !reviewCode.trim()} onClick={handleRunAttempt}>
                       {runLoading ? 'Running…' : 'Run tests'}
-                    </button>
+                    </Button>
                     {canMarkCorrect && (
-                      <button
-                        type="button"
-                        onClick={handleMarkCorrect}
-                        disabled={markLoading}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50"
-                      >
-                        <CheckIcon className="w-5 h-5" />
+                      <Button variant="publish" icon={Check} className="px-4 py-2!" disabled={markLoading} onClick={handleMarkCorrect}>
                         {markLoading ? 'Saving…' : 'Mark as correct'}
-                      </button>
+                      </Button>
                     )}
                   </div>
-
                   {runResults && (
                     <div
-                      className={`rounded-lg border p-4 ${
+                      className={`rounded-xl border p-4 ${
                         runResults.error
-                          ? 'bg-red-50 border-red-200'
+                          ? 'bg-bad-soft border-bad-line'
                           : runResults.isCorrect
-                            ? 'bg-green-50 border-green-200'
-                            : 'bg-amber-50 border-amber-200'
+                            ? 'bg-ok-soft border-ok-line'
+                            : 'bg-warn-soft border-warn-line'
                       }`}
                     >
                       {runResults.error ? (
-                        <p className="text-red-700">{runResults.message}</p>
+                        <p className="text-bad">{runResults.message}</p>
                       ) : (
                         <>
-                          <p
-                            className={`font-medium mb-3 ${
-                              runResults.isCorrect ? 'text-green-800' : 'text-amber-800'
-                            }`}
-                          >
+                          <p className={`font-medium mb-3 ${runResults.isCorrect ? 'text-ok' : 'text-warn'}`}>
                             {runResults.isCorrect
                               ? `All ${runResults.totalTestCases} test cases passed`
                               : `${runResults.passedTestCases}/${runResults.totalTestCases} passed`}
@@ -278,11 +214,10 @@ const QuestionAttemptReview = () => {
                       )}
                     </div>
                   )}
-
                   {!runResults && (attemptDetail.testResults?.length > 0 || attemptDetail.output) && (
-                    <div className="rounded-lg border bg-gray-50 p-4">
-                      <p className="text-sm font-semibold text-gray-600 mb-3">
-                        {attemptDetail.testResults?.length ? 'All test cases' : 'Saved test results'}
+                    <div className="rounded-xl border border-line bg-inset p-4">
+                      <p className="text-xs font-semibold text-muted mb-3">
+                        {attemptDetail.testResults?.length ? 'Saved test cases' : 'Saved output'}
                       </p>
                       <TestCaseResultsList
                         results={
@@ -297,26 +232,16 @@ const QuestionAttemptReview = () => {
                 </>
               ) : (
                 <>
-                  <h2 className="text-sm font-semibold" style={{ color: 'var(--text-heading)' }}>
-                    Student answer
-                  </h2>
-                  <div className="rounded-lg border bg-gray-50 p-4">
-                    <pre className="text-sm whitespace-pre-wrap break-words text-gray-800">
-                      {typeof attemptDetail.code === 'string'
-                        ? attemptDetail.code
-                        : JSON.stringify(attemptDetail.code, null, 2)}
-                    </pre>
-                  </div>
+                  <p className={type.section}>Student answer</p>
+                  <pre className="rounded-xl border border-line bg-inset p-4 text-xs whitespace-pre-wrap break-words text-fg">
+                    {typeof attemptDetail.code === 'string'
+                      ? attemptDetail.code
+                      : JSON.stringify(attemptDetail.code, null, 2)}
+                  </pre>
                   {canMarkCorrect && (
-                    <button
-                      type="button"
-                      onClick={handleMarkCorrect}
-                      disabled={markLoading}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50"
-                    >
-                      <CheckIcon className="w-5 h-5" />
+                    <Button variant="publish" icon={Check} className="px-4 py-2!" disabled={markLoading} onClick={handleMarkCorrect}>
                       {markLoading ? 'Saving…' : 'Mark as correct'}
-                    </button>
+                    </Button>
                   )}
                 </>
               )}

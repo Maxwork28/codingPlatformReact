@@ -4,7 +4,6 @@ import { createEditor, Transforms, Editor, Text, Range } from 'slate';
 import { withHistory } from 'slate-history';
 import isHotkey from 'is-hotkey';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDownIcon, ChevronUpIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
 import CodeEditor from '../../student/components/CodeEditor';
 import { teacherTestQuestion } from '../../../common/services/api';
 import BulkIoPairsEditor, { QuestionFormStepper } from '../../../common/components/BulkIoPairsEditor';
@@ -22,6 +21,8 @@ import {
 import QuestionImageElement from '../../../common/components/QuestionImageElement';
 import InsertQuestionImageButton from '../../../common/components/InsertQuestionImageButton';
 import QuestionImageAttach from '../../../common/components/QuestionImageAttach';
+import { ChevronDownIcon, ChevronUpIcon, PlusIcon, Trash2Icon } from 'lucide-react';
+import { notify } from '../../../common/ui/Toast';
 
 // Custom Slate editor with formatting and multi-line paste
 const withFormatting = editor => {
@@ -108,7 +109,7 @@ const serializeToHTML = nodes => {
       let text = node.text || '';
       if (node.bold) text = `<strong>${text}</strong>`;
       if (node.italic) text = `<em>${text}</em>`;
-      if (node.code) text = `<code class="bg-gray-100 px-1 rounded">${text}</code>`;
+      if (node.code) text = `<code class="bg-inset px-1 rounded">${text}</code>`;
       return text;
     }
 
@@ -220,7 +221,7 @@ const Leaf = ({ attributes, children, leaf }) => {
     children = <em>{children}</em>;
   }
   if (leaf.code) {
-    children = <code className="bg-gray-100 px-1 rounded">{children}</code>;
+    children = <code className="bg-inset px-1 rounded">{children}</code>;
   }
   return <span {...attributes}>{children}</span>;
 };
@@ -276,11 +277,11 @@ const Toolbar = ({ allowImages = false }) => {
   };
 
   return (
-    <div className="flex space-x-1 p-2 bg-gray-50 border-b border-gray-200 rounded-t-lg">
+    <div className="flex space-x-1 p-2 bg-inset border-b border-line rounded-t-lg">
       <button
         type="button"
         onMouseDown={e => { e.preventDefault(); toggleMark('bold'); }}
-        className={`px-2 py-1 rounded ${marks.bold ? 'bg-indigo-100 text-indigo-800' : 'bg-white'} hover:bg-indigo-100 transition-colors`}
+        className={`px-2 py-1 rounded ${marks.bold ? 'bg-accent-soft text-accent-ink' : 'bg-surface'} hover:bg-accent-soft transition-colors`}
         aria-label="Bold"
       >
         <strong>B</strong>
@@ -288,7 +289,7 @@ const Toolbar = ({ allowImages = false }) => {
       <button
         type="button"
         onMouseDown={e => { e.preventDefault(); toggleMark('italic'); }}
-        className={`px-2 py-1 rounded ${marks.italic ? 'bg-indigo-100 text-indigo-800' : 'bg-white'} hover:bg-indigo-100 transition-colors`}
+        className={`px-2 py-1 rounded ${marks.italic ? 'bg-accent-soft text-accent-ink' : 'bg-surface'} hover:bg-accent-soft transition-colors`}
         aria-label="Italic"
       >
         <em>I</em>
@@ -296,7 +297,7 @@ const Toolbar = ({ allowImages = false }) => {
       <button
         type="button"
         onMouseDown={e => { e.preventDefault(); toggleMark('code'); }}
-        className={`px-2 py-1 rounded ${marks.code ? 'bg-indigo-100 text-indigo-800' : 'bg-white'} hover:bg-indigo-100 transition-colors`}
+        className={`px-2 py-1 rounded ${marks.code ? 'bg-accent-soft text-accent-ink' : 'bg-surface'} hover:bg-accent-soft transition-colors`}
         aria-label="Code"
       >
         <code>Code</code>
@@ -304,7 +305,7 @@ const Toolbar = ({ allowImages = false }) => {
       <button
         type="button"
         onMouseDown={e => { e.preventDefault(); toggleBlock('code-block'); }}
-        className={`px-2 py-1 rounded ${isBlockActive(editor, 'code-block') ? 'bg-indigo-100 text-indigo-800' : 'bg-white'} hover:bg-indigo-100 transition-colors`}
+        className={`px-2 py-1 rounded ${isBlockActive(editor, 'code-block') ? 'bg-accent-soft text-accent-ink' : 'bg-surface'} hover:bg-accent-soft transition-colors`}
         aria-label="Code Block"
       >
         Code Block
@@ -312,7 +313,7 @@ const Toolbar = ({ allowImages = false }) => {
       <button
         type="button"
         onMouseDown={e => { e.preventDefault(); toggleBlock('bulleted-list'); }}
-        className={`px-2 py-1 rounded ${isBlockActive(editor, 'bulleted-list') ? 'bg-indigo-100 text-indigo-800' : 'bg-white'} hover:bg-indigo-100 transition-colors`}
+        className={`px-2 py-1 rounded ${isBlockActive(editor, 'bulleted-list') ? 'bg-accent-soft text-accent-ink' : 'bg-surface'} hover:bg-accent-soft transition-colors`}
         aria-label="Bulleted List"
       >
         Bullets
@@ -320,7 +321,7 @@ const Toolbar = ({ allowImages = false }) => {
       <button
         type="button"
         onMouseDown={e => { e.preventDefault(); toggleBlock('numbered-list'); }}
-        className={`px-2 py-1 rounded ${isBlockActive(editor, 'numbered-list') ? 'bg-indigo-100 text-indigo-800' : 'bg-white'} hover:bg-indigo-100 transition-colors`}
+        className={`px-2 py-1 rounded ${isBlockActive(editor, 'numbered-list') ? 'bg-accent-soft text-accent-ink' : 'bg-surface'} hover:bg-accent-soft transition-colors`}
         aria-label="Numbered List"
       >
         Numbers
@@ -419,7 +420,7 @@ const RichTextEditor = ({ value, onChange, placeholder, className, allowImages =
   };
 
   return (
-    <div className={`border border-gray-200 rounded-lg bg-white ${className}`}>
+    <div className={`border border-line rounded-lg bg-surface ${className}`}>
       <Slate editor={editor} initialValue={safeValue} onChange={handleChange}>
         <Toolbar allowImages={allowImages} />
         <Editable
@@ -427,7 +428,7 @@ const RichTextEditor = ({ value, onChange, placeholder, className, allowImages =
           renderLeaf={renderLeaf}
           placeholder={placeholder}
           onKeyDown={handleKeyDown}
-          className="p-3 min-h-[100px] focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-b-lg"
+          className="p-3 min-h-[100px] focus:outline-none focus:ring-2 focus:ring-accent rounded-b-lg"
         />
       </Slate>
     </div>
@@ -439,21 +440,21 @@ const CollapsibleSection = ({ title, children, defaultOpen = true }) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   return (
-    <div className="border border-gray-200 rounded-lg">
+    <div className="border border-line rounded-lg">
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex justify-between items-center p-4 bg-gray-50 hover:bg-gray-100 transition-colors rounded-t-lg focus:outline-none"
+        className="w-full flex justify-between items-center p-4 bg-inset hover:bg-hover transition-colors rounded-t-lg focus:outline-none"
       >
-        <span className="text-sm font-semibold text-gray-800">{title}</span>
+        <span className="text-sm font-semibold text-fg">{title}</span>
         {isOpen ? (
-          <ChevronUpIcon className="h-5 w-5 text-gray-600" />
+          <ChevronUpIcon className="h-5 w-5 text-muted" />
         ) : (
-          <ChevronDownIcon className="h-5 w-5 text-gray-600" />
+          <ChevronDownIcon className="h-5 w-5 text-muted" />
         )}
       </button>
       {isOpen && (
-        <div className="p-4 bg-white rounded-b-lg">
+        <div className="p-4 bg-surface rounded-b-lg">
           {children}
         </div>
       )}
@@ -832,27 +833,27 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
   // Test solution against test cases
   const handleTestSolution = async () => {
     if (!activeSolutionCode.trim()) {
-      alert('Please write a solution first');
+      notify('Please write a solution first');
       return;
     }
     if (testCases.length === 0) {
-      alert('Please add at least one test case');
+      notify('Please add at least one test case');
       return;
     }
     if (testCases.some(tc => !tc.input.trim() || !tc.expectedOutput.trim())) {
-      alert('All test cases must have input and expected output');
+      notify('All test cases must have input and expected output');
       return;
     }
 
     // Check if question exists (for questions that have been saved)
     if (!initialData?._id) {
-      alert('Please save the question first before testing. The question needs to be saved to test the solution.');
+      notify('Please save the question first before testing. The question needs to be saved to test the solution.');
       return;
     }
 
     // Check if it's a coding question
     if (type !== 'coding' && type !== 'fillInTheBlanksCoding' && type !== 'codingWithDriver') {
-      alert('Solution testing is only available for coding questions');
+      notify('Solution testing is only available for coding questions');
       return;
     }
 
@@ -911,24 +912,24 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
     });
 
     if (inputErrors.some(error => error)) {
-      alert('Please fix test case input errors before submitting.');
+      notify('Please fix test case input errors before submitting.');
       return;
     }
 
     // For drafts, classIds are optional (can be empty)
     // For published questions, classIds are required
     if (!initialData?.isDraft && classIds.length === 0) {
-      alert('Please select at least one class.');
+      notify('Please select at least one class.');
       return;
     }
 
     if ((type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver') && languages.length === 0) {
-      alert('Please select at least one language for coding questions.');
+      notify('Please select at least one language for coding questions.');
       return;
     }
 
     if ((type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver') && testCases.length === 0) {
-      alert('Please add at least one test case for coding questions.');
+      notify('Please add at least one test case for coding questions.');
       return;
     }
 
@@ -940,9 +941,9 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
         missingLanguages
       });
       if (missingLanguages.length > 0) {
-        alert(`Please provide starter code for: ${missingLanguages.join(', ')}`);
+        notify(`Please provide starter code for: ${missingLanguages.join(', ')}`);
       } else {
-        alert('Please ensure starter code matches selected languages.');
+        notify('Please ensure starter code matches selected languages.');
       }
       return;
     }
@@ -951,35 +952,35 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
     if ((type === 'coding' || type === 'fillInTheBlanksCoding' || type === 'codingWithDriver')) {
       const emptyStarterCode = starterCode.filter(sc => !sc.code || sc.code.trim() === '');
       if (emptyStarterCode.length > 0) {
-        alert(`Please provide starter code for: ${emptyStarterCode.map(sc => sc.language).join(', ')}`);
+        notify(`Please provide starter code for: ${emptyStarterCode.map(sc => sc.language).join(', ')}`);
         return;
       }
       if (type === 'codingWithDriver') {
         const emptyDriverCode = driverCode.filter(dc => !dc.code || dc.code.trim() === '');
         if (emptyDriverCode.length > 0) {
-          alert(`Please provide driver code for: ${emptyDriverCode.map(dc => dc.language).join(', ')}`);
+          notify(`Please provide driver code for: ${emptyDriverCode.map(dc => dc.language).join(', ')}`);
           return;
         }
         const missingPlaceholder = driverCode.filter(dc => !dc.code.includes('{{USER_CODE}}') && !dc.code.includes('// USER_CODE_HERE') && !dc.code.includes('# USER_CODE_HERE'));
         if (missingPlaceholder.length > 0) {
-          alert(`Driver code must contain {{USER_CODE}} or // USER_CODE_HERE or # USER_CODE_HERE. Missing in: ${missingPlaceholder.map(dc => dc.language).join(', ')}`);
+          notify(`Driver code must contain {{USER_CODE}} or // USER_CODE_HERE or # USER_CODE_HERE. Missing in: ${missingPlaceholder.map(dc => dc.language).join(', ')}`);
           return;
         }
       }
     }
 
     if ((type === 'singleCorrectMcq' || type === 'multipleCorrectMcq') && options.length < 2) {
-      alert('Please provide at least two options for MCQ questions.');
+      notify('Please provide at least two options for MCQ questions.');
       return;
     }
 
     if (type === 'singleCorrectMcq' && correctOption === null) {
-      alert('Please select a correct option for single correct MCQ.');
+      notify('Please select a correct option for single correct MCQ.');
       return;
     }
 
     if (type === 'multipleCorrectMcq' && correctOptions.length === 0) {
-      alert('Please select at least one correct option for multiple correct MCQ.');
+      notify('Please select at least one correct option for multiple correct MCQ.');
       return;
     }
 
@@ -1089,11 +1090,11 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
       <CollapsibleSection title="Basic Information">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Question Type</label>
+            <label className="block text-sm font-semibold text-body mb-2">Question Type</label>
             <select
               value={type}
               onChange={(e) => setType(e.target.value)}
-              className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
+              className="w-full px-4 py-2 rounded-lg border border-line focus:ring-2 focus:ring-accent focus:border-accent text-sm transition-all"
               required
             >
               <option value="singleCorrectMcq">Single Correct MCQ</option>
@@ -1105,30 +1106,30 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
             </select>
           </div>
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Points (optional)</label>
+            <label className="block text-sm font-semibold text-body mb-2">Points (optional)</label>
             <input
               type="number"
               value={points}
               onChange={(e) => setPoints(e.target.value)}
-              className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
+              className="w-full px-4 py-2 rounded-lg border border-line focus:ring-2 focus:ring-accent focus:border-accent text-sm transition-all"
               min="0"
               placeholder="Leave blank if not scored"
             />
           </div>
         </div>
         <div className="mt-6">
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Max Attempts (optional)</label>
+          <label className="block text-sm font-semibold text-body mb-2">Max Attempts (optional)</label>
           <input
             type="number"
             value={maxAttempts}
             onChange={(e) => setMaxAttempts(e.target.value)}
-            className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
+            className="w-full px-4 py-2 rounded-lg border border-line focus:ring-2 focus:ring-accent focus:border-accent text-sm transition-all"
             min="1"
             placeholder="Leave blank for unlimited attempts"
           />
         </div>
         <div className="mt-6">
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Assign to Classes</label>
+          <label className="block text-sm font-semibold text-body mb-2">Assign to Classes</label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {classes.map(cls => (
               <div key={cls._id} className="flex items-center">
@@ -1136,10 +1137,10 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                   type="checkbox"
                   checked={classIds.includes(cls._id)}
                   onChange={() => handleClassToggle(cls._id)}
-                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                  className="h-4 w-4 text-accent-ink focus:ring-accent border-line-strong rounded"
                   id={`class-${cls._id}`}
                 />
-                <label htmlFor={`class-${cls._id}`} className="ml-2 text-sm text-gray-700">{cls.name}</label>
+                <label htmlFor={`class-${cls._id}`} className="ml-2 text-sm text-body">{cls.name}</label>
               </div>
             ))}
           </div>
@@ -1150,7 +1151,7 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
       <CollapsibleSection title="Title and Description">
         <div className="space-y-6">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Title</label>
+            <label className="block text-sm font-semibold text-body mb-2">Title</label>
             <RichTextEditor
               key={`title-${editorResetKey}`}
               value={title}
@@ -1160,9 +1161,9 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
             />
           </div>
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
+            <label className="block text-sm font-semibold text-body mb-2">
               Description
-              <span className="ml-2 font-normal text-gray-500">
+              <span className="ml-2 font-normal text-muted">
                 (use Image in the toolbar, or paste a screenshot)
               </span>
             </label>
@@ -1183,7 +1184,7 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
           </div>
           {!['coding', 'fillInTheBlanksCoding', 'codingWithDriver'].includes(type) && (
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Explanation</label>
+            <label className="block text-sm font-semibold text-body mb-2">Explanation</label>
             <RichTextEditor
               key={`explanation-${editorResetKey}`}
               value={explanation}
@@ -1200,11 +1201,11 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
       <CollapsibleSection title="Metadata">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Difficulty</label>
+            <label className="block text-sm font-semibold text-body mb-2">Difficulty</label>
             <select
               value={difficulty}
               onChange={(e) => setDifficulty(e.target.value)}
-              className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
+              className="w-full px-4 py-2 rounded-lg border border-line focus:ring-2 focus:ring-accent focus:border-accent text-sm transition-all"
               required
             >
               <option value="easy">Easy</option>
@@ -1213,11 +1214,11 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
             </select>
           </div>
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Tags (comma-separated)</label>
+            <label className="block text-sm font-semibold text-body mb-2">Tags (comma-separated)</label>
             <input
               value={tags}
               onChange={(e) => setTags(e.target.value)}
-              className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
+              className="w-full px-4 py-2 rounded-lg border border-line focus:ring-2 focus:ring-accent focus:border-accent text-sm transition-all"
               placeholder="e.g., array, sorting, algorithm"
             />
           </div>
@@ -1244,24 +1245,24 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                 <button
                   type="button"
                   onClick={() => handleRemoveOption(idx)}
-                  className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600 disabled:bg-red-300 transition-colors"
+                  className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600 disabled:opacity-50 transition-colors"
                   disabled={options.length <= 2}
                   aria-label="Remove option"
                 >
-                  <TrashIcon className="h-5 w-5" />
+                  <Trash2Icon className="h-5 w-5" />
                 </button>
               </div>
             ))}
             <button
               type="button"
               onClick={handleAddOption}
-              className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+              className="inline-flex items-center px-4 py-2 bg-accent text-on-accent rounded-lg hover:bg-accent-hover transition-colors"
             >
               <PlusIcon className="h-5 w-5 mr-2" />
               Add Option
             </button>
             <div className="mt-4">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
+              <label className="block text-sm font-semibold text-body mb-2">
                 {type === 'singleCorrectMcq' ? 'Correct Option' : 'Correct Options (select all that apply)'}
               </label>
               <div className="space-y-2">
@@ -1271,10 +1272,10 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                       type={type === 'singleCorrectMcq' ? 'radio' : 'checkbox'}
                       checked={type === 'singleCorrectMcq' ? correctOption === idx : correctOptions.includes(idx)}
                       onChange={() => handleCorrectOptionToggle(idx)}
-                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                      className="h-4 w-4 text-accent-ink focus:ring-accent border-line-strong rounded"
                       id={`option-${idx}`}
                     />
-                    <label htmlFor={`option-${idx}`} className="ml-2 text-sm text-gray-700">{`Option ${idx + 1}`}</label>
+                    <label htmlFor={`option-${idx}`} className="ml-2 text-sm text-body">{`Option ${idx + 1}`}</label>
                   </div>
                 ))}
               </div>
@@ -1288,7 +1289,7 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
         <CollapsibleSection title="Fill in the Blanks">
           <div className="space-y-6">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Correct Answer</label>
+              <label className="block text-sm font-semibold text-body mb-2">Correct Answer</label>
               <RichTextEditor
                 key={`correctAnswer-${editorResetKey}`}
                 value={correctAnswer}
@@ -1306,7 +1307,7 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
         <>
           <CollapsibleSection title="Languages">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Supported Languages</label>
+              <label className="block text-sm font-semibold text-body mb-2">Supported Languages</label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {supportedLanguages.map(lang => (
                   <div key={lang} className="flex items-center">
@@ -1314,10 +1315,10 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                       type="checkbox"
                       checked={languages.includes(lang)}
                       onChange={() => handleLanguageToggle(lang)}
-                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                      className="h-4 w-4 text-accent-ink focus:ring-accent border-line-strong rounded"
                       id={`lang-${lang}`}
                     />
-                    <label htmlFor={`lang-${lang}`} className="ml-2 text-sm text-gray-700 capitalize">{lang}</label>
+                    <label htmlFor={`lang-${lang}`} className="ml-2 text-sm text-body capitalize">{lang}</label>
                   </div>
                 ))}
               </div>
@@ -1327,8 +1328,8 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
           <CollapsibleSection title="I/O format & sample cases" defaultOpen>
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Input format (optional)</label>
-                <p className="text-xs text-gray-500 mb-2">How students should read stdin or arguments.</p>
+                <label className="block text-sm font-semibold text-body mb-2">Input format (optional)</label>
+                <p className="text-xs text-muted mb-2">How students should read stdin or arguments.</p>
                 <RichTextEditor
                   key={`inputFormat-${editorResetKey}`}
                   value={inputFormat}
@@ -1338,8 +1339,8 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Output format (optional)</label>
-                <p className="text-xs text-gray-500 mb-2">Expected stdout or printed result shape.</p>
+                <label className="block text-sm font-semibold text-body mb-2">Output format (optional)</label>
+                <p className="text-xs text-muted mb-2">Expected stdout or printed result shape.</p>
                 <RichTextEditor
                   key={`outputFormat-${editorResetKey}`}
                   value={outputFormat}
@@ -1349,8 +1350,8 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Sample input / output</label>
-                <p className="text-xs text-gray-500 mb-2">Shown to students. Each sample has its own explanation, next to that input and output.</p>
+                <label className="block text-sm font-semibold text-body mb-2">Sample input / output</label>
+                <p className="text-xs text-muted mb-2">Shown to students. Each sample has its own explanation, next to that input and output.</p>
                 <BulkIoPairsEditor
                   items={sampleIo}
                   onChange={setSampleIo}
@@ -1368,7 +1369,7 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
           <CollapsibleSection title="Constraints">
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Constraints</label>
+                <label className="block text-sm font-semibold text-body mb-2">Constraints</label>
                 <RichTextEditor
                   key={`constraints-${editorResetKey}`}
                   value={constraints}
@@ -1381,7 +1382,7 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
           </CollapsibleSection>
 
           <CollapsibleSection title="Test Cases">
-            <p className="text-xs text-gray-500 mb-3">Paste many cases at once, or edit rows. Public cases are shown to students.</p>
+            <p className="text-xs text-muted mb-3">Paste many cases at once, or edit rows. Public cases are shown to students.</p>
             <BulkIoPairsEditor
               items={testCases}
               onChange={setTestCases}
@@ -1398,12 +1399,12 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
           <CollapsibleSection title="Limits">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Time Limit (seconds)</label>
+                <label className="block text-sm font-semibold text-body mb-2">Time Limit (seconds)</label>
                 <input
                   type="number"
                   value={timeLimit}
                   onChange={(e) => setTimeLimit(e.target.value)}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
+                  className="w-full px-4 py-2 rounded-lg border border-line focus:ring-2 focus:ring-accent focus:border-accent text-sm transition-all"
                   required
                   min="0.1"
                   max="5"
@@ -1411,12 +1412,12 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Memory Limit (MB)</label>
+                <label className="block text-sm font-semibold text-body mb-2">Memory Limit (MB)</label>
                 <input
                   type="number"
                   value={memoryLimit}
                   onChange={(e) => setMemoryLimit(e.target.value)}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
+                  className="w-full px-4 py-2 rounded-lg border border-line focus:ring-2 focus:ring-accent focus:border-accent text-sm transition-all"
                   required
                   min="16"
                   max="1024"
@@ -1439,14 +1440,14 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                   <textarea
                     value={sc.code}
                     onChange={(e) => handleStarterCodeChange(idx, e.target.value)}
-                    className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                    className="w-full px-4 py-2 rounded-lg border border-line focus:ring-2 focus:ring-accent focus:border-accent font-mono text-sm"
                     rows={10}
                     placeholder={`Starter code for ${sc.language}`}
                   />
                 </CollapsibleSection>
               ))}
               {starterCode.length === 0 && (
-                <p className="text-sm text-gray-500">Select languages in the previous step first.</p>
+                <p className="text-sm text-muted">Select languages in the previous step first.</p>
               )}
             </div>
           </CollapsibleSection>
@@ -1454,15 +1455,15 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
           {type === 'codingWithDriver' && (
             <CollapsibleSection title="Driver Code (LeetCode-style - handles input/output)" defaultOpen={false}>
               <div className="space-y-4">
-                <p className="text-sm text-gray-600">
-                  Driver code reads test input, calls the student&apos;s function, and prints the result. Include <code className="bg-gray-100 px-1 rounded">{'{{USER_CODE}}'}</code>, <code className="bg-gray-100 px-1 rounded">// USER_CODE_HERE</code>, or <code className="bg-gray-100 px-1 rounded"># USER_CODE_HERE</code> where student code is injected.
+                <p className="text-sm text-muted">
+                  Driver code reads test input, calls the student&apos;s function, and prints the result. Include <code className="bg-inset px-1 rounded">{'{{USER_CODE}}'}</code>, <code className="bg-inset px-1 rounded">// USER_CODE_HERE</code>, or <code className="bg-inset px-1 rounded"># USER_CODE_HERE</code> where student code is injected.
                 </p>
                 {driverCode.map((dc, idx) => (
                   <CollapsibleSection key={dc.language} title={`Driver for ${dc.language}`} defaultOpen={false}>
                     <textarea
                       value={dc.code}
                       onChange={(e) => handleDriverCodeChange(idx, e.target.value)}
-                      className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                      className="w-full px-4 py-2 rounded-lg border border-line focus:ring-2 focus:ring-accent focus:border-accent font-mono text-sm"
                       rows={12}
                       placeholder={`Driver code for ${dc.language}`}
                     />
@@ -1475,11 +1476,11 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
           <CollapsibleSection title="Solution Code (Optional)">
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Solution Language</label>
+                <label className="block text-sm font-semibold text-body mb-2">Solution Language</label>
                 <select
                   value={solutionLanguage}
                   onChange={(e) => setSolutionLanguage(e.target.value)}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm transition-all"
+                  className="w-full px-4 py-2 rounded-lg border border-line focus:ring-2 focus:ring-accent focus:border-accent text-sm transition-all"
                 >
                   {languages.map(lang => (
                     <option key={lang} value={lang}>
@@ -1489,8 +1490,8 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Solution Code</label>
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <label className="block text-sm font-semibold text-body mb-2">Solution Code</label>
+                <div className="border border-line rounded-lg overflow-hidden">
                   <CodeEditor
                     key={`solution-${solutionLanguage}-${editorResetKey}`}
                     value={activeSolutionCode}
@@ -1500,7 +1501,7 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                     isFillInTheBlanks={false}
                   />
                 </div>
-                <p className="mt-2 text-xs text-gray-500">
+                <p className="mt-2 text-xs text-muted">
                   Write the solution code here. Save the question first, then you can test it against all test cases (including hidden ones).
                 </p>
               </div>
@@ -1524,11 +1525,11 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
                   type="button"
                   onClick={handleTestSolution}
                   disabled={isTestingSolution || !activeSolutionCode.trim() || testCases.length === 0 || !initialData?._id}
-                  className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-on-accent bg-accent hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 transition-all disabled:bg-subtle disabled:cursor-not-allowed"
                 >
                   {isTestingSolution ? (
                     <>
-                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-on-accent" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
@@ -1577,14 +1578,14 @@ const QuestionForm = ({ onSubmit, initialData, classes = [], defaultClassId }) =
             <button
               type="button"
               onClick={() => setFormStep((s) => Math.min(totalFormSteps, s + 1))}
-              className="px-4 py-2 rounded-lg text-sm font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200"
+              className="px-4 py-2 rounded-lg text-sm font-semibold text-accent-ink bg-accent-soft hover:bg-accent-soft border border-accent-line"
             >
               Next
             </button>
           )}
           <button
             type="submit"
-            className="inline-flex items-center px-6 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            className="inline-flex items-center px-6 py-2 rounded-lg text-sm font-semibold text-on-accent bg-accent hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2"
           >
             {initialData?._id
               ? (initialData?.isDraft ? 'Update Draft' : 'Update Question')

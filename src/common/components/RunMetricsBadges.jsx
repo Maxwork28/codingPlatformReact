@@ -44,7 +44,7 @@ const RunMetricsBadges = ({ timeMs, memoryKb, result, className = '', alwaysShow
   if (!alwaysShow && !timeLabel && !memoryLabel) return null;
 
   return (
-    <span className={`inline-flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs font-semibold tabular-nums ${className}`} style={{ color: 'var(--text-secondary, #4b5563)' }}>
+    <span className={`inline-flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs font-semibold tabular-nums ${className}`} style={{ color: 'var(--muted)' }}>
       <span>Time: {timeLabel || '—'}</span>
       <span>Memory: {memoryLabel || '—'}</span>
     </span>

@@ -1,186 +1,138 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
-import { useDispatch } from 'react-redux';
-import { fetchClasses } from '../../../common/components/redux/classSlice';
+import React, { useEffect, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, Award, Clock, Layers, ListChecks, ShieldCheck } from 'lucide-react';
 import { getExamDetails } from '../../../common/services/api';
-import { Combobox } from '@headlessui/react';
-import { CheckIcon, ChevronUpDownIcon } from '@heroicons/react/20/solid';
+import { Button, Card, EmptyState } from '../../../common/ui/primitives';
+import { labelClass, type } from '../../../common/ui/format';
+import ClassPicker from '../components/ClassPicker';
+
+const errorText = (err, fallback) => (typeof err === 'string' ? err : err?.response?.data?.error || fallback);
+
+function Fact({ icon, label, value }) {
+  const Icon = icon;
+  return (
+    <div className="flex items-center gap-2 rounded-xl border border-line bg-inset px-3 py-2">
+      <Icon className="w-3.5 h-3.5 text-muted shrink-0" />
+      <div className="min-w-0">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-muted">{label}</p>
+        <p className="text-xs font-semibold text-fg truncate">{value}</p>
+      </div>
+    </div>
+  );
+}
 
 const UseExamTemplate = () => {
   const { templateId } = useParams();
   const navigate = useNavigate();
-  const dispatch = useDispatch();
-  const { classes } = useSelector((state) => state.classes);
+  const base = useLocation().pathname.startsWith('/teacher') ? '/teacher' : '/admin';
   const [selectedClass, setSelectedClass] = useState(null);
-  const [query, setQuery] = useState('');
   const [template, setTemplate] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    if (classes.length === 0) {
-      dispatch(fetchClasses(''));
-    }
-  }, [dispatch, classes.length]);
-
-  useEffect(() => {
-    const fetchTemplate = async () => {
-      try {
-        setLoading(true);
-        const response = await getExamDetails(templateId);
-        setTemplate(response.data.exam);
-        setLoading(false);
-      } catch (error) {
-        console.error('Failed to fetch template:', error);
-        alert(error.response?.data?.error || 'Failed to load template');
-        navigate('/admin/exams/templates');
-      }
+    let cancelled = false;
+    getExamDetails(templateId)
+      .then((response) => {
+        if (cancelled) return;
+        const exam = response.data.exam;
+        if (!exam?.template?.isTemplate) setError('This exam is not a template.');
+        else setTemplate(exam);
+      })
+      .catch((err) => !cancelled && setError(errorText(err, 'Failed to load template')));
+    return () => {
+      cancelled = true;
     };
+  }, [templateId]);
 
-    if (templateId) {
-      fetchTemplate();
-    }
-  }, [templateId, navigate]);
+  const backToList = () => navigate(`${base}/exams/templates`);
 
-  const handleContinue = () => {
-    if (selectedClass) {
-      // Navigate to CreateExam with classId and templateId
-      navigate(`/admin/classes/${selectedClass._id}/exams/create?templateId=${templateId}`);
-    }
+  const handleContinue = (e) => {
+    e.preventDefault();
+    if (selectedClass) navigate(`${base}/classes/${selectedClass._id}/exams/create?templateId=${templateId}`);
   };
 
-  // Filter classes based on search query
-  const filteredClasses = query === ''
-    ? classes
-    : classes.filter((cls) =>
-        cls.name.toLowerCase().includes(query.toLowerCase())
-      );
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-xl">Loading template...</div>
-      </div>
-    );
-  }
-
-  if (!template) {
-    return null;
-  }
+  const proctoring = template?.proctoring || {};
+  const totalPoints = (template?.questions || []).reduce((sum, q) => sum + (Number(q.points) || 0), 0);
+  const rules = [
+    proctoring.fullscreenRequired && 'Fullscreen',
+    proctoring.copyPasteDisabled && 'No copy/paste',
+    proctoring.tabSwitchLimit != null && `${proctoring.tabSwitchLimit} tab switches`,
+  ].filter(Boolean);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
-      <div className="container mx-auto px-4 max-w-2xl">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8">
-          <h1 className="text-3xl font-bold mb-6">Use Exam Template</h1>
-          
-          {/* Template Info */}
-          <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-            <h2 className="text-xl font-semibold mb-2">{template.title}</h2>
-            {template.description && (
-              <p className="text-gray-600 dark:text-gray-400 mb-2">{template.description}</p>
-            )}
-            <div className="grid grid-cols-3 gap-4 text-sm mt-3">
-              <div>
-                <span className="font-semibold">Duration:</span> {template.proctoring?.durationMinutes || 0} min
-              </div>
-              <div>
-                <span className="font-semibold">Questions:</span> {template.questions?.length || 0}
-              </div>
-              <div>
-                <span className="font-semibold">Sections:</span> {template.sections?.length || 0}
-              </div>
-            </div>
-          </div>
-
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Select a class to create a new exam from this template.
-          </p>
-
-          <div className="mb-6">
-            <label className="block text-sm font-medium mb-2">
-              Select Class *
-            </label>
-            <Combobox value={selectedClass} onChange={setSelectedClass}>
-              <div className="relative">
-                <Combobox.Input
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                  displayValue={(cls) => cls?.name || ''}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search or select a class..."
-                />
-                <Combobox.Button className="absolute inset-y-0 right-0 flex items-center pr-2">
-                  <ChevronUpDownIcon
-                    className="h-5 w-5 text-gray-400"
-                    aria-hidden="true"
-                  />
-                </Combobox.Button>
-                <Combobox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white dark:bg-gray-800 py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm">
-                  {filteredClasses.length === 0 && query !== '' ? (
-                    <div className="relative cursor-default select-none px-4 py-2 text-gray-700 dark:text-gray-300">
-                      No class found.
-                    </div>
-                  ) : (
-                    filteredClasses.map((cls) => (
-                      <Combobox.Option
-                        key={cls._id}
-                        value={cls}
-                        className={({ active }) =>
-                          `relative cursor-default select-none py-2 pl-10 pr-4 ${
-                            active
-                              ? 'bg-blue-600 text-white'
-                              : 'text-gray-900 dark:text-gray-300'
-                          }`
-                        }
-                      >
-                        {({ selected, active }) => (
-                          <>
-                            <span
-                              className={`block truncate ${
-                                selected ? 'font-medium' : 'font-normal'
-                              }`}
-                            >
-                              {cls.name}
-                            </span>
-                            {selected ? (
-                              <span
-                                className={`absolute inset-y-0 left-0 flex items-center pl-3 ${
-                                  active ? 'text-white' : 'text-blue-600'
-                                }`}
-                              >
-                                <CheckIcon className="h-5 w-5" aria-hidden="true" />
-                              </span>
-                            ) : null}
-                          </>
-                        )}
-                      </Combobox.Option>
-                    ))
-                  )}
-                </Combobox.Options>
-              </div>
-            </Combobox>
-          </div>
-
-          <div className="flex gap-4">
-            <button
-              onClick={handleContinue}
-              disabled={!selectedClass}
-              className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Continue to Create Exam
-            </button>
-            <button
-              onClick={() => navigate('/admin/exams/templates')}
-              className="px-6 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-            >
-              Cancel
-            </button>
-          </div>
+    <div className="w-full px-4 sm:px-5 py-5">
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            icon={ArrowLeft}
+            className="h-9 w-9 justify-center p-0!"
+            onClick={backToList}
+            aria-label="Back to exam templates"
+            title="Back to exam templates"
+          />
+          <h1 className={type.pageTitle}>Create exam from template</h1>
         </div>
+
+        {error ? (
+          <EmptyState
+            icon={Award}
+            title="Template unavailable"
+            message={error}
+            action={<Button variant="secondary" onClick={backToList}>Back to templates</Button>}
+          />
+        ) : !template ? (
+          <div className="grid lg:grid-cols-[1fr_20rem] xl:grid-cols-[1fr_22rem] gap-5 items-start">
+            <div className="h-40 rounded-2xl bg-hover animate-pulse" />
+            <div className="h-64 rounded-2xl bg-hover animate-pulse" />
+          </div>
+        ) : (
+          <div className="grid lg:grid-cols-[1fr_20rem] xl:grid-cols-[1fr_22rem] gap-5 items-start">
+            <Card as="form" onSubmit={handleContinue} className="space-y-5 lg:order-1">
+              <div className="space-y-1.5">
+                <label htmlFor="target-class" className={labelClass}>
+                  Class to create the exam for
+                </label>
+                <ClassPicker id="target-class" value={selectedClass} onChange={setSelectedClass} autoFocus />
+                <p className={type.meta}>
+                  Next you can set the title, schedule and settings. The questions and sections are copied from the
+                  template, and the template itself is not changed.
+                </p>
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <Button variant="secondary" onClick={backToList}>
+                  Cancel
+                </Button>
+                <Button type="submit" icon={ArrowRight} disabled={!selectedClass}>
+                  Continue
+                </Button>
+              </div>
+            </Card>
+
+            <Card className="space-y-3 lg:order-2">
+              <h2 className={type.section}>Template</h2>
+              <div>
+                <p className={type.cardTitle}>{template.title}</p>
+                {(template.template?.templateDescription || template.description) && (
+                  <p className={`${type.body} mt-1`}>{template.template?.templateDescription || template.description}</p>
+                )}
+              </div>
+              <div className="grid grid-cols-2 lg:grid-cols-1 gap-2">
+                <Fact
+                  icon={ListChecks}
+                  label="Questions"
+                  value={`${template.questions?.length || 0}${totalPoints ? ` · ${totalPoints} pts` : ''}`}
+                />
+                <Fact icon={Layers} label="Sections" value={template.sections?.length || 0} />
+                <Fact icon={Clock} label="Duration" value={proctoring.durationMinutes ? `${proctoring.durationMinutes} min` : '—'} />
+                <Fact icon={ShieldCheck} label="Proctoring" value={rules.length ? rules.join(', ') : 'Off'} />
+              </div>
+            </Card>
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
 export default UseExamTemplate;
-

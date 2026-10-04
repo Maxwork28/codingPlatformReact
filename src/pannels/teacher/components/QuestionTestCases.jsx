@@ -1,47 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, Link, useLocation } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { getQuestion } from '../../../common/services/api';
-import parse from 'html-react-parser';
+import { Button, EmptyState, StatusChip, Table } from '../../../common/ui/primitives';
+import { table as tableClass, type } from '../../../common/ui/format';
+import { QUESTION_TYPE_LABELS, RUNNABLE_CODING_TYPES, difficultyKind, stripHtml } from '../pages/takeClass/helpers';
 
 const QuestionTestCases = () => {
   const { questionId } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const [question, setQuestion] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [classId, setClassId] = useState(location.state?.classId || '');
-
-  const resolveClassId = (questionData) => {
-    if (!questionData) return '';
-    const classEntry = questionData.classes?.[0];
-    if (classEntry?.classId?._id) return classEntry.classId._id;
-    if (classEntry?.classId) return classEntry.classId;
-    if (Array.isArray(questionData.classIds) && questionData.classIds.length > 0) return questionData.classIds[0];
-    return '';
-  };
-
-  // Strip HTML tags for test cases
-  const stripHtml = (html) => {
-    if (!html) return '';
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    return doc.body.textContent || '';
-  };
 
   useEffect(() => {
     const fetchQuestion = async () => {
       try {
         setIsLoading(true);
         const response = await getQuestion(questionId);
-        console.log('[QuestionTestCases] Question fetched:', response.data.question);
-        const fetchedQuestion = response.data.question;
-        setQuestion(fetchedQuestion);
-        const derivedClassId = resolveClassId(fetchedQuestion);
-        if (!classId && derivedClassId) {
-          setClassId(derivedClassId);
-        }
+        setQuestion(response.data.question);
       } catch (err) {
-        console.error('[QuestionTestCases] Fetch error:', err.message, err.response?.data);
-        setError(err.response?.data?.error || 'Failed to load test cases');
+        setError(typeof err === 'string' ? err : err.response?.data?.error || 'Failed to load test cases');
       } finally {
         setIsLoading(false);
       }
@@ -49,168 +29,79 @@ const QuestionTestCases = () => {
     fetchQuestion();
   }, [questionId]);
 
+  const handleBack = () => {
+    if (location.state?.fromTakeClass && location.state?.classId) {
+      navigate('/teacher/take-class', {
+        state: { classId: location.state.classId, questionId },
+      });
+      return;
+    }
+    const classId = location.state?.classId;
+    if (classId) {
+      navigate(`/teacher/classes/${classId}`, { state: { classId } });
+      return;
+    }
+    navigate('/teacher/questions');
+  };
+
   if (isLoading) {
     return (
-      <div className="fixed inset-0 bg-gray-600 bg-opacity-60 flex items-center justify-center z-50">
-        <div className="bg-white/90 backdrop-blur-sm p-8 rounded-2xl shadow-xl max-w-sm w-full">
-          <div className="flex items-center justify-center">
-            <svg
-              className="animate-spin h-10 w-10 text-indigo-600"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              ></circle>
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-            <span className="ml-4 text-lg font-semibold text-gray-800">Loading...</span>
-          </div>
-        </div>
+      <div className="flex justify-center items-center min-h-[50vh] bg-page">
+        <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   if (error || !question) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6 p-4 rounded-xl bg-red-50/80 backdrop-blur-sm border border-red-200 shadow-sm">
-          <div className="flex items-center">
-            <svg
-              className="h-6 w-6 text-red-500"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <p className="ml-3 text-sm font-semibold text-red-800">{error || 'Question not found'}</p>
-          </div>
-        </div>
+      <div className="h-full flex flex-col px-4 sm:px-5 py-5">
+        <EmptyState
+          title="Couldn't load test cases"
+          message={error || 'Question not found'}
+          action={<Button variant="secondary" onClick={handleBack}>Go back</Button>}
+        />
       </div>
     );
   }
 
-  const fallbackClassId = classId || resolveClassId(question);
-  const backHref = fallbackClassId ? `/teacher/classes/${fallbackClassId}` : '/teacher/questions';
-  const backState = fallbackClassId ? { classId: fallbackClassId } : undefined;
-
-  if (question.type !== 'coding') {
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
-          <div className="flex items-center mb-6">
-            <Link
-              to={backHref}
-              state={backState}
-              className="mr-4 p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5 text-gray-600"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </Link>
-            <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight">
-              {parse(question.title || 'Untitled')} - Test Cases
-            </h2>
-          </div>
-          <p className="text-sm text-gray-700">Test cases are only available for coding questions.</p>
-        </div>
-      </div>
-    );
-  }
+  const runnable = RUNNABLE_CODING_TYPES.includes(question.type);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-100">
-        <div className="flex items-center mb-6">
-          <Link
-            to={backHref}
-            state={backState}
-            className="mr-4 p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200"
+    <div className="flex flex-col h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)] bg-page">
+      <header className="shrink-0 h-14 px-4 sm:px-5 border-b border-line bg-surface flex items-center gap-2">
+        <Button variant="ghost" icon={ArrowLeft} className="h-9 w-9 justify-center p-0!" onClick={handleBack} aria-label="Back" />
+        <h1 className={`${type.pageTitle} text-xl! truncate min-w-0`}>Test cases</h1>
+        <StatusChip kind="neutral">{QUESTION_TYPE_LABELS[question.type] || question.type}</StatusChip>
+        <StatusChip kind={difficultyKind(question.difficulty)}>{question.difficulty || '—'}</StatusChip>
+      </header>
+      <section className="flex-1 min-h-0 flex flex-col gap-3 px-4 sm:px-5 py-5">
+        {!runnable ? (
+          <EmptyState title="No sandbox tests" message="Test cases are only available for coding questions." />
+        ) : question.testCases?.length ? (
+          <Table
+            fill
+            columns={[
+              { key: 'input', label: 'Input' },
+              { key: 'output', label: 'Expected output' },
+              { key: 'visibility', label: 'Visibility' },
+            ]}
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5 text-gray-600"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </Link>
-          <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-indigo-400 tracking-tight">
-            {parse(question.title || 'Untitled')} - Test Cases
-          </h2>
-        </div>
-
-        <div className="space-y-8">
-          <div className="flex flex-wrap gap-3">
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
-              Type: {question.type}
-            </span>
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
-              Points: {question.points || 0}
-            </span>
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-800">
-              Difficulty: {question.difficulty || 'Unknown'}
-            </span>
-          </div>
-
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-3">Test Cases</h3>
-            {question.testCases?.length > 0 ? (
-              <div className="mt-3 overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Input</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Expected Output</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Visibility</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {question.testCases.map((testCase, idx) => (
-                      <tr key={idx}>
-                        <td className="px-6 py-4 whitespace-pre-wrap text-sm text-gray-700">{stripHtml(testCase.input)}</td>
-                        <td className="px-6 py-4 whitespace-pre-wrap text-sm text-gray-700">{stripHtml(testCase.expectedOutput)}</td>
-                        <td className="px-6 py-4 text-sm text-gray-700">{testCase.isPublic ? 'Public' : 'Private'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="mt-3 text-sm text-gray-700">No test cases defined for this question.</p>
-            )}
-          </div>
-        </div>
-      </div>
+            {question.testCases.map((testCase, idx) => (
+              <tr key={idx} className={tableClass.row}>
+                <td className={`${tableClass.td} whitespace-pre-wrap`}>{stripHtml(testCase.input)}</td>
+                <td className={`${tableClass.td} whitespace-pre-wrap`}>{stripHtml(testCase.expectedOutput)}</td>
+                <td className={tableClass.td}>
+                  <StatusChip kind={testCase.isPublic ? 'info' : 'neutral'}>
+                    {testCase.isPublic ? 'Public' : 'Hidden'}
+                  </StatusChip>
+                </td>
+              </tr>
+            ))}
+          </Table>
+        ) : (
+          <EmptyState title="No test cases" message="This question does not have test cases yet." />
+        )}
+      </section>
     </div>
   );
 };

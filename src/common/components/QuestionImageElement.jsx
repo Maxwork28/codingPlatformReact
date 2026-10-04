@@ -20,7 +20,7 @@ const QuestionImageElement = ({ attributes, children, element }) => {
         <img
           src={src}
           alt={element.alt || ''}
-          className="question-inline-image max-h-80 rounded-md border border-gray-200"
+          className="question-inline-image max-h-80 rounded-md border border-line"
         />
         <button
           type="button"
