@@ -6,21 +6,20 @@ import CodeEditor from '../../student/components/CodeEditor';
 import TestSolutionResults from '../../../common/components/TestSolutionResults';
 import TestSolutionLimitControls from '../../../common/components/TestSolutionLimitControls';
 import {
-  buildSolutionCodesFromQuestion as buildCodes,
+  buildSolutionCodesFromQuestion,
   hasSavedSolution,
   solutionCodeForLanguage,
 } from '../../../common/utils/solutionCodes';
 import { notify } from '../../../common/ui/Toast';
-
-export const buildSolutionCodesFromQuestion = buildCodes;
+import { CODING_TYPES } from '../../../common/domain/questions';
 
 const DEFAULT_BACK = '/teacher/questions';
-const RUNNABLE_TYPES = ['coding', 'fillInTheBlanksCoding', 'codingWithDriver'];
+const RUNNABLE_TYPES = CODING_TYPES;
 
 const apiErrorMessage = (err, fallback) =>
   (typeof err === 'string' && err) || err?.response?.data?.error || err?.message || fallback;
 
-export const withPreviewStarterCode = (question) => {
+const withPreviewStarterCode = (question) => {
   if (!question) return null;
   if (question.type !== 'codingWithDriver' && question.type !== 'coding') return question;
   const hasStarter = Array.isArray(question.starterCode) && question.starterCode.length > 0;
@@ -32,7 +31,7 @@ export const withPreviewStarterCode = (question) => {
   };
 };
 
-export const questionTypeLabel = (type) => {
+const questionTypeLabel = (type) => {
   const map = {
     singleCorrectMcq: 'Single choice',
     multipleCorrectMcq: 'Multiple choice',
@@ -44,7 +43,7 @@ export const questionTypeLabel = (type) => {
   return map[type] || type || '—';
 };
 
-export const resolveClassId = (questionData, fallback = '') => {
+const resolveClassId = (questionData, fallback = '') => {
   if (fallback) return fallback;
   if (!questionData) return '';
   const classEntry = questionData.classes?.[0];

@@ -1,11 +1,12 @@
 {
-  "name": "my-app",
+  "name": "algosutra-web",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:prod": "vite build --mode production",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -18,10 +19,12 @@
     "axios": "^1.8.4",
     "chart.js": "^4.5.0",
     "date-fns": "^4.1.0",
+    "dompurify": "^3.4.16",
     "html-react-parser": "^5.2.3",
     "is-hotkey": "^0.2.0",
     "jwt-decode": "^4.0.0",
     "lucide-react": "^1.51.0",
+    "prop-types": "^15.8.1",
     "react": "^19.0.0",
     "react-ace": "^14.0.1",
     "react-chartjs-2": "^5.3.0",

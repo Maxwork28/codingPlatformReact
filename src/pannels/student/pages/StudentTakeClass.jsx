@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useLocation } from 'react-router-dom';
-import { io } from 'socket.io-client';
 import { GraduationCap, List } from 'lucide-react';
 import { getQuestionsByClass, runCode, runCodeWithCustomInput, submitAnswer } from '../../../common/services/api';
-import { API_BASE_URL } from '../../../common/constants';
+import { getSocket, joinClassRoom, leaveClassRoom } from '../../../common/services/socket';
 import { loadRunHistory, makeRunHistoryEntry, saveRunHistory } from '../../../common/utils/runOutputHistory';
 import { notify } from '../../../common/ui/Toast';
 import { Button, EmptyState, StatusChip } from '../../../common/ui/primitives';
@@ -54,6 +53,8 @@ const StudentTakeClass = () => {
   const [resultsView, setResultsView] = useState('detail');
   const [submissionFeedback, setSubmissionFeedback] = useState(null);
   const lastCodeInitKeyRef = useRef(null);
+  // Question whose default language has been applied; the student's own pick is kept until the question changes.
+  const languageQuestionIdRef = useRef(null);
   const lastAnswerInitRef = useRef(null);
 
   const myClasses = useMemo(
@@ -186,8 +187,9 @@ const StudentTakeClass = () => {
 
   useEffect(() => {
     if (!selectedClass?._id) return undefined;
-    const socket = io(`${API_BASE_URL}/`, { withCredentials: true });
-    socket.emit('joinClass', selectedClass._id);
+    const classId = selectedClass._id;
+    const socket = getSocket();
+    joinClassRoom(classId);
     const sync = () => {
       void refreshQuestions();
     };
@@ -198,16 +200,25 @@ const StudentTakeClass = () => {
       socket.off('questionPublished', sync);
       socket.off('questionDisabled', sync);
       socket.off('questionAssigned', sync);
-      socket.disconnect();
+      leaveClassRoom(classId);
     };
   }, [refreshQuestions, selectedClass?._id]);
 
   useEffect(() => {
     if (!selectedQuestion || !RUNNABLE_CODING_TYPES.includes(selectedQuestion.type)) {
       lastCodeInitKeyRef.current = null;
+      languageQuestionIdRef.current = null;
       return;
     }
     const langs = availableLanguages(selectedQuestion);
+    // Switching to another question opens it in the first language the teacher listed.
+    if (languageQuestionIdRef.current !== selectedQuestion._id) {
+      languageQuestionIdRef.current = selectedQuestion._id;
+      if (langs.length && selectedLanguage !== langs[0]) {
+        setSelectedLanguage(langs[0]);
+        return;
+      }
+    }
     if (langs.length && !langs.includes(selectedLanguage)) {
       setSelectedLanguage(langs[0]);
       return;

@@ -1,11 +1,22 @@
 import axios from 'axios';
 import { API_BASE_URL } from '../constants';
+import { SEB_REQUIRED_EVENT, sebRequestHeaders } from '../utils/seb';
+
+/** Default request timeout. Judge-backed calls (run/submit/teacher-test) pass JUDGE_TIMEOUT instead. */
+const DEFAULT_TIMEOUT = 30000;
+export const JUDGE_TIMEOUT = 90000;
+const JUDGE_OPTS = { timeout: JUDGE_TIMEOUT };
+export const JUDGE_TIMEOUT_MESSAGE = 'The judge took too long. Please try again.';
+
+/** Endpoints where a 401 is a normal "wrong credentials / bad token" answer, not an expired session. */
+const PUBLIC_AUTH_PATHS = ['/auth/login', '/auth/forgot-password', '/auth/reset-password'];
 
 /**
  * Axios instance with base URL and token interceptor
  */
 const api = axios.create({
   baseURL: API_BASE_URL,
+  timeout: DEFAULT_TIMEOUT,
 });
 
 /**
@@ -13,12 +24,62 @@ const api = axios.create({
  */
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
-  console.log('Request interceptor triggered', { url: config.url, token: token ? 'Present' : 'Not present' });
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
+
+const requestPath = (config) => {
+  try {
+    const url = config?.url || '';
+    return url.startsWith('http') ? new URL(url).pathname : url.split('?')[0];
+  } catch {
+    return config?.url || '';
+  }
+};
+
+let sessionExpiredHandled = false;
+
+/**
+ * Response interceptor:
+ * - 401 on any authenticated endpoint: the session is gone. Clear the token and send the user to
+ *   /login?expired=1 exactly once (later 401s from in-flight requests are ignored).
+ * - 429 with code JUDGE_BUSY / RATE_LIMITED: make sure the server's message sits in
+ *   `response.data.error`, which is what every wrapper below rethrows as its string.
+ * - Timeouts (ECONNABORTED) are given a synthetic `response.data.error` with a friendly message so
+ *   the same wrappers surface it instead of their generic fallback.
+ */
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error.response?.status;
+    const data = error.response?.data;
+    if (status === 401 && !PUBLIC_AUTH_PATHS.includes(requestPath(error.config))) {
+      if (!sessionExpiredHandled) {
+        sessionExpiredHandled = true;
+        try {
+          localStorage.removeItem('token');
+        } catch {
+          /* ignore */
+        }
+        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+          window.location.assign('/login?expired=1');
+        }
+      }
+      return Promise.reject(error);
+    }
+    if (status === 429 && (data?.code === 'JUDGE_BUSY' || data?.code === 'RATE_LIMITED')) {
+      const message = data.error || data.message || 'The server is busy. Please try again in a moment.';
+      error.response.data = { ...data, error: message };
+      return Promise.reject(error);
+    }
+    if (error.code === 'ECONNABORTED' && !error.response) {
+      error.response = { status: 0, data: { error: JUDGE_TIMEOUT_MESSAGE, code: 'TIMEOUT' } };
+    }
+    return Promise.reject(error);
+  },
+);
 
 // Authentication Routes
 /**
@@ -28,17 +89,66 @@ api.interceptors.request.use((config) => {
  * @returns {Promise} Axios response
  */
 export const login = async (email, password) => {
-  console.log('login called', { email });
   try {
     const response = await api.post('/auth/login', { email, password });
     const { token } = response.data;
     localStorage.setItem('token', token);
-    console.log('login success', { email, token });
     return response;
   } catch (err) {
-    console.error('login error', { email, error: err.response?.data?.error || 'Failed to login' });
     throw err.response?.data?.error || 'Failed to login';
   }
+};
+
+/**
+ * Requests a password-reset email.
+ * @param {string} email
+ * @returns {Promise<{ message: string }>}
+ */
+export const forgotPassword = async (email) => {
+  try {
+    const response = await api.post('/auth/forgot-password', { email: String(email || '').trim().toLowerCase() });
+    return response.data;
+  } catch (err) {
+    throw err.response?.data?.error || 'Failed to send reset email';
+  }
+};
+
+/**
+ * Completes a password reset with the token from the email link.
+ * @param {string} token
+ * @param {string} newPassword
+ * @returns {Promise<{ message: string }>}
+ */
+export const resetPassword = async (token, newPassword) => {
+  try {
+    const response = await api.post('/auth/reset-password', { token, newPassword });
+    return response.data;
+  } catch (err) {
+    throw err.response?.data?.error || 'Failed to reset password';
+  }
+};
+
+/**
+ * Changes the signed-in user's password. The server returns a fresh token plus the user fields;
+ * the caller should dispatch `passwordChanged({ token })` so the forced-change gate lifts.
+ * @param {string} oldPassword
+ * @param {string} newPassword
+ * @returns {Promise<{ message: string, token: string }>}
+ */
+export const changePassword = async (oldPassword, newPassword) => {
+  try {
+    const response = await api.post('/auth/change-password', { oldPassword, newPassword });
+    if (response.data?.token) localStorage.setItem('token', response.data.token);
+    return response.data;
+  } catch (err) {
+    throw err.response?.data?.error || 'Failed to change password';
+  }
+};
+
+/** Backend liveness probe (no auth). */
+export const getHealth = async () => {
+  const response = await api.get('/health', { timeout: 5000 });
+  return response.data;
 };
 
 /**
@@ -83,16 +193,13 @@ export const uploadQuestionImage = async (file) => {
  * @returns {Promise} Axios response
  */
 export const uploadExcel = async (file, role) => {
-  console.log('uploadExcel called', { role, fileName: file?.name });
   const formData = new FormData();
   formData.append('file', file);
   formData.append('role', role);
   try {
     const response = await api.post('/admin/upload', formData);
-    console.log('uploadExcel success', { role, response: response.data });
     return response;
   } catch (err) {
-    console.error('uploadExcel error', { role, error: err.response?.data?.error || 'Failed to upload Excel file' });
     throw err.response?.data?.error || 'Failed to upload Excel file';
   }
 };
@@ -104,17 +211,14 @@ export const uploadExcel = async (file, role) => {
  * @returns {Promise} Axios response
  */
 export const createClass = async (data, file) => {
-  console.log('createClass called', { name: data.name, description: data.description, file: file?.name });
   const formData = new FormData();
   formData.append('name', data.name);
   formData.append('description', data.description);
   if (file) formData.append('file', file);
   try {
     const response = await api.post('/admin/class', formData);
-    console.log('createClass success', { name: data.name, response: response.data });
     return response;
   } catch (err) {
-    console.error('createClass error', { name: data.name, error: err.response?.data?.error || 'Failed to create class' });
     throw err.response?.data?.error || 'Failed to create class';
   }
 };
@@ -137,13 +241,10 @@ export const addStudentsToClass = async (classId, { file, emails } = {}) => {
 };
 
 export const editClass = async (classId, data) => {
-  console.log('editClass called', { classId, data });
   try {
     const response = await api.put(`/admin/classes/${classId}`, data);
-    console.log('editClass success', { classId, response: response.data });
     return response;
   } catch (err) {
-    console.error('editClass error', { classId, error: err.response?.data?.error || 'Failed to edit class' });
     throw err.response?.data?.error || 'Failed to edit class';
   }
 };
@@ -155,13 +256,10 @@ export const editClass = async (classId, data) => {
  * @returns {Promise} Axios response
  */
 export const changeClassStatus = async (classId, status) => {
-  console.log('changeClassStatus called', { classId, status });
   try {
     const response = await api.put(`/admin/classes/${classId}/status`, { status });
-    console.log('changeClassStatus success', { classId, status, response: response.data });
     return response;
   } catch (err) {
-    console.error('changeClassStatus error', { classId, status, error: err.response?.data?.error || 'Failed to change class status' });
     throw err.response?.data?.error || 'Failed to change class status';
   }
 };
@@ -172,13 +270,10 @@ export const changeClassStatus = async (classId, status) => {
  * @returns {Promise} Axios response
  */
 export const deleteClass = async (classId) => {
-  console.log('deleteClass called', { classId });
   try {
     const response = await api.delete(`/admin/classes/${classId}`);
-    console.log('deleteClass success', { classId, response: response.data });
     return response;
   } catch (err) {
-    console.error('deleteClass error', { classId, error: err.response?.data?.error || 'Failed to delete class' });
     throw err.response?.data?.error || 'Failed to delete class';
   }
 };
@@ -188,14 +283,11 @@ export const deleteClass = async (classId) => {
  * @returns {Promise} Axios response
  */
 export const getClasses = async (search = '') => {
-  console.log('getClasses called', { search });
   try {
     const params = search ? { search } : {};
     const response = await api.get('/admin/classes', { params });
-    console.log('getClasses success', { classes: response.data });
     return response;
   } catch (err) {
-    console.error('getClasses error', { error: err.response?.data?.error || 'Failed to fetch classes' });
     throw err.response?.data?.error || 'Failed to fetch classes';
   }
 };
@@ -205,14 +297,11 @@ export const getClasses = async (search = '') => {
  * @returns {Promise} Axios response
  */
 export const getTeachers = async (search = '') => {
-  console.log('getTeachers called', { search });
   try {
     const params = search ? { search } : {};
     const response = await api.get('/admin/teachers', { params });
-    console.log('getTeachers success', { teachers: response.data.teachers });
     return response;
   } catch (err) {
-    console.error('getTeachers error', { error: err.response?.data?.error || 'Failed to fetch teachers' });
     throw err.response?.data?.error || 'Failed to fetch teachers';
   }
 };
@@ -224,13 +313,10 @@ export const getTeachers = async (search = '') => {
  * @returns {Promise} Axios response
  */
 export const deleteTeacher = async (teacherId) => {
-  console.log('deleteTeacher called', { teacherId });
   try {
     const response = await api.delete(`/admin/teachers/${teacherId}`);
-    console.log('deleteTeacher success', { teacherId, response: response.data });
     return response;
   } catch (err) {
-    console.error('deleteTeacher error', { teacherId, error: err.response?.data?.error || 'Failed to delete teacher' });
     throw err.response?.data?.error || 'Failed to delete teacher';
   }
 };
@@ -240,14 +326,11 @@ export const deleteTeacher = async (teacherId) => {
  * @returns {Promise} Axios response
  */
 export const getStudents = async (search = '') => {
-  console.log('getStudents called', { search });
   try {
     const params = search ? { search } : {};
     const response = await api.get('/admin/students', { params });
-    console.log('getStudents success', { students: response.data.students });
     return response;
   } catch (err) {
-    console.error('getStudents error', { error: err.response?.data?.error || 'Failed to fetch students' });
     throw err.response?.data?.error || 'Failed to fetch students';
   }
 };
@@ -259,13 +342,10 @@ export const getStudents = async (search = '') => {
  * @returns {Promise} Axios response
  */
 export const editStudent = async (studentId, data) => {
-  console.log('editStudent called', { studentId, data });
   try {
     const response = await api.put(`/admin/students/${studentId}`, data);
-    console.log('editStudent success', { studentId, response: response.data });
     return response;
   } catch (err) {
-    console.error('editStudent error', { studentId, error: err.response?.data?.error || 'Failed to edit student' });
     throw err.response?.data?.error || 'Failed to edit student';
   }
 };
@@ -276,13 +356,10 @@ export const editStudent = async (studentId, data) => {
  * @returns {Promise} Axios response
  */
 export const deleteStudent = async (studentId) => {
-  console.log('deleteStudent called', { studentId });
   try {
     const response = await api.delete(`/admin/students/${studentId}`);
-    console.log('deleteStudent success', { studentId, response: response.data });
     return response;
   } catch (err) {
-    console.error('deleteStudent error', { studentId, error: err.response?.data?.error || 'Failed to delete student' });
     throw err.response?.data?.error || 'Failed to delete student';
   }
 };
@@ -293,13 +370,10 @@ export const deleteStudent = async (studentId) => {
  * @returns {Promise} Axios response
  */
 export const getClassStudents = async (classId) => {
-  console.log('getClassStudents called', { classId });
   try {
     const response = await api.get(`/admin/classes/${classId}/students`);
-    console.log('getClassStudents success', { classId, students: response.data.students });
     return response;
   } catch (err) {
-    console.error('getClassStudents error', { classId, error: err.response?.data?.error || 'Failed to fetch class students' });
     throw err.response?.data?.error || 'Failed to fetch class students';
   }
 };
@@ -310,13 +384,10 @@ export const getClassStudents = async (classId) => {
  * @returns {Promise} Axios response
  */
 export const getClassTeachers = async (classId) => {
-  console.log('getClassTeachers called', { classId });
   try {
     const response = await api.get(`/admin/classes/${classId}/teachers`);
-    console.log('getClassTeachers success', { classId, teachers: response.data.teachers });
     return response;
   } catch (err) {
-    console.error('getClassTeachers error', { classId, error: err.response?.data?.error || 'Failed to fetch class teachers' });
     throw err.response?.data?.error || 'Failed to fetch class teachers';
   }
 };
@@ -328,13 +399,10 @@ export const getClassTeachers = async (classId) => {
  * @returns {Promise} Axios response
  */
 export const manageTeacherPermission = async (teacherId, canCreateQuestion) => {
-  console.log('manageTeacherPermission called', { teacherId, canCreateQuestion });
   try {
     const response = await api.post('/admin/teacher-permission', { teacherId, canCreateQuestion });
-    console.log('manageTeacherPermission success', { teacherId, canCreateQuestion, response: response.data });
     return response;
   } catch (err) {
-    console.error('manageTeacherPermission error', { teacherId, canCreateQuestion, error: err.response?.data?.error || 'Failed to manage teacher permission' });
     throw err.response?.data?.error || 'Failed to manage teacher permission';
   }
 };
@@ -346,13 +414,10 @@ export const manageTeacherPermission = async (teacherId, canCreateQuestion) => {
  * @returns {Promise} Axios response
  */
 export const assignTeacherToClass = async (classId, teacherId) => {
-  console.log('assignTeacherToClass called', { classId, teacherId });
   try {
     const response = await api.post('/admin/classes/assign-teacher', { classId, teacherId });
-    console.log('assignTeacherToClass success', { classId, teacherId, response: response.data });
     return response;
   } catch (err) {
-    console.error('assignTeacherToClass error', { classId, teacherId, error: err.response?.data?.error || 'Failed to assign teacher' });
     throw err.response?.data?.error || 'Failed to assign teacher';
   }
 };
@@ -364,13 +429,10 @@ export const assignTeacherToClass = async (classId, teacherId) => {
  * @returns {Promise} Axios response
  */
 export const removeTeacherFromClass = async (classId, teacherId) => {
-  console.log('removeTeacherFromClass called', { classId, teacherId });
   try {
     const response = await api.post('/admin/classes/remove-teacher', { classId, teacherId });
-    console.log('removeTeacherFromClass success', { classId, teacherId, response: response.data });
     return response;
   } catch (err) {
-    console.error('removeTeacherFromClass error', { classId, teacherId, error: err.response?.data?.error || 'Failed to remove teacher' });
     throw err.response?.data?.error || 'Failed to remove teacher';
   }
 };
@@ -382,13 +444,10 @@ export const removeTeacherFromClass = async (classId, teacherId) => {
  * @returns {Promise} Axios response
  */
 export const removeStudentFromClass = async (classId, studentId) => {
-  console.log('removeStudentFromClass called', { classId, studentId });
   try {
     const response = await api.post('/admin/classes/remove-student', { classId, studentId });
-    console.log('removeStudentFromClass success', { classId, studentId, response: response.data });
     return response;
   } catch (err) {
-    console.error('removeStudentFromClass error', { classId, studentId, error: err.response?.data?.error || 'Failed to remove student' });
     throw err.response?.data?.error || 'Failed to remove student';
   }
 };
@@ -399,13 +458,10 @@ export const removeStudentFromClass = async (classId, studentId) => {
  * @returns {Promise} Axios response
  */
 export const getClassDetails = async (classId) => {
-  console.log('getClassDetails called', { classId });
   try {
     const response = await api.get(`/admin/getClass/${classId}`);
-    console.log('getClassDetails success', { classId, classData: response.data.class });
     return response;
   } catch (err) {
-    console.error('getClassDetails error', { classId, error: err.response?.data?.error || 'Failed to fetch class details' });
     throw err.response?.data?.error || 'Failed to fetch class details';
   }
 };
@@ -416,13 +472,10 @@ export const getClassDetails = async (classId) => {
  * @returns {Promise} Axios response
  */
 export const getParticipantStats = async (classId) => {
-  console.log('getParticipantStats called', { classId });
   try {
     const response = await api.get(`/admin/classes/${classId}/participant-stats`);
-    console.log('getParticipantStats success', { classId, stats: response.data });
     return response;
   } catch (err) {
-    console.error('getParticipantStats error', { classId, error: err.response?.data?.error || 'Failed to fetch participant stats' });
     throw err.response?.data?.error || 'Failed to fetch participant stats';
   }
 };
@@ -437,19 +490,15 @@ export const getQuestionSummary = async (classId) => {
     const response = await api.get(`/admin/classes/${classId}/question-summary`);
     return response;
   } catch (err) {
-    console.error('getQuestionSummary error', { classId, error: err.response?.data?.error });
     throw err.response?.data?.error || 'Failed to fetch question summary';
   }
 };
 
 export const getRunSubmitStats = async (classId) => {
-  console.log('getRunSubmitStats called', { classId });
   try {
     const response = await api.get(`/admin/classes/${classId}/run-submit-stats`);
-    console.log('getRunSubmitStats success', { classId, stats: response.data });
     return response;
   } catch (err) {
-    console.error('getRunSubmitStats error', { classId, error: err.response?.data?.error || 'Failed to fetch run/submit stats' });
     throw err.response?.data?.error || 'Failed to fetch run/submit stats';
   }
 };
@@ -461,13 +510,10 @@ export const getRunSubmitStats = async (classId) => {
  * @returns {Promise} Axios response
  */
 export const createAssignment = async (classId, assignmentData) => {
-  console.log('createAssignment called', { classId, assignmentData });
   try {
     const response = await api.post(`/admin/classes/${classId}/assignments`, assignmentData);
-    console.log('createAssignment success', { classId, assignmentData, response: response.data });
     return response;
   } catch (err) {
-    console.error('createAssignment error', { classId, assignmentData, error: err.response?.data?.error || 'Failed to create assignment' });
     throw err.response?.data?.error || 'Failed to create assignment';
   }
 };
@@ -478,13 +524,10 @@ export const createAssignment = async (classId, assignmentData) => {
  * @returns {Promise} Axios response
  */
 export const getAssignments = async (classId) => {
-  console.log('getAssignments called', { classId });
   try {
     const response = await api.get(`/admin/classes/${classId}/assignments`);
-    console.log('getAssignments success', { classId, assignments: response.data.assignments });
     return response;
   } catch (err) {
-    console.error('getAssignments error', { classId, error: err.response?.data?.error || 'Failed to fetch assignments' });
     throw err.response?.data?.error || 'Failed to fetch assignments';
   }
 };
@@ -496,13 +539,10 @@ export const getAssignments = async (classId) => {
  * @returns {Promise} Axios response
  */
 export const deleteAssignment = async (classId, assignmentId) => {
-  console.log('deleteAssignment called', { classId, assignmentId });
   try {
     const response = await api.delete(`/admin/classes/${classId}/assignments/${assignmentId}`);
-    console.log('deleteAssignment success', { classId, assignmentId, response: response.data });
     return response;
   } catch (err) {
-    console.error('deleteAssignment error', { classId, assignmentId, error: err.response?.data?.error || 'Failed to delete assignment' });
     throw err.response?.data?.error || 'Failed to delete assignment';
   }
 };
@@ -515,13 +555,10 @@ export const deleteAssignment = async (classId, assignmentId) => {
  * @returns {Promise} Axios response
  */
 export const blockUser = async (classId, studentId, isBlocked) => {
-  console.log('blockUser called', { classId, studentId, isBlocked });
   try {
     const response = await api.put(`/admin/classes/${classId}/block-user`, { studentId, isBlocked });
-    console.log('blockUser success', { classId, studentId, isBlocked, response: response.data });
     return response;
   } catch (err) {
-    console.error('blockUser error', { classId, studentId, isBlocked, error: err.response?.data?.error || 'Failed to update user block status' });
     throw err.response?.data?.error || 'Failed to update user block status';
   }
 };
@@ -534,13 +571,10 @@ export const blockUser = async (classId, studentId, isBlocked) => {
  * @returns {Promise} Axios response
  */
 export const focusStudent = async (classId, studentId, needsFocus) => {
-  console.log('focusStudent called', { classId, studentId, needsFocus });
   try {
     const response = await api.patch(`/admin/classes/${classId}/focus-student`, { studentId, needsFocus });
-    console.log('focusStudent success', { classId, studentId, needsFocus, response: response.data });
     return response;
   } catch (err) {
-    console.error('focusStudent error', { classId, studentId, needsFocus, error: err.response?.data?.error || 'Failed to update student focus status' });
     throw err.response?.data?.error || 'Failed to update student focus status';
   }
 };
@@ -553,13 +587,10 @@ export const focusStudent = async (classId, studentId, needsFocus) => {
  * @returns {Promise} Axios response
  */
 export const blockAllUsers = async (classId, isBlocked, options = {}) => {
-  console.log('blockAllUsers called', { classId, isBlocked, options });
   try {
     const response = await api.put(`/admin/classes/${classId}/block-all`, { isBlocked, ...options });
-    console.log('blockAllUsers success', { classId, isBlocked, response: response.data });
     return response;
   } catch (err) {
-    console.error('blockAllUsers error', { classId, isBlocked, error: err.response?.data?.error || 'Failed to update block status for all users' });
     throw err.response?.data?.error || 'Failed to update block status for all users';
   }
 };
@@ -571,13 +602,10 @@ export const blockAllUsers = async (classId, isBlocked, options = {}) => {
  * @returns {Promise} Axios response
  */
 export const searchLeaderboard = async (classId, filters = {}) => {
-  console.log('searchLeaderboard called', { classId, filters });
   try {
     const response = await api.get(`/admin/classes/${classId}/leaderboard/search`, { params: filters });
-    console.log('searchLeaderboard success', { classId, filters, leaderboard: response.data });
     return response;
   } catch (err) {
-    console.error('searchLeaderboard error', { classId, filters, error: err.response?.data?.error || 'Failed to search leaderboard' });
     throw err.response?.data?.error || 'Failed to search leaderboard';
   }
 };
@@ -587,13 +615,10 @@ export const searchLeaderboard = async (classId, filters = {}) => {
  * @returns {Promise} Axios response
  */
 export const getCounts = async () => {
-  console.log('getCounts called');
   try {
     const response = await api.get('/admin/counts');
-    console.log('getCounts success', { counts: response.data });
     return response;
   } catch (err) {
-    console.error('getCounts error', { error: err.response?.data?.error || 'Failed to fetch counts' });
     throw err.response?.data?.error || 'Failed to fetch counts';
   }
 };
@@ -646,13 +671,10 @@ export const getStudentDashboard = async () => {
  * @returns {Promise} Axios response
  */
 export const getAllQuestionsPaginated = async (params = {}) => {
-  console.log('getAllQuestionsPaginated called', { params });
   try {
     const response = await api.get('/admin/questions/paginated', { params });
-    console.log('getAllQuestionsPaginated success', { questions: response.data.questions });
     return response;
   } catch (err) {
-    console.error('getAllQuestionsPaginated error', { params, error: err.response?.data?.error || 'Failed to fetch questions' });
     throw err.response?.data?.error || 'Failed to fetch questions';
   }
 };
@@ -663,14 +685,11 @@ export const getAllQuestionsPaginated = async (params = {}) => {
  * @returns {Promise} Axios response
  */
 export const adminCreateQuestion = async (questionData) => {
-  console.log('adminCreateQuestion called', { questionData });
   try {
     // Ensure questionData includes new fields where applicable (e.g., correctOptions, starterCode, maxAttempts, explanation)
     const response = await api.post('/admin/questions', questionData);
-    console.log('adminCreateQuestion success', { question: response.data.question });
     return response;
   } catch (err) {
-    console.error('adminCreateQuestion error', { questionData, error: err.response?.data?.error || 'Failed to create question' });
     throw err.response?.data?.error || 'Failed to create question';
   }
 };
@@ -682,14 +701,11 @@ export const adminCreateQuestion = async (questionData) => {
  * @returns {Promise} Axios response
  */
 export const adminEditQuestion = async (questionId, questionData) => {
-  console.log('adminEditQuestion called', { questionId, questionData });
   try {
     // Ensure questionData supports new fields (correctOptions, starterCode, maxAttempts, explanation)
     const response = await api.put(`/admin/questions/${questionId}`, questionData);
-    console.log('adminEditQuestion success', { questionId, response: response.data });
     return response;
   } catch (err) {
-    console.error('adminEditQuestion error', { questionId, error: err.response?.data?.error || 'Failed to edit question' });
     throw err.response?.data?.error || 'Failed to edit question';
   }
 };
@@ -700,13 +716,10 @@ export const adminEditQuestion = async (questionId, questionData) => {
  * @returns {Promise} Axios response
  */
 export const adminDeleteQuestion = async (questionId) => {
-  console.log('adminDeleteQuestion called', { questionId });
   try {
     const response = await api.delete(`/admin/questions/${questionId}`);
-    console.log('adminDeleteQuestion success', { questionId, response: response.data });
     return response;
   } catch (err) {
-    console.error('adminDeleteQuestion error', { questionId, error: err.response?.data?.error || 'Failed to delete question' });
     throw err.response?.data?.error || 'Failed to delete question';
   }
 };
@@ -717,12 +730,9 @@ export const adminDeleteQuestion = async (questionId) => {
  * @returns {Promise} Axios response
  */
 export const adminSearchQuestionsById = async (questionId) => {
-  console.log('adminSearchQuestionsById called', { questionId, type: typeof questionId });
-  
   // Validate questionId
   if (!questionId || questionId === 'undefined' || questionId === 'null' || (typeof questionId === 'string' && questionId.trim() === '')) {
     const errorMsg = 'Question ID is required';
-    console.error('adminSearchQuestionsById validation failed:', { questionId, error: errorMsg });
     throw new Error(errorMsg);
   }
   
@@ -730,26 +740,16 @@ export const adminSearchQuestionsById = async (questionId) => {
   const objectIdPattern = /^[0-9a-fA-F]{24}$/;
   if (typeof questionId === 'string' && !objectIdPattern.test(questionId)) {
     const errorMsg = `Invalid question ID format: ${questionId}`;
-    console.error('adminSearchQuestionsById validation failed:', { questionId, error: errorMsg });
     throw new Error(errorMsg);
   }
   
   try {
     const response = await api.get('/admin/questions/search-by-id', { params: { questionId } });
-    console.log('adminSearchQuestionsById success', { questionId, question: response.data?.question });
     if (!response.data?.question) {
       throw new Error('Question not found');
     }
     return response;
   } catch (err) {
-    console.error('adminSearchQuestionsById error', { 
-      questionId, 
-      error: err,
-      errorMessage: err.message,
-      responseError: err.response?.data?.error,
-      responseStatus: err.response?.status,
-      responseData: err.response?.data
-    });
     // Handle different error formats
     if (typeof err === 'string') {
       throw new Error(err);
@@ -770,17 +770,14 @@ export const adminSearchQuestionsById = async (questionId) => {
  * @returns {Promise} Axios response
  */
 export const createDraftQuestion = async (questionData) => {
-  console.log('createDraftQuestion called', { questionData });
   try {
     const response = await api.post('/admin/questions/draft', {
       ...questionData,
       status: 'draft',
       isDraft: true
     });
-    console.log('createDraftQuestion success', { question: response.data.question });
     return response;
   } catch (err) {
-    console.error('createDraftQuestion error', { error: err.response?.data?.error || 'Failed to create draft' });
     throw err.response?.data?.error || 'Failed to create draft';
   }
 };
@@ -791,13 +788,10 @@ export const createDraftQuestion = async (questionData) => {
  * @returns {Promise} Axios response
  */
 export const getDrafts = async (params = {}) => {
-  console.log('getDrafts called', { params });
   try {
     const response = await api.get('/admin/questions/drafts', { params });
-    console.log('getDrafts success', { drafts: response.data.drafts });
     return response;
   } catch (err) {
-    console.error('getDrafts error', { error: err.response?.data?.error || 'Failed to fetch drafts' });
     throw err.response?.data?.error || 'Failed to fetch drafts';
   }
 };
@@ -807,13 +801,10 @@ export const getDrafts = async (params = {}) => {
  * @returns {Promise} Axios response
  */
 export const getDraftCount = async () => {
-  console.log('getDraftCount called');
   try {
     const response = await api.get('/admin/questions/drafts/count');
-    console.log('getDraftCount success', { count: response.data.count });
     return response;
   } catch (err) {
-    console.error('getDraftCount error', { error: err.response?.data?.error || 'Failed to fetch draft count' });
     throw err.response?.data?.error || 'Failed to fetch draft count';
   }
 };
@@ -824,13 +815,10 @@ export const getDraftCount = async () => {
  * @returns {Promise} Axios response
  */
 export const getDraftQuestion = async (questionId) => {
-  console.log('getDraftQuestion called', { questionId });
   try {
     const response = await api.get(`/admin/questions/drafts/${questionId}`);
-    console.log('getDraftQuestion success', { question: response.data.question });
     return response;
   } catch (err) {
-    console.error('getDraftQuestion error', { error: err.response?.data?.error || 'Failed to fetch draft' });
     throw err.response?.data?.error || 'Failed to fetch draft';
   }
 };
@@ -842,13 +830,10 @@ export const getDraftQuestion = async (questionId) => {
  * @returns {Promise} Axios response
  */
 export const updateDraftQuestion = async (questionId, questionData) => {
-  console.log('updateDraftQuestion called', { questionId, questionData });
   try {
     const response = await api.put(`/admin/questions/drafts/${questionId}`, questionData);
-    console.log('updateDraftQuestion success', { question: response.data.question });
     return response;
   } catch (err) {
-    console.error('updateDraftQuestion error', { error: err.response?.data?.error || 'Failed to update draft' });
     throw err.response?.data?.error || 'Failed to update draft';
   }
 };
@@ -860,13 +845,10 @@ export const updateDraftQuestion = async (questionId, questionData) => {
  * @returns {Promise} Axios response
  */
 export const publishDraftQuestion = async (questionId, questionData = {}) => {
-  console.log('publishDraftQuestion called', { questionId, questionData });
   try {
     const response = await api.put(`/admin/questions/drafts/${questionId}/publish`, questionData);
-    console.log('publishDraftQuestion success', { question: response.data.question });
     return response;
   } catch (err) {
-    console.error('publishDraftQuestion error', { error: err.response?.data?.error || 'Failed to publish draft' });
     throw err.response?.data?.error || 'Failed to publish draft';
   }
 };
@@ -877,13 +859,10 @@ export const publishDraftQuestion = async (questionId, questionData = {}) => {
  * @returns {Promise} Axios response
  */
 export const deleteDraftQuestion = async (questionId) => {
-  console.log('deleteDraftQuestion called', { questionId });
   try {
     const response = await api.delete(`/admin/questions/drafts/${questionId}`);
-    console.log('deleteDraftQuestion success', { message: response.data.message });
     return response;
   } catch (err) {
-    console.error('deleteDraftQuestion error', { error: err.response?.data?.error || 'Failed to delete draft' });
     throw err.response?.data?.error || 'Failed to delete draft';
   }
 };
@@ -896,16 +875,12 @@ export const deleteDraftQuestion = async (questionId) => {
  * @returns {Promise} Axios response
  */
 export const assignQuestion = async (questionData, classIds = []) => {
-  console.log('assignQuestion called', { questionData, classIds });
   try {
     // Ensure questionData includes new fields where applicable (e.g., correctOptions for multipleCorrectMcq, starterCode for fillInTheBlanksCoding, maxAttempts, explanation)
     const payload = { ...questionData, classIds };
-    console.log('Payload being sent to API:', payload);
     const response = await api.post('/questions/assign', payload);
-    console.log('assignQuestion success', { response: response.data });
     return response;
   } catch (err) {
-    console.error('assignQuestion error', { error: err.response?.data?.error || 'Failed to assign question' });
     throw err.response?.data?.error || 'Failed to assign question';
   }
 };
@@ -917,15 +892,11 @@ export const assignQuestion = async (questionData, classIds = []) => {
  * @returns {Promise} Axios response
  */
 export const assignQuestionToClass = async (questionId, classId) => {
-  console.log('assignQuestionToClass called', { questionId, classId });
   try {
     const requestBody = { classId };
-    console.log('assignQuestionToClass request body:', requestBody);
     const response = await api.post(`/questions/${questionId}/assign`, requestBody);
-    console.log('assignQuestionToClass success', { response: response.data });
     return response;
   } catch (err) {
-    console.error('assignQuestionToClass error', { error: err.response?.data?.error || 'Failed to assign question to class' });
     throw err.response?.data?.error || 'Failed to assign question to class';
   }
 };
@@ -937,14 +908,11 @@ export const assignQuestionToClass = async (questionId, classId) => {
  * @returns {Promise} Axios response
  */
 export const editQuestion = async (questionId, questionData) => {
-  console.log('editQuestion called', { questionId, questionData });
   try {
     // Ensure questionData supports new fields (correctOptions, starterCode, maxAttempts, explanation)
     const response = await api.put(`/questions/${questionId}`, questionData);
-    console.log('editQuestion success', { response: response.data });
     return response;
   } catch (err) {
-    console.error('editQuestion error', { error: err.response?.data?.error || 'Failed to edit question' });
     throw err.response?.data?.error || 'Failed to edit question';
   }
 };
@@ -960,13 +928,10 @@ export const updateQuestionLimits = async (questionId, timeLimit, memoryLimit) =
  * @returns {Promise} Axios response
  */
 export const deleteQuestion = async (questionId) => {
-  console.log('deleteQuestion called', { questionId });
   try {
     const response = await api.delete(`/questions/${questionId}`);
-    console.log('deleteQuestion success', { response: response.data });
     return response;
   } catch (err) {
-    console.error('deleteQuestion error', { error: err.response?.data?.error || 'Failed to delete question' });
     throw err.response?.data?.error || 'Failed to delete question';
   }
 };
@@ -978,13 +943,10 @@ export const deleteQuestion = async (questionId) => {
  * @returns {Promise} Axios response
  */
 export const publishQuestion = async (questionId, classId) => {
-  console.log('publishQuestion called', { questionId, classId });
   try {
     const response = await api.put(`/questions/${questionId}/publish`, { classId });
-    console.log('publishQuestion success', { response: response.data });
     return response;
   } catch (err) {
-    console.error('publishQuestion error', { error: err.response?.data?.error || 'Failed to publish question' });
     throw err.response?.data?.error || 'Failed to publish question';
   }
 };
@@ -996,13 +958,10 @@ export const publishQuestion = async (questionId, classId) => {
  * @returns {Promise} Axios response
  */
 export const unpublishQuestion = async (questionId, classId) => {
-  console.log('unpublishQuestion called', { questionId, classId });
   try {
     const response = await api.put(`/questions/${questionId}/unpublish`, { classId });
-    console.log('unpublishQuestion success', { response: response.data });
     return response;
   } catch (err) {
-    console.error('unpublishQuestion error', { error: err.response?.data?.error || 'Failed to unpublish question' });
     throw err.response?.data?.error || 'Failed to unpublish question';
   }
 };
@@ -1014,13 +973,10 @@ export const unpublishQuestion = async (questionId, classId) => {
  * @returns {Promise} Axios response
  */
 export const disableQuestion = async (questionId, classId) => {
-  console.log('disableQuestion called', { questionId, classId });
   try {
     const response = await api.put(`/questions/${questionId}/disable`, { classId });
-    console.log('disableQuestion success', { response: response.data });
     return response;
   } catch (err) {
-    console.error('disableQuestion error', { error: err.response?.data?.error || 'Failed to disable question' });
     throw err.response?.data?.error || 'Failed to disable question';
   }
 };
@@ -1032,13 +988,10 @@ export const disableQuestion = async (questionId, classId) => {
  * @returns {Promise} Axios response
  */
 export const enableQuestion = async (questionId, classId) => {
-  console.log('enableQuestion called', { questionId, classId });
   try {
     const response = await api.put(`/questions/${questionId}/enable`, { classId });
-    console.log('enableQuestion success', { response: response.data });
     return response;
   } catch (err) {
-    console.error('enableQuestion error', { error: err.response?.data?.error || 'Failed to enable question' });
     throw err.response?.data?.error || 'Failed to enable question';
   }
 };
@@ -1049,13 +1002,10 @@ export const enableQuestion = async (questionId, classId) => {
  * @returns {Promise} Axios response (includes correctOptions, codeSnippet, starterCode)
  */
 export const viewSolution = async (questionId) => {
-  console.log('viewSolution called', { questionId });
   try {
     const response = await api.get(`/questions/${questionId}/solution`);
-    console.log('viewSolution success', { response: response.data });
     return response;
   } catch (err) {
-    console.error('viewSolution error', { error: err.response?.data?.error || 'Failed to fetch solution' });
     throw err.response?.data?.error || 'Failed to fetch solution';
   }
 };
@@ -1066,13 +1016,10 @@ export const viewSolution = async (questionId) => {
  * @returns {Promise} Axios response
  */
 export const viewTestCases = async (questionId) => {
-  console.log('viewTestCases called', { questionId });
   try {
     const response = await api.get(`/questions/${questionId}/test-cases`);
-    console.log('viewTestCases success', { response: response.data });
     return response;
   } catch (err) {
-    console.error('viewTestCases error', { error: err.response?.data?.error || 'Failed to fetch test cases' });
     throw err.response?.data?.error || 'Failed to fetch test cases';
   }
 };
@@ -1083,13 +1030,10 @@ export const viewTestCases = async (questionId) => {
  * @returns {Promise} Axios response (includes codeSnippet, starterCode, excludes functionSignature)
  */
 export const viewStatement = async (questionId) => {
-  console.log('viewStatement called', { questionId });
   try {
     const response = await api.get(`/questions/${questionId}/statement`);
-    console.log('viewStatement success', { response: response.data });
     return response;
   } catch (err) {
-    console.error('viewStatement error', { error: err.response?.data?.error || 'Failed to fetch question statement' });
     throw err.response?.data?.error || 'Failed to fetch question statement';
   }
 };
@@ -1100,13 +1044,10 @@ export const viewStatement = async (questionId) => {
  * @returns {Promise} Axios response
  */
 export const getQuestionsByClass = async (classId) => {
-  console.log('getQuestionsByClass called', { classId });
   try {
     const response = await api.get(`/questions/classes/${classId}/questions`);
-    console.log('getQuestionsByClass success', { response: response.data });
     return response;
   } catch (err) {
-    console.error('getQuestionsByClass error', { error: err.response?.data?.error || 'Failed to fetch questions' });
     throw err.response?.data?.error || 'Failed to fetch questions';
   }
 };
@@ -1118,14 +1059,11 @@ export const getQuestionsByClass = async (classId) => {
  * @returns {Promise} Axios response
  */
 export const getQuestion = async (questionId, classId = null) => {
-  console.log('getQuestion called', { questionId, classId });
   try {
     const params = classId ? { classId } : {};
     const response = await api.get(`/questions/${questionId}`, { params });
-    console.log('getQuestion success', { response: response.data });
     return response;
   } catch (err) {
-    console.error('getQuestion error', { error: err.response?.data?.error || 'Failed to fetch question' });
     throw err.response?.data?.error || 'Failed to fetch question';
   }
 };
@@ -1136,13 +1074,10 @@ export const getQuestion = async (questionId, classId = null) => {
  * @returns {Promise} Axios response
  */
 export const getAllQuestions = async (params = {}) => {
-  console.log('getAllQuestions called', { params });
   try {
     const response = await api.get('/questions', { params });
-    console.log('getAllQuestions success', { response: response.data });
     return response;
   } catch (err) {
-    console.error('getAllQuestions error', { error: err.response?.data?.error || 'Failed to fetch all questions' });
     throw err.response?.data?.error || 'Failed to fetch all questions';
   }
 };
@@ -1153,13 +1088,10 @@ export const getAllQuestions = async (params = {}) => {
  * @returns {Promise} Axios response
  */
 export const searchQuestions = async (filters = {}) => {
-  console.log('searchQuestions called', { filters });
   try {
     const response = await api.get('/questions/search', { params: filters });
-    console.log('searchQuestions success', { response: response.data });
     return response;
   } catch (err) {
-    console.error('searchQuestions error', { error: err.response?.data?.error || 'Failed to search questions' });
     throw err.response?.data?.error || 'Failed to search questions';
   }
 };
@@ -1170,13 +1102,10 @@ export const searchQuestions = async (filters = {}) => {
  * @returns {Promise} Axios response
  */
 export const viewSubmissionCode = async (submissionId) => {
-  console.log('viewSubmissionCode called', { submissionId });
   try {
     const response = await api.get(`/questions/submissions/${submissionId}/code`);
-    console.log('viewSubmissionCode success', { response: response.data });
     return response;
   } catch (err) {
-    console.error('viewSubmissionCode error', { error: err.response?.data?.error || 'Failed to fetch submission code' });
     throw err.response?.data?.error || 'Failed to fetch submission code';
   }
 };
@@ -1212,13 +1141,10 @@ export const getClassSheetReport = async (classId, { scope = 'class', questionId
 };
 
 export const getQuestionPerspectiveReport = async (classId, questionId) => {
-  console.log('getQuestionPerspectiveReport called', { classId, questionId });
   try {
     const response = await api.get(`/questions/classes/${classId}/questions/${questionId}/report`);
-    console.log('getQuestionPerspectiveReport success', { response: response.data });
     return response;
   } catch (err) {
-    console.error('getQuestionPerspectiveReport error', { error: err.response?.data?.error || 'Failed to fetch question perspective report' });
     throw err.response?.data?.error || 'Failed to fetch question perspective report';
   }
 };
@@ -1234,18 +1160,16 @@ export const getQuestionPerspectiveReport = async (classId, questionId) => {
  * @returns {Promise} Axios response (includes explanation)
  */
 export const submitAnswer = async (questionId, answer, classId, language, isRun = false, examContext = null) => {
-  console.log('submitAnswer called', { questionId, classId, language, isRun, examContext });
   try {
     const payload = { answer, classId, language, isRun };
     if (examContext) {
       payload.examAttemptId = examContext.examAttemptId;
       payload.examId = examContext.examId;
     }
-    const response = await api.post(`/questions/${questionId}/submit`, payload);
-    console.log('submitAnswer success', { response: response.data });
+    const response = await api.post(`/questions/${questionId}/submit`, payload, JUDGE_OPTS);
     return response;
   } catch (err) {
-    console.error('submitAnswer error', { error: err.response?.data?.error || 'Failed to submit answer' });
+    if (typeof err === 'string') throw err;
     // Handle maxAttempts error specifically for UI feedback
     if (err.response?.data?.error === 'Maximum submission attempts reached') {
       throw new Error('You have reached the maximum number of submission attempts for this question.');
@@ -1263,18 +1187,16 @@ export const submitAnswer = async (questionId, answer, classId, language, isRun 
  * @returns {Promise} Axios response (includes explanation)
  */
 export const runCode = async (questionId, answer, classId, language, examContext = null) => {
-  console.log('runCode called', { questionId, classId, language, examContext });
   try {
     const payload = { answer, classId, language };
     if (examContext) {
       payload.examAttemptId = examContext.examAttemptId;
       payload.examId = examContext.examId;
     }
-    const response = await api.post(`/questions/${questionId}/run`, payload);
-    console.log('runCode success', { response: response.data });
+    const response = await api.post(`/questions/${questionId}/run`, payload, JUDGE_OPTS);
     return response;
   } catch (err) {
-    console.error('runCode error', { error: err.response?.data?.error || 'Failed to run code' });
+    if (typeof err === 'string') throw err;
     throw err.response?.data?.error || 'Failed to run code';
   }
 };
@@ -1285,19 +1207,15 @@ export const runCode = async (questionId, answer, classId, language, examContext
  * @returns {Promise} Axios response
  */
 export const getLeaderboard = async (classId) => {
-  console.log('getLeaderboard called', { classId });
   try {
     // Updated endpoint to match questionController.js
     const response = await api.get(`/questions/classes/${classId}/leaderboard`);
-    console.log('getLeaderboard success', { response: response.data });
     return response;
   } catch (err) {
-    console.error('getLeaderboard error', { error: err.response?.data?.error || 'Failed to fetch leaderboard' });
     throw err.response?.data?.error || 'Failed to fetch leaderboard';
   }
 };
 export const runCodeWithCustomInput = async (questionId, answer, classId, language, customInput, expectedOutput, examContext = null) => {
-  console.log('api: runCodeWithCustomInput called', { questionId, classId, language, customInput, expectedOutput, examContext });
   try {
     const payload = {
       answer,
@@ -1310,11 +1228,10 @@ export const runCodeWithCustomInput = async (questionId, answer, classId, langua
       payload.examAttemptId = examContext.examAttemptId;
       payload.examId = examContext.examId;
     }
-    const response = await api.post(`/questions/${questionId}/run-custom`, payload);
-    console.log('api: runCodeWithCustomInput success', { response: response.data });
+    const response = await api.post(`/questions/${questionId}/run-custom`, payload, JUDGE_OPTS);
     return response;
   } catch (err) {
-    console.error('api: runCodeWithCustomInput error', { error: err.response?.data?.error || 'Failed to run code with custom input' });
+    if (typeof err === 'string') throw err;
     throw err.response?.data?.error || 'Failed to run code with custom input';
   }
 };
@@ -1329,23 +1246,7 @@ export const runCodeWithCustomInput = async (questionId, answer, classId, langua
  * @returns {Promise} Axios response with all test results
  */
 export const teacherTestQuestion = async (questionId, answer, classId, language, options = {}) => {
-  console.log('========================================');
-  console.log('[API] teacherTestQuestion called');
-  console.log('[API] Parameters:', { 
-    questionId, 
-    classId: classId || 'null (draft)', 
-    language,
-    answerLength: answer?.length || 0
-  });
-  
   try {
-    console.log('[API] Making POST request to:', `/questions/${questionId}/teacher-test`);
-    console.log('[API] Request payload:', {
-      answer: answer ? `${answer.substring(0, 100)}... (length: ${answer.length})` : 'MISSING',
-      classId: classId || null,
-      language
-    });
-    
     const response = await api.post(`/questions/${questionId}/teacher-test`, {
       answer,
       classId,
@@ -1355,37 +1256,16 @@ export const teacherTestQuestion = async (questionId, answer, classId, language,
       ...(options.timeLimit != null ? { timeLimit: Number(options.timeLimit) } : {}),
       ...(options.memoryLimit != null ? { memoryLimit: Number(options.memoryLimit) } : {}),
     }, {
-      timeout: Number(options.runs) > 1 ? 300000 : 60000,
+      // Benchmark mode (runs > 1) executes the solution many times; give it longer.
+      timeout: Number(options.runs) > 1 ? 300000 : JUDGE_TIMEOUT,
     });
-    
-    console.log('[API] ====== SUCCESS ======');
-    console.log('[API] Response status:', response.status);
-    console.log('[API] Response data:', {
-      message: response.data.message,
-      testResultsCount: response.data.testResults?.length || 0,
-      passedTestCases: response.data.passedTestCases,
-      totalTestCases: response.data.totalTestCases,
-      publicTestCases: response.data.publicTestCases,
-      hiddenTestCases: response.data.hiddenTestCases,
-      isCorrect: response.data.isCorrect
-    });
-    console.log('[API] Full response data:', JSON.stringify(response.data, null, 2));
-    console.log('========================================');
-    
     return response;
   } catch (err) {
-    console.error('[API] ====== ERROR ======');
-    console.error('[API] Error type:', err.constructor.name);
-    console.error('[API] Error message:', err.message);
-    console.error('[API] Error response status:', err.response?.status);
-    console.error('[API] Error response data:', err.response?.data);
-    console.error('[API] Error response headers:', err.response?.headers);
-    console.error('[API] Full error:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
-    console.error('========================================');
-    
+    if (typeof err === 'string') throw new Error(err);
     const errorMessage = err.response?.data?.error
+      || (err.code === 'ECONNABORTED' ? JUDGE_TIMEOUT_MESSAGE : null)
       || ((err.code === 'ERR_NETWORK' || err.message === 'Network Error')
-        ? 'The test request was cut off before it finished. This usually looks like a CORS error when the API proxy times out. After deploying the faster teacher-test, try again.'
+        ? 'Could not reach the server. Check your connection and try again.'
         : (err.message || 'Failed to test question'));
     throw new Error(errorMessage);
   }
@@ -1402,7 +1282,6 @@ export const teacherTestQuestion = async (questionId, answer, classId, language,
  * @returns {Promise} Axios response with custom test result
  */
 export const teacherTestWithCustomInput = async (questionId, answer, classId, language, customInput, expectedOutput) => {
-  console.log('teacherTestWithCustomInput called', { questionId, classId, language, customInput, expectedOutput });
   try {
     const response = await api.post(`/questions/${questionId}/teacher-test-custom`, {
       answer,
@@ -1410,29 +1289,35 @@ export const teacherTestWithCustomInput = async (questionId, answer, classId, la
       language,
       customInput,
       expectedOutput
-    });
-    console.log('teacherTestWithCustomInput success', { 
-      testResult: response.data.testResult,
-      actualOutput: response.data.actualOutput,
-      passed: response.data.passed
-    });
+    }, JUDGE_OPTS);
     return response;
   } catch (err) {
-    console.error('teacherTestWithCustomInput error', { error: err.response?.data?.error || 'Failed to test with custom input' });
+    if (typeof err === 'string') throw err;
     throw err.response?.data?.error || 'Failed to test with custom input';
   }
 };
 
 // ==================== EXAMS ====================
 
-/** Runs an exam request and rethrows the server's error message as a string. */
+/**
+ * Runs an exam request and rethrows the server's error message as a string.
+ * A 403 with code SEB_REQUIRED (exam must run in Safe Exam Browser) is also announced as a window event
+ * so the exam screen can show a blocking message instead of a generic error.
+ */
 const examCall = async (request, fallback) => {
   try {
     return await request();
   } catch (err) {
-    throw err.response?.data?.error || fallback;
+    const data = err.response?.data;
+    if (data?.code === 'SEB_REQUIRED' && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(SEB_REQUIRED_EVENT, { detail: { message: data.error } }));
+    }
+    throw data?.error || fallback;
   }
 };
+
+/** Request options for student exam calls: forwards SEB's Config Key proof when running inside SEB. */
+const sebOpts = (extra = {}) => ({ ...extra, headers: { ...(extra.headers || {}), ...sebRequestHeaders() } });
 
 // Staff
 export const createExamTemplate = (data) => examCall(() => api.post('/exams/templates', data), 'Failed to create template');
@@ -1460,23 +1345,39 @@ export const extendExamAttempt = (examId, attemptId, minutes) =>
 export const resetExamAttempt = (examId, attemptId) =>
   examCall(() => api.delete(`/exams/${examId}/attempts/${attemptId}`), 'Failed to reset attempt');
 
+// Safe Exam Browser (staff)
+/** New entry + exit passwords for an exam that requires SEB. Returns { seb } (staff view). */
+export const regenerateSebPasswords = (examId) =>
+  examCall(() => api.post(`/exams/${examId}/seb/regenerate`), 'Failed to generate new passwords');
+/** The exam's .seb file as a Blob (same file SEB downloads through the launch link). */
+export const downloadSebConfig = (examId) =>
+  examCall(() => api.get(`/exams/${examId}/seb-config`, { responseType: 'blob' }), 'Failed to download the .seb file');
+/** How this browser looks to the server's SEB check: { inSeb, uaMatched, configKeyHashPresent, configKeyHashValid, expectedMode, ... }. */
+export const getSebCheck = (examId) => examCall(() => api.get(`/exams/${examId}/seb-check`, sebOpts()), 'Failed to check Safe Exam Browser');
+
 // Student
-export const getStudentExamSummary = (examId) => examCall(() => api.get(`/exams/${examId}/summary`), 'Failed to load exam');
-export const startExam = (examId) => examCall(() => api.post(`/exams/${examId}/start`), 'Failed to start exam');
-export const getExamAttempt = (examId) => examCall(() => api.get(`/exams/${examId}/attempt`), 'Failed to fetch attempt');
+export const getStudentExamSummary = (examId) => examCall(() => api.get(`/exams/${examId}/summary`, sebOpts()), 'Failed to load exam');
+/** `entryPassword` is required when the exam runs in Safe Exam Browser and the attempt has not started yet. */
+export const startExam = (examId, entryPassword) =>
+  examCall(() => api.post(`/exams/${examId}/start`, entryPassword ? { entryPassword } : {}, sebOpts()), 'Failed to start exam');
+export const getExamAttempt = (examId) => examCall(() => api.get(`/exams/${examId}/attempt`, sebOpts()), 'Failed to fetch attempt');
 export const submitExamAnswer = (examId, data) =>
-  examCall(() => api.post(`/exams/${examId}/submit-answer`, data), 'Failed to save answer');
-export const runExamCode = (examId, data) => examCall(() => api.post(`/exams/${examId}/run`, data), 'Failed to run code');
+  examCall(() => api.post(`/exams/${examId}/submit-answer`, data, sebOpts()), 'Failed to save answer');
+export const runExamCode = (examId, data) => examCall(() => api.post(`/exams/${examId}/run`, data, sebOpts()), 'Failed to run code');
 export const logProctoringEvent = (examId, attemptId, type, details = {}) =>
-  examCall(() => api.post(`/exams/${examId}/events`, { attemptId, type, details }), 'Failed to log event');
+  examCall(() => api.post(`/exams/${examId}/events`, { attemptId, type, details }, sebOpts()), 'Failed to log event');
+/** Tell the server which question is open; it pauses/starts the section and question timers and returns their state. */
+export const navigateExam = (examId, data) =>
+  examCall(() => api.post(`/exams/${examId}/navigate`, data, sebOpts()), 'Failed to change question');
+/** Legacy timer routes: the server ignores remainingSeconds; use navigateExam instead. */
 export const updateSectionTimer = (examId, data) =>
-  examCall(() => api.patch(`/exams/${examId}/section-timer`, data), 'Failed to update section timer');
+  examCall(() => api.patch(`/exams/${examId}/section-timer`, data, sebOpts()), 'Failed to update section timer');
 export const updateQuestionTimer = (examId, data) =>
-  examCall(() => api.patch(`/exams/${examId}/question-timer`, data), 'Failed to update question timer');
+  examCall(() => api.patch(`/exams/${examId}/question-timer`, data, sebOpts()), 'Failed to update question timer');
 export const submitExam = (examId, attemptId) =>
-  examCall(() => api.post(`/exams/${examId}/submit`, { attemptId }), 'Failed to submit exam');
+  examCall(() => api.post(`/exams/${examId}/submit`, { attemptId }, sebOpts()), 'Failed to submit exam');
 export const autoSubmitExam = (examId, attemptId) =>
-  examCall(() => api.post(`/exams/${examId}/auto-submit`, { attemptId }), 'Failed to submit exam');
+  examCall(() => api.post(`/exams/${examId}/auto-submit`, { attemptId }, sebOpts()), 'Failed to submit exam');
 export const getStudentExamResults = (examId) =>
   examCall(() => api.get(`/exams/${examId}/results`), 'Failed to fetch exam results');
 

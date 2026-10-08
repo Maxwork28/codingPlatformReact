@@ -5,6 +5,8 @@ import Modal from '../../../../common/ui/Modal';
 import { Button } from '../../../../common/ui/primitives';
 import { inputClass, labelClass, type } from '../../../../common/ui/format';
 import { errorText } from './helpers';
+import OneTimeCredentials from '../../../../common/components/OneTimeCredentials';
+import { hasOneTimeCredentials } from '../../../../common/utils/oneTimeCredentials';
 
 const ACCEPT = '.xlsx,.xls,.csv';
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -108,6 +110,9 @@ export default function AddStudentsModal({ open, classId, className, onClose, on
             <p className={type.body}>
               {result.invalid?.length || 0} invalid and {result.skipped?.length || 0} skipped rows in the file.
             </p>
+          )}
+          {hasOneTimeCredentials(result) && (
+            <OneTimeCredentials credentials={result.credentials} filename={`${className || 'class'}-new-student-passwords`} compact />
           )}
           <p className={type.meta}>{result.message}</p>
         </div>

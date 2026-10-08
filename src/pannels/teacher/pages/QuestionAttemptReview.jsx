@@ -9,7 +9,8 @@ import {
   viewSubmissionCode,
 } from '../../../common/services/api';
 import CodeEditor from '../../student/components/CodeEditor';
-import TestCaseResultsList, { parseTestCaseResultsList } from '../../student/components/TestCaseResultsList';
+import TestCaseResultsList from '../../student/components/TestCaseResultsList';
+import { parseTestCaseResultsList } from '../../../common/utils/testCaseResults';
 import { Button, EmptyState, StatusChip } from '../../../common/ui/primitives';
 import { confirmAction, notify } from '../../../common/ui/Toast';
 import { type } from '../../../common/ui/format';

@@ -18,14 +18,7 @@ import { RateBar } from '../classDetails/shared';
 import { HIDE_MD, HIDE_SM, errorText, formatDate, plural } from '../classDetails/helpers';
 import AddToClassModal from './AddToClassModal';
 import { stripHtml } from './helpers';
-
-const PHASES = {
-  live: { label: 'Live', className: 'bg-ok-soft text-ok border-ok-line' },
-  scheduled: { label: 'Scheduled', className: 'bg-info-soft text-info border-info-line' },
-  draft: { label: 'Draft', className: 'bg-warn-soft text-warn border-warn-line' },
-  completed: { label: 'Completed', className: 'bg-quiet-soft text-muted border-quiet-line' },
-  archived: { label: 'Archived', className: 'bg-quiet-soft text-subtle border-quiet-line' },
-};
+import { EXAM_PHASES as PHASES } from '../../../../common/domain/exams';
 
 const CLASS_COLUMNS = [
   { label: 'Class' },
@@ -242,7 +235,7 @@ export default function UsageTab({ question, classes, exams, templateCount, relo
                     <span className={`block ${type.meta}`}>{plural(e.questionCount, 'question')}</span>
                   </td>
                   <td className={tableClass.td}>
-                    <span className={`inline-block px-2 py-0.5 rounded-full border text-[10px] font-semibold ${phase.className}`}>{phase.label}</span>
+                    <span className={`inline-block px-2 py-0.5 rounded-full border text-[10px] font-semibold ${phase.chip}`}>{phase.label}</span>
                   </td>
                   <td className={`${tableClass.td} ${HIDE_SM}`}>{e.className || '—'}</td>
                   <td className={`${tableClass.td} ${HIDE_MD} whitespace-nowrap`}>{e.startTime ? formatDate(e.startTime, true) : 'Not scheduled'}</td>

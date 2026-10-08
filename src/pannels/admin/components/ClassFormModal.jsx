@@ -4,6 +4,8 @@ import Modal from '../../../common/ui/Modal';
 import { Button } from '../../../common/ui/primitives';
 import { inputClass, labelClass, type } from '../../../common/ui/format';
 import { createClass, editClass } from '../../../common/services/api';
+import OneTimeCredentials from '../../../common/components/OneTimeCredentials';
+import { hasOneTimeCredentials } from '../../../common/utils/oneTimeCredentials';
 
 /**
  * Create a class (name, description, optional student sheet) or edit an
@@ -15,6 +17,8 @@ export default function ClassFormModal({ open, editing, onClose, onSaved }) {
   const [file, setFile] = useState(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  /** Create response that carried one-time passwords; shown before the modal hands off to `onSaved`. */
+  const [pendingCredentials, setPendingCredentials] = useState(null);
   const fileInput = useRef(null);
 
   useEffect(() => {
@@ -22,6 +26,7 @@ export default function ClassFormModal({ open, editing, onClose, onSaved }) {
     setForm({ name: editing?.name || '', description: editing?.description || '' });
     setFile(null);
     setError('');
+    setPendingCredentials(null);
   }, [open, editing]);
 
   const close = () => {
@@ -40,6 +45,11 @@ export default function ClassFormModal({ open, editing, onClose, onSaved }) {
     try {
       const payload = { name, description: form.description.trim() };
       const response = isEdit ? await editClass(editing._id, payload) : await createClass(payload, file);
+      if (hasOneTimeCredentials(response.data)) {
+        // Passwords are only sent once: let the admin copy them before the modal closes.
+        setPendingCredentials(response.data);
+        return;
+      }
       onSaved(response.data);
     } catch (err) {
       setError(typeof err === 'string' ? err : err.message || 'Failed to save class');
@@ -49,6 +59,25 @@ export default function ClassFormModal({ open, editing, onClose, onSaved }) {
   };
 
   const unchanged = isEdit && form.name.trim() === editing.name && form.description.trim() === (editing.description || '');
+
+  if (pendingCredentials) {
+    return (
+      <Modal
+        open={open}
+        onClose={() => onSaved(pendingCredentials)}
+        title="Class created"
+        icon={School}
+        accent="accent"
+        width="max-w-2xl"
+        footer={<Button onClick={() => onSaved(pendingCredentials)}>Done</Button>}
+      >
+        <div className="space-y-3">
+          <p className={type.body}>{pendingCredentials.message || 'The class has been created.'}</p>
+          <OneTimeCredentials credentials={pendingCredentials.credentials} filename={`${form.name.trim() || 'class'}-student-passwords`} />
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal

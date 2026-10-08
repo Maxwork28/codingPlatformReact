@@ -1,0 +1,38 @@
+/** Formatting helpers for judge run metrics (time in ms, memory in KB). */
+
+export const formatTimeMs = (timeMs) => {
+  if (timeMs == null || timeMs === '') return null;
+  const n = Number(timeMs);
+  if (!Number.isFinite(n) || n < 0) return null;
+  if (n < 1) return `${n.toFixed(2)} ms`;
+  if (n < 1000) return `${n < 10 ? n.toFixed(1) : Math.round(n)} ms`;
+  return `${(n / 1000).toFixed(2)} s`;
+};
+
+export const formatMemoryKb = (memoryKb) => {
+  if (memoryKb == null || memoryKb === '') return null;
+  const n = Number(memoryKb);
+  if (!Number.isFinite(n) || n < 0) return null;
+  if (n < 1024) return `${Math.round(n)} KB`;
+  const mb = n / 1024;
+  return `${mb >= 10 ? Math.round(mb) : mb.toFixed(1)} MB`;
+};
+
+export const pickRunMetrics = (source) => {
+  if (!source || typeof source !== 'object') return { timeMs: null, memoryKb: null };
+  const nested = source.testResult || (source.testResults && !Array.isArray(source.testResults) ? source.testResults : null);
+  return {
+    timeMs: source.timeMs ?? nested?.timeMs ?? null,
+    memoryKb: source.memoryKb ?? nested?.memoryKb ?? null,
+  };
+};
+
+export const summarizeRunMetrics = (results) => {
+  const rows = Array.isArray(results) ? results : [];
+  const times = rows.map((r) => Number(r?.timeMs)).filter((n) => Number.isFinite(n) && n >= 0);
+  const mems = rows.map((r) => Number(r?.memoryKb)).filter((n) => Number.isFinite(n) && n > 0);
+  return {
+    maxTimeMs: times.length ? Math.max(...times) : null,
+    maxMemoryKb: mems.length ? Math.max(...mems) : null,
+  };
+};

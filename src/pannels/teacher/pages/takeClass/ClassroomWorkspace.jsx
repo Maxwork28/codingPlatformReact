@@ -3,8 +3,10 @@ import parse from 'html-react-parser';
 import { Clock, Copy, Maximize2, RotateCcw, X } from 'lucide-react';
 import CodeEditor from '../../../student/components/CodeEditor';
 import QuestionHtml from '../../../../common/components/QuestionHtml';
-import CodingQuestionDetails, { isCodingQuestionType } from '../../../../common/components/CodingQuestionDetails';
+import CodingQuestionDetails from '../../../../common/components/CodingQuestionDetails';
+import { isCodingType } from '../../../../common/domain/questions';
 import { historyKindLabel } from '../../../../common/utils/runOutputHistory';
+import { sanitizeHtml } from '../../../../common/utils/sanitizeHtml';
 import { Button, EmptyState, StatusChip } from '../../../../common/ui/primitives';
 import { inputClass, type } from '../../../../common/ui/format';
 import { LiveChips } from './QuestionRail';
@@ -31,7 +33,7 @@ function OptionList({ options, revealIndexes }) {
           >
             <span className="text-xs font-semibold shrink-0 text-fg">{(index + 10).toString(36).toUpperCase()}.</span>
             <div className="text-xs text-body flex-1 min-w-0">
-              {parse(option || '')}
+              {parse(sanitizeHtml(option || ''))}
               {revealed ? <span className="ml-2 text-[11px] font-semibold text-ok">Correct</span> : null}
             </div>
           </div>
@@ -85,7 +87,7 @@ export default function ClassroomWorkspace({
     <div id="teacher-workspace" className="flex-1 min-h-0 min-w-0 flex flex-col lg:flex-row overflow-hidden">
       <div className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5 bg-page w-full lg:h-full" style={{ flex: `0 0 ${leftPanelWidth}%` }}>
         <div className="max-w-3xl">
-          <h2 className="text-lg font-bold text-fg mb-3" dangerouslySetInnerHTML={{ __html: selectedQuestion.title }} />
+          <h2 className="text-lg font-bold text-fg mb-3">{stripHtml(selectedQuestion.title) || 'Untitled question'}</h2>
           <div className="flex flex-wrap items-center gap-2 mb-5">
             <StatusChip kind={difficultyKind(selectedQuestion.difficulty)}>{selectedQuestion.difficulty || '—'}</StatusChip>
             <StatusChip kind="info">
@@ -102,14 +104,14 @@ export default function ClassroomWorkspace({
             className="text-xs leading-relaxed text-body"
             empty={<span className="text-xs text-muted">—</span>}
           />
-          {isCodingQuestionType(selectedQuestion.type) ? (
+          {isCodingType(selectedQuestion.type) ? (
             <div className="mt-5">
               <CodingQuestionDetails question={selectedQuestion} tone="theme" publicTests={selectedQuestion.testCases} />
             </div>
           ) : selectedQuestion.constraints ? (
             <div className="mt-5">
               <h3 className={`${type.section} mb-2`}>Constraints</h3>
-              <div className="text-xs leading-relaxed text-body" dangerouslySetInnerHTML={{ __html: selectedQuestion.constraints }} />
+              <div className="text-xs leading-relaxed text-body" dangerouslySetInnerHTML={{ __html: sanitizeHtml(selectedQuestion.constraints) }} />
             </div>
           ) : null}
         </div>
@@ -152,7 +154,7 @@ export default function ClassroomWorkspace({
           </div>
           <div className="flex items-center gap-1.5">
             {(showFullEditor || isFillCoding) && (
-              <Button variant="secondary" icon={Maximize2} className="h-8 px-2!" onClick={onToggleFullscreen} title="Fullscreen (F11)" />
+              <Button variant="secondary" icon={Maximize2} className="h-8 px-2!" onClick={onToggleFullscreen} title="Fullscreen (F11)" aria-label="Enter fullscreen editor" />
             )}
             {isRunnable && questionRunHistory.length > 0 && (
               <Button variant="soft" icon={Clock} className="h-8" onClick={onOpenHistory}>

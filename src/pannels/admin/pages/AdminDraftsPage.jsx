@@ -7,17 +7,10 @@ import ActionMenu from '../../../common/ui/ActionMenu';
 import { table as tableClass, type } from '../../../common/ui/format';
 import { confirmAction, notify } from '../../../common/ui/Toast';
 import { notifyDraftsChanged } from '../../../common/ui/events';
+import { QUESTION_TYPE_LABELS as TYPE_LABELS } from '../../../common/domain/questions';
+import { stripHtml } from '../../../common/utils/sanitizeHtml';
 
 const PAGE_SIZE = 20;
-
-const TYPE_LABELS = {
-  singleCorrectMcq: 'MCQ · single',
-  multipleCorrectMcq: 'MCQ · multiple',
-  fillInTheBlanks: 'Fill in the blanks',
-  fillInTheBlanksCoding: 'Fill-in code',
-  coding: 'Coding',
-  codingWithDriver: 'Coding · driver',
-};
 
 const DIFFICULTY_CHIP = { easy: 'pass', medium: 'warning', hard: 'fail' };
 
@@ -29,13 +22,6 @@ const FILTERS = [
 
 const HIDE_SM = 'hidden md:table-cell';
 const HIDE_MD = 'hidden lg:table-cell';
-
-const stripHtml = (html) => {
-  if (!html || typeof html !== 'string') return '';
-  const div = document.createElement('div');
-  div.innerHTML = html;
-  return (div.textContent || '').trim();
-};
 
 const errorText = (err, fallback) => (typeof err === 'string' ? err : err?.message || fallback);
 

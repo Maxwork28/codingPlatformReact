@@ -3,6 +3,7 @@ import { CheckCircle2, Circle, MinusCircle, UserRound, XCircle } from 'lucide-re
 import Modal from '../../../../common/ui/Modal';
 import { Button, StatusChip } from '../../../../common/ui/primitives';
 import { type } from '../../../../common/ui/format';
+import AttemptAiSection from './AttemptAiSection';
 import { ATTEMPT_STATUS, VIOLATION_LABELS, answerKey, formatDuration, formatTime, percentOf } from './reportUtils';
 
 const CHOICE = new Set(['singleCorrectMcq', 'multipleCorrectMcq']);
@@ -125,6 +126,7 @@ export default function AttemptDetailModal({ attempt, questions, onClose, releas
                 </div>
                 <div className="pl-6">
                   <AnswerBody question={q} answer={answer} />
+                  <AttemptAiSection attempt={attempt} question={q} answer={answer} />
                   {answer?.savedAt && <p className={`${type.meta} mt-1`}>Saved {formatTime(answer.savedAt)}</p>}
                 </div>
               </li>

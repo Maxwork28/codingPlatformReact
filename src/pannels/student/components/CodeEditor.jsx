@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, useId } from 'react';
 import PropTypes from 'prop-types';
 import AceEditor from 'react-ace';
 import 'ace-builds/src-noconflict/ext-language_tools';
@@ -16,8 +16,11 @@ import { useTheme } from '../../../common/context/ThemeContext';
 /** Normalize newlines so parent/child string compare matches (fixes echo + unwanted Ace resets). */
 const norm = (s) => (s == null ? '' : String(s)).replace(/\r\n/g, '\n');
 
-const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px', disabled, isFillInTheBlanks = false, copyPasteDisabled = true, fontSize = 14 }) => {
+const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px', disabled, isFillInTheBlanks = false, copyPasteDisabled = false, fontSize = 14 }) => {
   const { isDark } = useTheme();
+  // Ace needs a unique DOM id per instance; two editors on one page must not share one.
+  const editorId = useId();
+  const aceName = `code-editor-${editorId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const aceTheme = isDark ? 'monokai' : 'github';
   const languageModeMap = {
     javascript: 'javascript',
@@ -221,9 +224,9 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
         applyMarkersToSession(editor, sv);
       }
       return () => {
-        const ed = editorRef.current?.editor;
-        if (ed) {
-          markersRef.current.forEach((m) => ed.session.removeMarker(m));
+        // Use the instance this effect ran against; the ref may point elsewhere (or be null) by cleanup time.
+        if (editor) {
+          markersRef.current.forEach((m) => editor.session.removeMarker(m));
           markersRef.current = [];
         }
       };
@@ -253,9 +256,9 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
     }
 
     return () => {
-      const ed = editorRef.current?.editor;
-      if (ed) {
-        markersRef.current.forEach((m) => ed.session.removeMarker(m));
+      // Capture the editor used above rather than re-reading the ref during cleanup.
+      if (editor) {
+        markersRef.current.forEach((m) => editor.session.removeMarker(m));
         markersRef.current = [];
       }
     };
@@ -361,6 +364,9 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
 
   const aceSetOptions = useMemo(
     () => ({
+      // Ace's syntax-check web worker is loaded from a relative URL that does not exist under the
+      // app's routes (console "worker-javascript.js failed to load"); the judge reports real errors.
+      useWorker: false,
       enableBasicAutocompletion: true,
       enableLiveAutocompletion: false,
       enableSnippets: false,
@@ -428,7 +434,7 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
           ref={editorRef}
           mode={mode}
           theme={aceTheme}
-          name="code-editor"
+          name={aceName}
           width="100%"
           height={fillParent ? '100%' : height}
           style={fillParent ? { flex: '1 1 auto', minHeight: 0 } : undefined}
@@ -452,7 +458,7 @@ const CodeEditor = ({ value, onChange, defaultValue, language, height = '400px',
           ref={editorRef}
           mode={mode}
           theme={aceTheme}
-          name="code-editor-plain"
+          name={`${aceName}-plain`}
           width="100%"
           height={fillParent ? '100%' : height}
           style={fillParent ? { flex: '1 1 auto', minHeight: 0 } : undefined}

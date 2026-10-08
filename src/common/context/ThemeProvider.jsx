@@ -1,6 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-
-const ThemeContext = createContext();
+import React, { useState, useEffect } from 'react';
+import { ThemeContext } from './ThemeContext';
 
 const STORAGE_KEY = 'theme';
 const systemQuery = () => window.matchMedia?.('(prefers-color-scheme: light)');
@@ -13,14 +12,6 @@ function readSavedTheme() {
 function systemTheme() {
   return systemQuery()?.matches ? 'light' : 'dark';
 }
-
-export const useTheme = () => {
-  const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error('useTheme must be used within a ThemeProvider');
-  }
-  return context;
-};
 
 export const ThemeProvider = ({ children }) => {
   const [theme, setTheme] = useState(() => readSavedTheme() || systemTheme());
@@ -64,3 +55,5 @@ export const ThemeProvider = ({ children }) => {
     </ThemeContext.Provider>
   );
 };
+
+export default ThemeProvider;

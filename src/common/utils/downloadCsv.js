@@ -18,7 +18,7 @@ export function downloadCsv(filename, rows) {
 }
 
 export function sheetReportFilename(report) {
-  const className = String(report?.className || 'class').replace(/[^\w\-]+/g, '_').slice(0, 40);
+  const className = String(report?.className || 'class').replace(/[^\w-]+/g, '_').slice(0, 40);
   const scope = report?.scope === 'assignment' ? 'assignment-report' : 'class-report';
   return `${scope}-${className || 'class'}.csv`;
 }
@@ -79,6 +79,6 @@ export function downloadQuestionStatsReport(report, { filename } = {}) {
       s.lastSubmittedAt ? new Date(s.lastSubmittedAt).toLocaleString() : '',
     ]),
   ];
-  const safeName = questionTitle.replace(/[^\w\-]+/g, '_').slice(0, 40);
+  const safeName = questionTitle.replace(/[^\w-]+/g, '_').slice(0, 40);
   downloadCsv(filename || `question-report-${safeName}`, rows);
 }

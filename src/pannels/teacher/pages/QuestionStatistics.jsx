@@ -3,7 +3,6 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
 import { format } from 'date-fns';
-import { io } from 'socket.io-client';
 import {
   ArrowLeft,
   Download,
@@ -13,7 +12,7 @@ import {
   RotateCcw,
   X,
 } from 'lucide-react';
-import { API_BASE_URL } from '../../../common/constants';
+import { getSocket, joinClassRoom, leaveClassRoom } from '../../../common/services/socket';
 import {
   blockAllUsers,
   blockUser,
@@ -29,10 +28,10 @@ import Modal from '../../../common/ui/Modal';
 import { confirmAction, notify } from '../../../common/ui/Toast';
 import { inputClass, table as tableClass, type } from '../../../common/ui/format';
 import { extractAnswerText, stripHtml, tokenColor } from './takeClass/helpers';
+import { CODING_TYPES } from '../../../common/domain/questions';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
-const CODING_TYPES = ['coding', 'fillInTheBlanksCoding', 'codingWithDriver'];
 const LANGUAGES = ['javascript', 'python', 'c', 'cpp', 'java', 'php', 'ruby', 'go'];
 
 const doughnutPercentPlugin = {
@@ -118,24 +117,24 @@ const QuestionStatistics = () => {
 
   useEffect(() => {
     if (!classId) return undefined;
-    const socket = io(API_BASE_URL, { transports: ['websocket', 'polling'] });
-    socket.emit('joinClass', classId);
+    const socket = getSocket();
+    joinClassRoom(classId);
     const refresh = ({ classId: updatedClassId } = {}) => {
       if (!updatedClassId || String(updatedClassId) === String(classId)) {
         loadReport({ silent: true });
       }
     };
+    const silentReload = () => loadReport({ silent: true });
     socket.on('analyticsUpdated', refresh);
-    socket.on('codeRun', () => loadReport({ silent: true }));
-    socket.on('submissionUpdate', () => loadReport({ silent: true }));
-    socket.on('studentBlockStatusUpdated', () => loadReport({ silent: true }));
+    socket.on('codeRun', silentReload);
+    socket.on('submissionUpdate', silentReload);
+    socket.on('studentBlockStatusUpdated', silentReload);
     return () => {
       socket.off('analyticsUpdated', refresh);
-      socket.off('codeRun');
-      socket.off('submissionUpdate');
-      socket.off('studentBlockStatusUpdated');
-      socket.emit('leaveClass', classId);
-      socket.disconnect();
+      socket.off('codeRun', silentReload);
+      socket.off('submissionUpdate', silentReload);
+      socket.off('studentBlockStatusUpdated', silentReload);
+      leaveClassRoom(classId);
     };
   }, [classId, loadReport]);
 
@@ -250,10 +249,9 @@ const QuestionStatistics = () => {
         error: false,
       });
     } catch (err) {
-      setRunResults({
-        error: true,
-        message: err.response?.data?.error || err.message || 'Run failed',
-      });
+      const message = typeof err === 'string' ? err : err?.response?.data?.error || err?.message || 'Run failed';
+      setRunResults({ error: true, message });
+      notify(message, 'error');
     } finally {
       setRunLoading(false);
     }

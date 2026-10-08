@@ -1,25 +1,6 @@
 import React from 'react';
 import RunMetricsBadges from '../../../common/components/RunMetricsBadges';
-
-export const parseTestCaseResultsList = (raw) => {
-  if (raw == null) return [];
-  if (Array.isArray(raw)) return raw;
-  if (typeof raw === 'object') {
-    if (Array.isArray(raw.testResults)) return raw.testResults;
-    return [raw];
-  }
-  if (typeof raw === 'string') {
-    const trimmed = raw.trim();
-    if (!trimmed || trimmed.startsWith('Error:')) return [];
-    try {
-      const parsed = JSON.parse(trimmed);
-      return Array.isArray(parsed) ? parsed : [parsed];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-};
+import { parseTestCaseResultsList } from '../../../common/utils/testCaseResults';
 
 const formatIo = (value) => {
   if (value == null) return '—';

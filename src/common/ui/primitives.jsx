@@ -61,10 +61,15 @@ const buttonVariants = {
   ghost: 'px-3 py-1.5 text-muted hover:text-fg hover:bg-hover',
 };
 
-export function Button({ variant = 'primary', icon: Icon, type: htmlType = 'button', className = '', children, ...rest }) {
+export function Button({ variant = 'primary', icon: Icon, type: htmlType = 'button', className = '', children, title, ...rest }) {
+  // Icon-only buttons have no text for screen readers; fall back to the tooltip text.
+  const iconOnly = Icon && (children === undefined || children === null || children === false || children === '');
+  const ariaLabel = rest['aria-label'] ?? (iconOnly ? title : undefined);
   return (
     <button
       type={htmlType}
+      title={title}
+      aria-label={ariaLabel}
       className={`${Icon ? buttonClass.withIcon : buttonClass.base} ${buttonVariants[variant] || buttonVariants.primary} ${className}`}
       {...rest}
     >

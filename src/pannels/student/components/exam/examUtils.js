@@ -1,28 +1,12 @@
-export const CODING_TYPES = ['coding', 'fillInTheBlanksCoding', 'codingWithDriver'];
+import { CODING_TYPES, LANGUAGE_LABELS, QUESTION_TYPE_LABELS } from '../../../../common/domain/questions';
+import { htmlToPlainText } from '../../../../common/utils/sanitizeHtml';
+
+export { CODING_TYPES, LANGUAGE_LABELS };
+export const TYPE_LABELS = QUESTION_TYPE_LABELS;
 export const CLOSED_STATUSES = ['submitted', 'auto_submitted', 'terminated', 'expired'];
 
 export const isCoding = (question) => CODING_TYPES.includes(question?.type);
 export const isClosedAttempt = (attempt) => CLOSED_STATUSES.includes(attempt?.status);
-
-export const TYPE_LABELS = {
-  singleCorrectMcq: 'Single choice',
-  multipleCorrectMcq: 'Multiple choice',
-  fillInTheBlanks: 'Fill in the blank',
-  fillInTheBlanksCoding: 'Code completion',
-  coding: 'Coding',
-  codingWithDriver: 'Coding',
-};
-
-export const LANGUAGE_LABELS = {
-  javascript: 'JavaScript',
-  python: 'Python',
-  java: 'Java',
-  cpp: 'C++',
-  c: 'C',
-  go: 'Go',
-  php: 'PHP',
-  ruby: 'Ruby',
-};
 
 export const ATTEMPT_LABELS = {
   in_progress: 'In progress',
@@ -57,7 +41,7 @@ export const formatDateTime = (value) =>
 export const starterFor = (question, language) => {
   const starter = (question.starterCode || []).find((s) => s.language === language);
   if (starter?.code) return starter.code;
-  if (question.type === 'fillInTheBlanksCoding' && question.codeSnippet) return question.codeSnippet;
+  if (question.type === 'fillInTheBlanksCoding' && question.codeSnippet) return htmlToPlainText(question.codeSnippet);
   return '';
 };
 

@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { io } from 'socket.io-client';
 import { ArrowLeft } from 'lucide-react';
 import { getQuestion, runCode, runCodeWithCustomInput, submitAnswer } from '../../../common/services/api';
-import { API_BASE_URL } from '../../../common/constants';
+import { getSocket, joinClassRoom, leaveClassRoom } from '../../../common/services/socket';
 import { loadRunHistory, makeRunHistoryEntry, saveRunHistory } from '../../../common/utils/runOutputHistory';
 import { notify } from '../../../common/ui/Toast';
 import { Button, EmptyState } from '../../../common/ui/primitives';
@@ -47,6 +46,8 @@ const QuestionSubmission = () => {
   const [resultsView, setResultsView] = useState('detail');
   const [submissionFeedback, setSubmissionFeedback] = useState(null);
   const lastCodeInitKeyRef = useRef(null);
+  // Question whose default language has been applied; the student's own pick is kept until the question changes.
+  const languageQuestionIdRef = useRef(null);
 
   const classId = useMemo(() => {
     const fromState = location.state?.classId;
@@ -90,8 +91,8 @@ const QuestionSubmission = () => {
 
   useEffect(() => {
     if (!classId) return undefined;
-    const socket = io(`${API_BASE_URL}/`, { withCredentials: true });
-    socket.emit('joinClass', classId);
+    const socket = getSocket();
+    joinClassRoom(classId);
     const applyEntry = (patch) => {
       setQuestion((prev) => {
         if (!prev || String(prev._id) !== String(questionId)) return prev;
@@ -101,13 +102,19 @@ const QuestionSubmission = () => {
         return { ...prev, classes };
       });
     };
-    socket.on('questionPublished', ({ questionId: id, isPublished }) => {
+    const onPublished = ({ questionId: id, isPublished }) => {
       if (String(id) === String(questionId)) applyEntry({ isPublished });
-    });
-    socket.on('questionDisabled', ({ questionId: id, isDisabled }) => {
+    };
+    const onDisabled = ({ questionId: id, isDisabled }) => {
       if (String(id) === String(questionId)) applyEntry({ isDisabled });
-    });
-    return () => socket.disconnect();
+    };
+    socket.on('questionPublished', onPublished);
+    socket.on('questionDisabled', onDisabled);
+    return () => {
+      socket.off('questionPublished', onPublished);
+      socket.off('questionDisabled', onDisabled);
+      leaveClassRoom(classId);
+    };
   }, [classId, questionId]);
 
   useEffect(() => {
@@ -177,9 +184,18 @@ const QuestionSubmission = () => {
   useEffect(() => {
     if (!question || !RUNNABLE_CODING_TYPES.includes(question.type)) {
       lastCodeInitKeyRef.current = null;
+      languageQuestionIdRef.current = null;
       return;
     }
     const langs = availableLanguages(question);
+    // A newly loaded question opens in the first language the teacher listed.
+    if (languageQuestionIdRef.current !== question._id) {
+      languageQuestionIdRef.current = question._id;
+      if (langs.length && selectedLanguage !== langs[0]) {
+        setSelectedLanguage(langs[0]);
+        return;
+      }
+    }
     if (langs.length && !langs.includes(selectedLanguage)) {
       setSelectedLanguage(langs[0]);
       return;

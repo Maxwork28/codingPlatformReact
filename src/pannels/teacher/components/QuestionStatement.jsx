@@ -6,20 +6,11 @@ import TestCaseResultsList from '../../student/components/TestCaseResultsList';
 import parse from 'html-react-parser';
 import QuestionHtml from '../../../common/components/QuestionHtml';
 import CodingQuestionDetails from '../../../common/components/CodingQuestionDetails';
+import { CODING_TYPES as RUNNABLE_CODING_TYPES, FULL_CODE_EDITOR_TYPES, QUESTION_TYPE_LABELS } from '../../../common/domain/questions';
+import { sanitizeHtml, stripHtml } from '../../../common/utils/sanitizeHtml';
 
-const QUESTION_TYPE_LABELS = {
-  singleCorrectMcq: 'Single choice',
-  multipleCorrectMcq: 'Multiple choice',
-  fillInTheBlanks: 'Fill in the blanks',
-  fillInTheBlanksCoding: 'Fill in the blanks (code)',
-  coding: 'Coding',
-  codingWithDriver: 'Coding (LeetCode-style)',
-};
-
-/** Used for test results / public sample tests */
-const RUNNABLE_CODING_TYPES = ['coding', 'fillInTheBlanksCoding', 'codingWithDriver'];
-/** Full-IDE style: starter is the whole submission */
-const FULL_CODE_EDITOR_TYPES = ['coding', 'codingWithDriver'];
+/** Author HTML (options, explanation, constraints) is sanitized before html-react-parser touches it. */
+const safeParse = (html) => parse(sanitizeHtml(html || ''));
 
 function getCodeTemplateForLanguage(question, lang) {
   if (!question || !lang) return '';
@@ -45,12 +36,6 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion, hideHead
   const [submissionFeedback, setSubmissionFeedback] = useState(null);
   const [submitError, setSubmitError] = useState('');
 
-  const stripHtml = (html) => {
-    if (!html) return '';
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    return doc.body.textContent || '';
-  };
-
   const resetAnswerStateForQuestion = useCallback((q) => {
     if (!q) return;
     const lang = q.languages?.[0] || 'javascript';
@@ -68,11 +53,9 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion, hideHead
 
   useEffect(() => {
     if (propQuestion) return;
-    console.log('[QuestionStatement] Fetching question:', { questionId, isPreview });
     const fetchQuestion = async () => {
       try {
         const response = await getQuestion(questionId);
-        console.log('[QuestionStatement] Question fetched:', response.data);
         setQuestion(response.data.question || response.data);
       } catch (err) {
         console.error('[QuestionStatement] Fetch error:', err.message, err.response?.data);
@@ -102,10 +85,7 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion, hideHead
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isSubmitting || isPreview) {
-      console.log('[QuestionStatement] Submission blocked:', { isSubmitting, isPreview });
-      return;
-    }
+    if (isSubmitting || isPreview) return;
     setIsSubmitting(true);
     setSubmissionFeedback(null);
     setSubmitError('');
@@ -122,7 +102,6 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion, hideHead
           : undefined;
 
       const response = await submitAnswer(questionId, payload, classId, language);
-      console.log('[QuestionStatement] Submission response:', response.data);
       setSubmissionFeedback({
         isCorrect: response.data.submission.isCorrect,
         score: response.data.submission.score,
@@ -215,7 +194,7 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion, hideHead
             ? 'Select your answer'
             : 'Your answer';
 
-  const publicTests = question.testCases?.filter((tc) => tc.isPublic) || [];
+  const publicTests = question.testCases?.filter((tc) => tc && tc.isPublic !== false) || [];
 
   const renderAnswerControl = () => {
     const disabled = isSubmitting || isPreview;
@@ -242,7 +221,7 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion, hideHead
                 disabled={disabled}
               />
               <span className="text-sm font-semibold text-accent-ink shrink-0">{(index + 10).toString(36).toUpperCase()}.</span>
-              <span className="text-sm text-fg prose prose-sm max-w-none flex-1">{parse(option || '')}</span>
+              <span className="text-sm text-fg prose prose-sm max-w-none flex-1">{safeParse(option)}</span>
             </label>
           ))}
         </div>
@@ -270,7 +249,7 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion, hideHead
                 disabled={disabled}
               />
               <span className="text-sm font-semibold text-accent-ink shrink-0">{(index + 10).toString(36).toUpperCase()}.</span>
-              <span className="text-sm text-fg prose prose-sm max-w-none flex-1">{parse(option || '')}</span>
+              <span className="text-sm text-fg prose prose-sm max-w-none flex-1">{safeParse(option)}</span>
             </label>
           ))}
         </div>
@@ -371,7 +350,7 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion, hideHead
       <>
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-accent to-accent-hover tracking-tight">
-          {parse(question.title || 'Untitled')}
+          {stripHtml(question.title) || 'Untitled'}
         </h2>
         {isPreview && (
           <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-warn-soft text-warn shrink-0">
@@ -419,7 +398,7 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion, hideHead
               <div>
                 <h3 className="text-lg font-semibold text-fg mb-2">Explanation</h3>
                 <div className="text-sm text-body prose prose-sm max-w-none rounded-xl border border-line bg-inset p-4">
-                  {parse(question.explanation)}
+                  {safeParse(question.explanation)}
                 </div>
               </div>
             )}
@@ -427,7 +406,7 @@ const QuestionStatement = ({ isPreview = false, question: propQuestion, hideHead
               <div>
                 <h3 className="text-lg font-semibold text-fg mb-2">Constraints</h3>
                 <div className="text-sm text-body prose prose-sm max-w-none rounded-xl border border-line p-4">
-                  {parse(question.constraints)}
+                  {safeParse(question.constraints)}
                 </div>
               </div>
             )}

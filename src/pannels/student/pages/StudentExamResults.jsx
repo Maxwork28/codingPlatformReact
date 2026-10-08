@@ -5,6 +5,7 @@ import { getStudentExamResults } from '../../../common/services/api';
 import { Button, Card, EmptyState, StatusChip } from '../../../common/ui/primitives';
 import { type } from '../../../common/ui/format';
 import QuestionHtml from '../../../common/components/QuestionHtml';
+import { stripHtml } from '../../../common/utils/sanitizeHtml';
 import { ATTEMPT_LABELS, formatDateTime, isCoding, LANGUAGE_LABELS, TYPE_LABELS } from '../components/exam/examUtils';
 
 const FILTERS = [
@@ -35,10 +36,14 @@ const durationText = (start, end) => {
 
 function OptionList({ q }) {
   const picked = new Set((Array.isArray(q.response?.answer) ? q.response.answer : [q.response?.answer]).filter((v) => v !== undefined && v !== null).map(Number));
-  const correct = new Set(q.type === 'multipleCorrectMcq' ? q.correctOptions || [] : [q.correctOption]);
+  const correct = new Set(
+    (q.type === 'multipleCorrectMcq' ? q.correctOptions || [] : q.correctOption == null ? [] : [q.correctOption]).map(Number),
+  );
+  const options = Array.isArray(q.options) ? q.options : [];
+  if (!options.length) return <p className="text-xs text-muted">Options are not available.</p>;
   return (
     <div className="space-y-1.5">
-      {q.options.map((option, idx) => {
+      {options.map((option, idx) => {
         const isPicked = picked.has(idx);
         const isRight = correct.has(idx);
         const tone = isRight ? 'border-ok-line bg-ok-soft' : isPicked ? 'border-bad-line bg-bad-soft' : 'border-line bg-surface';
@@ -68,7 +73,7 @@ function QuestionResult({ q, number }) {
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-fg truncate">
-            {number}. <span dangerouslySetInnerHTML={{ __html: q.title }} />
+            {number}. {stripHtml(q.title) || 'Untitled question'}
           </p>
           <p className={type.meta}>
             {TYPE_LABELS[q.type] || q.type}
@@ -78,7 +83,7 @@ function QuestionResult({ q, number }) {
         </div>
         <span className="text-sm font-bold tabular-nums text-fg shrink-0">
           {q.response?.score ?? 0}
-          <span className="text-muted font-normal">/{q.points}</span>
+          <span className="text-muted font-normal">/{q.points ?? 0}</span>
         </span>
       </button>
       {open && (
@@ -168,8 +173,11 @@ const StudentExamResults = () => {
     );
   }
 
-  const { exam, attempt, released } = data;
-  const percent = released && attempt.maxScore ? Math.round((attempt.totalScore / attempt.maxScore) * 100) : null;
+  const { exam = {}, attempt = {}, released } = data;
+  const maxScore = Number(attempt.maxScore) || 0;
+  const totalScore = Number(attempt.totalScore) || 0;
+  const percent = released && maxScore > 0 ? Math.max(0, Math.min(100, Math.round((totalScore / maxScore) * 100))) : null;
+  const ringDeg = percent == null ? 0 : percent * 3.6;
 
   return (
     <div className="px-4 sm:px-5 py-6">
@@ -190,16 +198,16 @@ const StudentExamResults = () => {
             <div className="flex items-center gap-4">
               <div
                 className="h-20 w-20 rounded-full grid place-items-center"
-                style={{ background: `conic-gradient(var(--accent) ${percent * 3.6}deg, var(--border) 0deg)` }}
+                style={{ background: `conic-gradient(var(--accent) ${ringDeg}deg, var(--border) 0deg)` }}
               >
                 <div className="h-16 w-16 rounded-full bg-surface grid place-items-center">
-                  <span className="text-lg font-bold text-fg tabular-nums">{percent}%</span>
+                  <span className="text-lg font-bold text-fg tabular-nums">{percent == null ? '—' : `${percent}%`}</span>
                 </div>
               </div>
               <div>
                 <p className="text-2xl font-bold text-fg tabular-nums">
-                  {attempt.totalScore}
-                  <span className="text-base text-muted font-semibold">/{attempt.maxScore}</span>
+                  {totalScore}
+                  <span className="text-base text-muted font-semibold">/{maxScore}</span>
                 </p>
                 <p className={type.body}>points scored</p>
               </div>
@@ -226,7 +234,7 @@ const StudentExamResults = () => {
             <span className="text-fg">{durationText(attempt.startedAt, attempt.submittedAt)}</span>
             <span className="text-muted">Answered</span>
             <span className="text-fg">
-              {attempt.answeredCount}/{exam.questionCount}
+              {attempt.answeredCount ?? 0}/{exam.questionCount ?? questions.length}
             </span>
           </div>
           {attempt.remark && <p className="w-full text-xs text-muted">{attempt.remark}</p>}

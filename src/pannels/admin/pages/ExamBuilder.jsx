@@ -27,6 +27,7 @@ import { Button, Card, EmptyState, StatusChip, Switch } from '../../../common/ui
 import { inputClass, labelClass, type } from '../../../common/ui/format';
 import QuestionPickerModal from '../components/examBuilder/QuestionPickerModal';
 import SectionCard from '../components/examBuilder/SectionCard';
+import { EXAM_PHASES } from '../../../common/domain/exams';
 import {
   TYPE_LABELS,
   buildPayload,
@@ -41,11 +42,7 @@ import {
 const errorText = (err, fallback) => (typeof err === 'string' ? err : err?.response?.data?.error || err?.message || fallback);
 
 const PHASE_CHIP = {
-  draft: ['neutral', 'Draft'],
-  scheduled: ['info', 'Scheduled'],
-  live: ['pass', 'Live'],
-  completed: ['ai', 'Closed'],
-  archived: ['neutral', 'Archived'],
+  ...Object.fromEntries(Object.entries(EXAM_PHASES).map(([id, p]) => [id, [p.kind, p.label]])),
   template: ['ai', 'Template'],
 };
 
@@ -281,7 +278,7 @@ export default function ExamBuilder() {
   const isDraftExam = !isEdit || meta.storedStatus === 'draft';
 
   // ---- saving ---------------------------------------------------------------
-  const save = async (action) => {
+  const save = async (action, { stay = false } = {}) => {
     if (saving) return;
     if (errors.length) {
       setShowIssues(true);
@@ -309,11 +306,18 @@ export default function ExamBuilder() {
         await editExam(examId, status ? { ...payload, status } : payload);
         notify(action === 'publish' ? 'Exam published' : 'Changes saved', 'success');
       } else {
-        await createExam({ ...payload, classId, templateId: templateId || undefined, status: action === 'publish' ? 'scheduled' : 'draft' });
+        const res = await createExam({ ...payload, classId, templateId: templateId || undefined, status: action === 'publish' ? 'scheduled' : 'draft' });
         notify(action === 'publish' ? 'Exam published' : 'Draft saved', 'success');
+        const createdId = res?.data?._id || res?.data?.exam?._id || res?.data?.id;
+        if (stay && createdId) {
+          // Keep editing the exam that now exists instead of creating a second one on the next save.
+          setBaseline(JSON.stringify(form));
+          navigate(`${base}/classes/${classId}/exams/${createdId}/edit`, { replace: true });
+          return;
+        }
       }
       setBaseline(JSON.stringify(form));
-      navigate(listPath);
+      if (!stay) navigate(listPath);
     } catch (err) {
       notify(errorText(err, 'Failed to save'), 'error');
     } finally {
@@ -329,7 +333,8 @@ export default function ExamBuilder() {
     const onKey = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        saveRef.current(primaryAction);
+        // Ctrl+S on a draft keeps the author in the builder; publishing still leaves.
+        saveRef.current(primaryAction, { stay: primaryAction === 'draft' });
       }
     };
     window.addEventListener('keydown', onKey);
@@ -599,6 +604,56 @@ export default function ExamBuilder() {
                     className={`${inputClass} w-20! text-right tabular-nums`}
                   />
                 </div>
+                <RuleRow
+                  title="Require Safe Exam Browser"
+                  hint="Students must open the exam in Safe Exam Browser (already installed on their laptops). An entry password and an exit password are generated for you to announce in class; find them on the exam report."
+                  checked={form.sebRequired}
+                  onChange={(v) => set({ sebRequired: v })}
+                />
+                {form.sebRequired && (
+                  <div className="py-3 space-y-3">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <label htmlFor="exam-seb-mode" className="text-xs font-semibold text-fg">
+                          Verification
+                        </label>
+                        <p className={`${type.meta} mt-0.5`}>
+                          Basic checks that requests come from Safe Exam Browser. Strict also checks SEB's Config Key, so only our exam
+                          settings are accepted. Switch to Strict only after “Test SEB detection” on the report shows the Config Key as
+                          valid on a real SEB laptop.
+                        </p>
+                      </div>
+                      <select
+                        id="exam-seb-mode"
+                        value={form.sebVerifyMode}
+                        onChange={(e) => set({ sebVerifyMode: e.target.value })}
+                        className={`${inputClass} w-32! shrink-0`}
+                      >
+                        <option value="basic">Basic</option>
+                        <option value="strict">Strict</option>
+                      </select>
+                    </div>
+                    <details className="group" open={Boolean(form.sebConfigKeyOverride)}>
+                      <summary className="cursor-pointer text-xs font-semibold text-muted hover:text-fg select-none">Advanced</summary>
+                      <Field
+                        label="Config Key override (optional)"
+                        htmlFor="exam-seb-key"
+                        hint="Only if Test SEB detection says the Config Key does not match: paste the Config Key that Safe Exam Browser shows for this exam's .seb file. Leave empty otherwise. Generating new passwords clears it."
+                        className="mt-2"
+                      >
+                        <input
+                          id="exam-seb-key"
+                          value={form.sebConfigKeyOverride}
+                          onChange={(e) => set({ sebConfigKeyOverride: e.target.value })}
+                          placeholder="64 hexadecimal characters"
+                          spellCheck={false}
+                          autoComplete="off"
+                          className={`${inputClass} font-mono`}
+                        />
+                      </Field>
+                    </details>
+                  </div>
+                )}
               </div>
             </Card>
           </div>

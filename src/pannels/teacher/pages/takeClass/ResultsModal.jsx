@@ -3,7 +3,8 @@ import { Clock } from 'lucide-react';
 import Modal from '../../../../common/ui/Modal';
 import { Button, StatusChip } from '../../../../common/ui/primitives';
 import TestCaseResultsList from '../../../student/components/TestCaseResultsList';
-import RunMetricsBadges, { summarizeRunMetrics } from '../../../../common/components/RunMetricsBadges';
+import RunMetricsBadges from '../../../../common/components/RunMetricsBadges';
+import { summarizeRunMetrics } from '../../../../common/utils/runMetrics';
 import { formatHistoryTime, historyKindLabel } from '../../../../common/utils/runOutputHistory';
 
 function ResultsBody({ testResults }) {

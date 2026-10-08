@@ -32,6 +32,11 @@ import { confirmAction, notify } from '../../../common/ui/Toast';
 import { RateBar, SearchBox, Segmented } from '../components/classDetails/shared';
 import { HIDE_MD, HIDE_SM, errorText, plural, selectClass } from '../components/classDetails/helpers';
 import AttemptDetailModal from '../components/examReport/AttemptDetailModal';
+import SebPasswordsPanel from '../components/examReport/SebPasswordsPanel';
+import AiReferencesButton from '../components/examReport/AiReferencesButton';
+import AiMatchCell from '../components/examReport/AiMatchCell';
+import { EXAM_PHASES } from '../../../common/domain/exams';
+import { QUESTION_TYPE_LABELS } from '../../../common/domain/questions';
 import {
   ATTEMPT_STATUS,
   answerKey,
@@ -47,22 +52,8 @@ import {
 const POLL_MS = 15000;
 const STALE_MS = 90000;
 
-const PHASES = {
-  live: { label: 'Live', dot: 'bg-ok animate-pulse', text: 'text-ok' },
-  scheduled: { label: 'Scheduled', dot: 'bg-info', text: 'text-info' },
-  draft: { label: 'Draft', dot: 'bg-warn', text: 'text-warn' },
-  completed: { label: 'Closed', dot: 'bg-subtle', text: 'text-muted' },
-  archived: { label: 'Archived', dot: 'bg-subtle', text: 'text-subtle' },
-};
-
-const TYPE_SHORT = {
-  singleCorrectMcq: 'Single choice',
-  multipleCorrectMcq: 'Multiple choice',
-  fillInTheBlanks: 'Fill in',
-  fillInTheBlanksCoding: 'Code completion',
-  coding: 'Coding',
-  codingWithDriver: 'Coding',
-};
+const PHASES = EXAM_PHASES;
+const TYPE_SHORT = QUESTION_TYPE_LABELS;
 
 const STUDENT_FILTERS = [
   { id: 'all', label: 'All' },
@@ -353,6 +344,7 @@ export default function ExamReport() {
     { label: 'Answered', className: `text-right ${HIDE_SM}` },
     { label: 'Score', className: 'text-right' },
     { label: 'Flags', className: `text-right ${HIDE_SM}` },
+    { label: 'AI match', className: `text-right ${HIDE_SM}` },
     { label: 'Submitted', className: HIDE_MD },
     { key: 'actions', label: '' },
   ];
@@ -396,12 +388,15 @@ export default function ExamReport() {
                 {exam.released ? 'Hide scores' : 'Release scores'}
               </Button>
             )}
+            {exam && <AiReferencesButton exam={exam} />}
             <Button variant="secondary" icon={Download} className="h-9" onClick={() => downloadCsv(report)} disabled={!report || (!attempts.length && !summary.notStarted)}>
               Export CSV
             </Button>
             {exam && <ActionMenu label="Exam actions" items={headerMenu} />}
           </div>
         </header>
+
+        {exam && <SebPasswordsPanel exam={exam} onChanged={() => load({ quiet: true })} />}
 
         {loading && !report ? (
           <div className="space-y-3">
@@ -502,6 +497,9 @@ export default function ExamReport() {
                           <span className={flags ? 'text-warn font-semibold' : 'text-subtle'} title={`${a.tabSwitchCount || 0} tab switches · ${a.fullscreenExitCount || 0} fullscreen exits · ${a.copyPasteCount || 0} copy/paste`}>
                             {flags}
                           </span>
+                        </td>
+                        <td className={`${tableClass.td} text-right tabular-nums ${HIDE_SM}`}>
+                          <AiMatchCell attempt={a} questions={exam.questions} />
                         </td>
                         <td className={`${tableClass.td} whitespace-nowrap ${HIDE_MD}`}>
                           {a.submittedAt ? formatTime(a.submittedAt) : <span className="text-subtle">—</span>}

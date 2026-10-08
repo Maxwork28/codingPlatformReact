@@ -1,5 +1,6 @@
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { formatDistanceToNowStrict } from 'date-fns';
+import { QUESTION_TYPE_LABELS } from '../../../../common/domain/questions';
 
 /** Staff panel prefix from the current route (`/admin` or `/teacher`). */
 export function useStaffBase() {
@@ -38,14 +39,7 @@ export const initials = (name = '') =>
     .map((part) => part[0].toUpperCase())
     .join('') || '?';
 
-export const QUESTION_TYPES = {
-  singleCorrectMcq: 'Single MCQ',
-  multipleCorrectMcq: 'Multi MCQ',
-  fillInTheBlanks: 'Fill blanks',
-  fillInTheBlanksCoding: 'Fill blanks (code)',
-  coding: 'Coding',
-  codingWithDriver: 'Coding (driver)',
-};
+export const QUESTION_TYPES = QUESTION_TYPE_LABELS;
 
 export const paginate = (rows, page, pageSize) => {
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));

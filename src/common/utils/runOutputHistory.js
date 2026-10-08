@@ -1,3 +1,5 @@
+import { jwtDecode } from 'jwt-decode';
+
 export function summarizeRunResult(kind, results) {
   if (!results) return 'No output';
   if (results.error) return results.message ? `Error: ${String(results.message).slice(0, 80)}` : 'Error';
@@ -39,8 +41,20 @@ export function formatHistoryTime(iso) {
   }
 }
 
+/** Current user's id from the stored JWT, so one browser never shows another account's history. */
+function currentUserId() {
+  try {
+    const token = localStorage.getItem('token');
+    if (!token) return 'anon';
+    const decoded = jwtDecode(token);
+    return decoded?.id || decoded?._id || decoded?.sub || 'anon';
+  } catch {
+    return 'anon';
+  }
+}
+
 function historyStorageKey(role, classId) {
-  return `algo-run-history:${role}:${classId || 'none'}`;
+  return `algo-run-history:${currentUserId()}:${role}:${classId || 'none'}`;
 }
 
 export function loadRunHistory(role, classId) {

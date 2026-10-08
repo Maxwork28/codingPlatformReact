@@ -1,20 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, ClipboardList, Clock, LogOut, Maximize, Send, WifiOff, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ClipboardList, Clock, ExternalLink, LogOut, Maximize, Send, ShieldAlert, WifiOff, X } from 'lucide-react';
 import {
   autoSubmitExam,
   getExamAttempt,
   getStudentExamSummary,
   logProctoringEvent,
+  navigateExam,
   runExamCode,
   startExam,
   submitExam,
   submitExamAnswer,
-  updateQuestionTimer,
-  updateSectionTimer,
 } from '../../../common/services/api';
 import { Button, EmptyState } from '../../../common/ui/primitives';
 import { confirmAction } from '../../../common/ui/Toast';
+import { stripHtml } from '../../../common/utils/sanitizeHtml';
+import { SEB_REQUIRED_EVENT, isSafeExamBrowser } from '../../../common/utils/seb';
 import ExamLobby from '../components/exam/ExamLobby';
 import ExamQuestionView from '../components/exam/ExamQuestionView';
 import QuestionPalette from '../components/exam/QuestionPalette';
@@ -31,13 +32,21 @@ import {
   storageKey,
   writeStored,
 } from '../components/exam/examUtils';
+import { expireTimers, nextDeadline, timerMap, useRemainingSeconds } from '../components/exam/useCountdown';
 
 const AUTOSAVE_MS = 700;
-const TIMER_SYNC_TICKS = 15;
 const HEARTBEAT_MS = 30000;
+/** How long after a window blur we wait before deciding the tab did not simply go hidden. */
+const BLUR_SETTLE_MS = 400;
+/** After a timer runs out locally, ask the server to confirm this long afterwards. */
+const EXPIRY_RESYNC_MS = 800;
+/** Re-anchor the clock offset only when it drifted more than this (avoids latency jitter). */
+const OFFSET_TOLERANCE_MS = 1000;
 
-const timerMap = (list, key) =>
-  Object.fromEntries((list || []).map((t) => [String(t[key]), typeof t.remainingSeconds === 'number' ? t.remainingSeconds : null]));
+const timersFrom = (data) => ({
+  sections: timerMap(data?.sectionTimers, 'sectionId'),
+  questions: timerMap(data?.questionTimers, 'questionId'),
+});
 
 const savedMap = (answers) =>
   Object.fromEntries(
@@ -52,6 +61,39 @@ const CLOSED_COPY = {
   auto_submitted: { title: 'Your exam was submitted', message: 'Time ran out, or your instructor closed the exam. Your saved answers have been submitted.' },
   submitted: { title: 'Exam submitted', message: 'Your answers have been submitted.' },
 };
+
+/**
+ * The header countdown. Owns the 1 Hz tick so the rest of the exam screen (editor, palette)
+ * is not re-rendered every second. Calls `onTimeUp` once when the attempt reaches zero.
+ */
+function ExamClock({ endsAt, clockOffset, onTimeUp }) {
+  const remaining = useRemainingSeconds(endsAt, clockOffset);
+  const onTimeUpRef = useRef(onTimeUp);
+  onTimeUpRef.current = onTimeUp;
+  const timeUp = remaining === 0;
+  useEffect(() => {
+    if (timeUp) onTimeUpRef.current?.();
+  }, [timeUp, endsAt]);
+
+  const tone =
+    remaining !== null && remaining < 60
+      ? 'bg-bad-soft text-bad border-bad-line'
+      : remaining !== null && remaining < 300
+        ? 'bg-warn-soft text-warn border-warn-line'
+        : 'bg-inset text-fg border-line';
+  return (
+    <span className={`flex items-center gap-1.5 h-8 px-3 rounded-lg border text-sm font-bold tabular-nums ${tone}`} aria-live="polite">
+      <Clock className="w-4 h-4" />
+      {formatClock(remaining)}
+    </span>
+  );
+}
+
+/** Submit dialog wrapper that only ticks while it is open. */
+function SubmitDialog({ open, endsAt, clockOffset, ...rest }) {
+  const remaining = useRemainingSeconds(endsAt, clockOffset, open);
+  return <SubmitExamModal open={open} remainingSeconds={remaining} {...rest} />;
+}
 
 const StudentExamScreen = () => {
   const { examId } = useParams();
@@ -89,7 +131,13 @@ const StudentExamScreen = () => {
   const attemptRef = useRef(attempt);
   const autosaveRef = useRef({});
   const saveSeqRef = useRef({});
-  const tickRef = useRef(0);
+  // Navigation is serialised: one /navigate request in flight, then the latest target (if it changed).
+  const navTargetRef = useRef(null);
+  const navBusyRef = useRef(false);
+  const navPromiseRef = useRef(Promise.resolve());
+  const navEpochRef = useRef(0);
+  const requestNavigateRef = useRef(null);
+  const resyncTimeoutRef = useRef(null);
   const timeUpRef = useRef(false);
   const leavingRef = useRef(false);
   const lastCopyLogRef = useRef(0);
@@ -99,7 +147,20 @@ const StudentExamScreen = () => {
   attemptRef.current = attempt;
 
   const running = view === 'running' && !closed;
-  const proctoring = exam?.proctoring || {};
+  // Safe Exam Browser is already a locked-down fullscreen kiosk (and its macOS web view may not support
+  // the Fullscreen API), so the fullscreen rule is satisfied by SEB itself.
+  const inSeb = useMemo(() => isSafeExamBrowser(), []);
+  const proctoring = useMemo(() => {
+    const p = exam?.proctoring || {};
+    return inSeb && p.fullscreenRequired ? { ...p, fullscreenRequired: false } : p;
+  }, [exam, inSeb]);
+  // Set when any exam request is refused with code SEB_REQUIRED: replaces the screen with a blocking message.
+  const [sebBlocked, setSebBlocked] = useState(null);
+  useEffect(() => {
+    const onSebRequired = (event) => setSebBlocked(event.detail?.message || 'This exam must be taken in Safe Exam Browser');
+    window.addEventListener(SEB_REQUIRED_EVENT, onSebRequired);
+    return () => window.removeEventListener(SEB_REQUIRED_EVENT, onSebRequired);
+  }, []);
 
   // ---------------------------------------------------------------- loading
   const loadSummary = useCallback(async () => {
@@ -118,10 +179,13 @@ const StudentExamScreen = () => {
     loadSummary();
   }, [loadSummary]);
 
+  // The lobby shows "opens in" / "time left" countdowns; while the exam runs <ExamClock> owns the tick.
   useEffect(() => {
+    if (view !== 'lobby') return undefined;
+    setNowMs(Date.now() + clockOffset);
     const id = setInterval(() => setNowMs(Date.now() + clockOffset), 1000);
     return () => clearInterval(id);
-  }, [clockOffset]);
+  }, [clockOffset, view]);
 
   // ---------------------------------------------------------------- structure
   const questionById = useMemo(() => new Map(questions.map((q) => [String(q._id), q])), [questions]);
@@ -137,7 +201,9 @@ const StudentExamScreen = () => {
     const rows = [];
     sections.forEach((section) => {
       questions.forEach((q) => {
-        if (sectionOf.get(String(q._id)) === section.sectionId) rows.push({ id: String(q._id), section, number: rows.length + 1, title: q.title });
+        if (sectionOf.get(String(q._id)) === section.sectionId) {
+          rows.push({ id: String(q._id), section, number: rows.length + 1, title: stripHtml(q.title) });
+        }
       });
     });
     return rows;
@@ -145,14 +211,39 @@ const StudentExamScreen = () => {
   const sectionOfRef = useRef(sectionOf);
   sectionOfRef.current = sectionOf;
 
+  const sectionsRef = useRef(sections);
+  sectionsRef.current = sections;
+
+  // Timers change only when the server answers or one runs out locally, never once a second.
   const lockReasonFor = useCallback(
     (id) => {
-      const sectionId = sectionOf.get(id);
-      if (typeof timers.sections[sectionId] === 'number' && timers.sections[sectionId] === 0) return 'Time for this section is over. Your saved answer stands.';
-      if (typeof timers.questions[id] === 'number' && timers.questions[id] === 0) return 'Time for this question is over. Your saved answer stands.';
+      const st = timers.sections[sectionOf.get(id)];
+      if (st?.completed) {
+        return st.remaining > 0 || st.remaining === null
+          ? 'You left this section, so its answers are locked. Your saved answer stands.'
+          : 'Time for this section is over. Your saved answer stands.';
+      }
+      const qt = timers.questions[id];
+      if (qt?.completed) {
+        return qt.remaining > 0 ? 'This question is locked. Your saved answer stands.' : 'Time for this question is over. Your saved answer stands.';
+      }
       return null;
     },
     [sectionOf, timers],
+  );
+
+  /**
+   * True when `id` sits in a timed question or section other than the one open now. The server pauses
+   * those timers and only accepts answers while they run, so drafts there cannot be saved from here.
+   */
+  const isAwayTimed = useCallback(
+    (id) => {
+      const sectionId = sectionOf.get(id);
+      const section = sections.find((s) => s.sectionId === sectionId);
+      if (section?.durationSeconds && sectionId !== sectionOf.get(activeId)) return true;
+      return Boolean(questionById.get(id)?.timeLimitSeconds) && id !== activeId;
+    },
+    [sectionOf, sections, questionById, activeId],
   );
 
   const stateOf = useCallback(
@@ -172,11 +263,21 @@ const StudentExamScreen = () => {
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   }, []);
 
+  /** Drop every `exam:<attemptId>:*` key this attempt wrote. */
   const clearStorage = useCallback(() => {
     const id = attemptRef.current?._id;
     if (!id) return;
-    localStorage.removeItem(storageKey(id, 'drafts'));
-    localStorage.removeItem(storageKey(id, 'flags'));
+    const prefix = storageKey(id, '');
+    const stale = [];
+    try {
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(prefix)) stale.push(key);
+      }
+    } catch {
+      /* storage blocked: nothing to clear */
+    }
+    [storageKey(id, 'drafts'), storageKey(id, 'flags'), ...stale].forEach((key) => localStorage.removeItem(key));
   }, []);
 
   const closeOut = useCallback(
@@ -190,15 +291,94 @@ const StudentExamScreen = () => {
     [clearStorage, exitFullscreen],
   );
 
-  const checkClosed = useCallback(async () => {
-    try {
-      const res = await getExamAttempt(examId);
-      if (isClosedAttempt(res.data.attempt)) closeOut(res.data.attempt.status);
-      else if (res.data.attempt?.endsAt) setAttempt((prev) => (prev ? { ...prev, endsAt: res.data.attempt.endsAt } : prev));
-    } catch {
-      /* the next heartbeat retries */
-    }
-  }, [examId, closeOut]);
+  // ---------------------------------------------------------------- server timer state
+  const syncOffset = useCallback((serverTime) => {
+    if (!serverTime) return;
+    const offset = new Date(serverTime).getTime() - Date.now();
+    setClockOffset((prev) => (Math.abs(prev - offset) > OFFSET_TOLERANCE_MS ? offset : prev));
+  }, []);
+
+  /** Adopt the server's section/question timers (and exam end) from an attempt or /navigate payload. */
+  const applyTimerState = useCallback((data) => {
+    if (!data) return;
+    const next = timersFrom(data);
+    timersRef.current = next;
+    setTimers(next);
+    if (data.endsAt) setAttempt((prev) => (prev && prev.endsAt !== data.endsAt ? { ...prev, endsAt: data.endsAt } : prev));
+  }, []);
+
+  /**
+   * Re-read the attempt: closes the screen if the attempt ended, otherwise re-syncs the timers. A reply is
+   * ignored for timers when a /navigate was sent meanwhile (it would be older than that answer).
+   * With `renavigate`, a server that lost track of the open question (e.g. a navigate failed offline) is told again.
+   */
+  const checkClosed = useCallback(
+    async ({ renavigate = true } = {}) => {
+      const epoch = navEpochRef.current;
+      try {
+        const res = await getExamAttempt(examId);
+        const a = res.data.attempt;
+        if (isClosedAttempt(a)) {
+          closeOut(a.status);
+          return;
+        }
+        syncOffset(res.data.serverTime);
+        if (navEpochRef.current !== epoch || navBusyRef.current) {
+          if (a?.endsAt) setAttempt((prev) => (prev && prev.endsAt !== a.endsAt ? { ...prev, endsAt: a.endsAt } : prev));
+          return;
+        }
+        applyTimerState(a);
+        const active = activeIdRef.current;
+        if (renavigate && active && a?.currentQuestionId && String(a.currentQuestionId) !== active) requestNavigateRef.current?.(active);
+      } catch {
+        /* the next heartbeat / navigation retries */
+      }
+    },
+    [examId, closeOut, syncOffset, applyTimerState],
+  );
+
+  /**
+   * Tell the server which question is open. Requests are serialised: while one is in flight, further
+   * calls only update the target, and the latest target is sent when it returns (rapid clicks never race).
+   */
+  const requestNavigate = useCallback(
+    (questionId) => {
+      navTargetRef.current = questionId;
+      if (navBusyRef.current) return navPromiseRef.current;
+      navBusyRef.current = true;
+      navPromiseRef.current = (async () => {
+        let sent = null;
+        let failed = false;
+        try {
+          while (navTargetRef.current && navTargetRef.current !== sent && attemptRef.current) {
+            sent = navTargetRef.current;
+            navEpochRef.current += 1;
+            try {
+              const res = await navigateExam(examId, { attemptId: attemptRef.current._id, questionId: sent });
+              if (navTargetRef.current === sent) {
+                syncOffset(res.data.serverTime);
+                applyTimerState(res.data);
+              }
+            } catch {
+              failed = true;
+              break;
+            }
+          }
+        } finally {
+          navBusyRef.current = false;
+        }
+        if (failed) checkClosed({ renavigate: false });
+      })();
+      return navPromiseRef.current;
+    },
+    [examId, syncOffset, applyTimerState, checkClosed],
+  );
+  requestNavigateRef.current = requestNavigate;
+
+  /** Resolves once the server knows `id` is open (so its timers run before we save or run code for it). */
+  const navigationSettled = useCallback(async (id) => {
+    if (navBusyRef.current && navTargetRef.current === id) await navPromiseRef.current;
+  }, []);
 
   // ---------------------------------------------------------------- start
   const requestFullscreen = useCallback(async () => {
@@ -210,12 +390,12 @@ const StudentExamScreen = () => {
     }
   }, []);
 
-  const handleStart = async () => {
+  const handleStart = async (entryPassword) => {
     setStarting(true);
     setStartError('');
-    if (summary?.exam?.proctoring?.fullscreenRequired) await requestFullscreen();
+    if (summary?.exam?.proctoring?.fullscreenRequired && !inSeb) await requestFullscreen();
     try {
-      const res = await startExam(examId);
+      const res = await startExam(examId, typeof entryPassword === 'string' ? entryPassword : undefined);
       const { exam: startedExam, attempt: startedAttempt, questions: list } = res.data;
       setClockOffset(new Date(res.data.serverTime).getTime() - Date.now());
       const savedAnswers = savedMap(startedAttempt.answers);
@@ -227,19 +407,26 @@ const StudentExamScreen = () => {
         initial[id] = stored && stored.answer !== undefined ? stored : initialDraft(q, savedAnswers[id]);
       });
       const ids = new Set(list.map((q) => String(q._id)));
+      // The server already opened its current question and started that question's/section's timers.
       const resumeId = startedAttempt.currentQuestionId && ids.has(String(startedAttempt.currentQuestionId)) ? String(startedAttempt.currentQuestionId) : null;
+      const firstId = resumeId || (list[0] ? String(list[0]._id) : null);
+      const startTimers = timersFrom(startedAttempt);
 
       setExam(startedExam);
       setAttempt(startedAttempt);
+      attemptRef.current = startedAttempt;
       setQuestions(list);
       setSaved(savedAnswers);
       setDrafts(initial);
       setFlagged(new Set(readStored(storageKey(startedAttempt._id, 'flags'), [])));
-      setTimers({ sections: timerMap(startedAttempt.sectionTimers, 'sectionId'), questions: timerMap(startedAttempt.questionTimers, 'questionId') });
-      setActiveId(resumeId || (list[0] ? String(list[0]._id) : null));
+      timersRef.current = startTimers;
+      setTimers(startTimers);
+      setActiveId(firstId);
+      activeIdRef.current = firstId;
       leavingRef.current = false;
       timeUpRef.current = false;
       setView('running');
+      if (firstId && firstId !== resumeId) requestNavigate(firstId);
     } catch (err) {
       setStartError(typeof err === 'string' ? err : 'Failed to start exam');
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -261,6 +448,7 @@ const StudentExamScreen = () => {
       const coding = isCoding(q);
       setSaveState((s) => ({ ...s, [id]: { ...s[id], saving: true, error: null } }));
       try {
+        await navigationSettled(id);
         const res = await submitExamAnswer(examId, {
           attemptId: att._id,
           questionId: id,
@@ -285,7 +473,7 @@ const StudentExamScreen = () => {
         }));
         if (coding) setRunState((s) => ({ ...s, [id]: { running: false, result: null } }));
         return true;
-    } catch (err) {
+      } catch (err) {
         if (saveSeqRef.current[id] === seq) {
           setSaveState((s) => ({ ...s, [id]: { ...s[id], saving: false, error: typeof err === 'string' ? err : 'Could not save' } }));
         }
@@ -293,17 +481,35 @@ const StudentExamScreen = () => {
         return false;
       }
     },
-    [examId, questionById, checkClosed],
+    [examId, questionById, checkClosed, navigationSettled],
   );
 
-  const changeDraft = (id, next) => {
-    setDrafts((prev) => ({ ...prev, [id]: next }));
-    const q = questionById.get(id);
-    if (q && !isCoding(q)) {
-      clearTimeout(autosaveRef.current[id]);
-      autosaveRef.current[id] = setTimeout(() => saveAnswer(id), AUTOSAVE_MS);
-    }
-  };
+  const changeDraft = useCallback(
+    (id, next) => {
+      setDrafts((prev) => ({ ...prev, [id]: next }));
+      const q = questionById.get(id);
+      if (q && !isCoding(q)) {
+        clearTimeout(autosaveRef.current[id]);
+        autosaveRef.current[id] = setTimeout(() => {
+          delete autosaveRef.current[id];
+          saveAnswer(id);
+        }, AUTOSAVE_MS);
+      }
+    },
+    [questionById, saveAnswer],
+  );
+
+  /** Send a pending autosave now (before leaving the question, while its timer still runs). */
+  const flushAutosave = useCallback(
+    (id) => {
+      const pending = autosaveRef.current[id];
+      if (!pending) return;
+      clearTimeout(pending);
+      delete autosaveRef.current[id];
+      saveAnswer(id);
+    },
+    [saveAnswer],
+  );
 
   useEffect(() => {
     const id = attempt?._id;
@@ -324,93 +530,89 @@ const StudentExamScreen = () => {
   const saveAllDirty = useCallback(async () => {
     const ids = ordered.map((r) => r.id).filter((id) => {
       const q = questionById.get(id);
-      return q && !lockReasonFor(id) && isDirty(q, draftsRef.current[id], saved[id]);
+      return q && !lockReasonFor(id) && !isAwayTimed(id) && isDirty(q, draftsRef.current[id], saved[id]);
     });
     await Promise.allSettled(ids.map((id) => saveAnswer(id)));
-  }, [ordered, questionById, lockReasonFor, saved, saveAnswer]);
+  }, [ordered, questionById, lockReasonFor, isAwayTimed, saved, saveAnswer]);
 
   // ---------------------------------------------------------------- running code
-  const runCode = async (id, { customInput, expectedOutput } = {}) => {
-    const q = questionById.get(id);
-    const draft = draftsRef.current[id];
-    if (!q || !draft) return;
-    const custom = Boolean(customInput && customInput.trim());
-    setRunState((s) => ({ ...s, [id]: { running: true, result: s[id]?.result } }));
-    try {
-      const res = await runExamCode(examId, {
-        attemptId: attempt._id,
-        questionId: id,
-        answer: draft.answer,
-        language: draft.language,
-        customInput: custom ? customInput : undefined,
-        expectedOutput: custom ? expectedOutput : undefined,
-      });
-      setRunState((s) => ({ ...s, [id]: { running: false, result: { custom: res.data.custom, testResults: res.data.testResults } } }));
-    } catch (err) {
-      setRunState((s) => ({ ...s, [id]: { running: false, result: { custom, error: typeof err === 'string' ? err : 'Run failed' } } }));
-      checkClosed();
-    }
-  };
+  const runCode = useCallback(
+    async (id, { customInput, expectedOutput } = {}) => {
+      const q = questionById.get(id);
+      const draft = draftsRef.current[id];
+      const att = attemptRef.current;
+      if (!q || !draft || !att) return;
+      const custom = Boolean(customInput && customInput.trim());
+      setRunState((s) => ({ ...s, [id]: { running: true, result: s[id]?.result } }));
+      try {
+        await navigationSettled(id);
+        const res = await runExamCode(examId, {
+          attemptId: att._id,
+          questionId: id,
+          answer: draft.answer,
+          language: draft.language,
+          customInput: custom ? customInput : undefined,
+          expectedOutput: custom ? expectedOutput : undefined,
+        });
+        setRunState((s) => ({ ...s, [id]: { running: false, result: { custom: res.data.custom, testResults: res.data.testResults } } }));
+      } catch (err) {
+        // Thrown strings (judge busy / rate limited) are shown verbatim.
+        setRunState((s) => ({ ...s, [id]: { running: false, result: { custom, error: typeof err === 'string' ? err : 'Run failed' } } }));
+        checkClosed();
+      }
+    },
+    [examId, questionById, checkClosed, navigationSettled],
+  );
 
   // ---------------------------------------------------------------- timers
-  const syncTimers = useCallback(() => {
-    const att = attemptRef.current;
-    const id = activeIdRef.current;
-    if (!att || !id) return;
-    const sectionId = sectionOfRef.current.get(id);
-    const t = timersRef.current;
-    updateSectionTimer(examId, {
-      attemptId: att._id,
-      sectionId,
-      remainingSeconds: t.sections[sectionId] ?? undefined,
-      currentQuestionId: id,
-    }).catch(() => {});
-    if (typeof t.questions[id] === 'number') {
-      updateQuestionTimer(examId, { attemptId: att._id, questionId: id, remainingSeconds: t.questions[id] }).catch(() => {});
-    }
-  }, [examId]);
-
+  // Countdowns render from the server's deadlines (<ExamClock>, the palette and the question badge tick
+  // by themselves). Here we only arm one timeout for the nearest deadline: when it passes, the timer is
+  // shown as locked at once and the server is asked to confirm. Nothing re-renders once a second.
   useEffect(() => {
     if (!running) return undefined;
-    const tick = setInterval(() => {
-      const id = activeIdRef.current;
-      if (!id) return;
-      const sectionId = sectionOfRef.current.get(id);
-      const t = timersRef.current;
-      let hitZero = false;
-      const next = { sections: { ...t.sections }, questions: { ...t.questions } };
-      if (typeof next.sections[sectionId] === 'number' && next.sections[sectionId] > 0) {
-        next.sections[sectionId] -= 1;
-        hitZero = hitZero || next.sections[sectionId] === 0;
+    const deadline = nextDeadline(timers);
+    if (deadline === null) return undefined;
+    const id = setTimeout(() => {
+      const next = expireTimers(timersRef.current, Date.now() + clockOffset, sectionOfRef.current);
+      if (next !== timersRef.current) {
+        timersRef.current = next;
+        setTimers(next);
       }
-      if (typeof next.questions[id] === 'number' && next.questions[id] > 0) {
-        next.questions[id] -= 1;
-        hitZero = hitZero || next.questions[id] === 0;
-      }
-      timersRef.current = next;
-      setTimers(next);
-      tickRef.current += 1;
-      if (hitZero || tickRef.current % TIMER_SYNC_TICKS === 0) syncTimers();
-    }, 1000);
-    return () => clearInterval(tick);
-  }, [running, syncTimers]);
+      clearTimeout(resyncTimeoutRef.current);
+      resyncTimeoutRef.current = setTimeout(() => checkClosed(), EXPIRY_RESYNC_MS);
+    }, Math.max(0, deadline - (Date.now() + clockOffset)) + 50);
+    return () => clearTimeout(id);
+  }, [running, timers, clockOffset, checkClosed]);
 
-  const remainingSeconds = attempt?.endsAt ? Math.max(0, Math.floor((new Date(attempt.endsAt).getTime() - nowMs) / 1000)) : null;
-
+  // A throttled background tab or a sleeping laptop may have missed deadlines: re-sync when it wakes up.
   useEffect(() => {
-    if (!running || remainingSeconds === null || remainingSeconds > 0 || timeUpRef.current) return;
+    if (!running) return undefined;
+    const onVisible = () => {
+      if (!document.hidden) checkClosed();
+    };
+    const onOnline = () => checkClosed();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', onOnline);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [running, checkClosed]);
+
+  useEffect(() => () => clearTimeout(resyncTimeoutRef.current), []);
+
+  const handleTimeUp = useCallback(async () => {
+    if (!running || timeUpRef.current) return;
     timeUpRef.current = true;
-    (async () => {
-      await saveAllDirty();
-      try {
-        const res = await autoSubmitExam(examId, attemptRef.current._id);
-        closeOut(res.data.attempt?.status || 'auto_submitted');
-      } catch {
-        checkClosed();
-        timeUpRef.current = false;
-      }
-    })();
-  }, [running, remainingSeconds, saveAllDirty, examId, closeOut, checkClosed]);
+    await saveAllDirty();
+    try {
+      const res = await autoSubmitExam(examId, attemptRef.current._id);
+      closeOut(res.data.attempt?.status || 'auto_submitted');
+    } catch {
+      checkClosed();
+      timeUpRef.current = false;
+    }
+  }, [running, saveAllDirty, examId, closeOut, checkClosed]);
 
   // ---------------------------------------------------------------- proctoring
   const logEvent = useCallback(
@@ -432,9 +634,8 @@ const StudentExamScreen = () => {
 
   useEffect(() => {
     if (!running) return undefined;
-    const onVisibility = async () => {
-      if (!document.hidden) return;
-      const d = await logEvent('tab_switch');
+    const reportTabSwitch = async (details) => {
+      const d = await logEvent('tab_switch', details);
       if (d && !d.terminate) {
         const limit = d.tabSwitchLimit > 0 ? ` (${d.tabSwitchCount} of ${d.tabSwitchLimit})` : '';
         setWarning({
@@ -443,6 +644,21 @@ const StudentExamScreen = () => {
         });
       }
     };
+    const onVisibility = () => {
+      if (!document.hidden) return;
+      reportTabSwitch();
+    };
+    // Switching to another window (alt-tab, second monitor) blurs the window without necessarily hiding the
+    // document. Wait briefly so a real tab switch is reported once, by the visibility handler only.
+    let blurTimer = null;
+    const onBlur = () => {
+      clearTimeout(blurTimer);
+      blurTimer = setTimeout(() => {
+        if (document.hidden || document.hasFocus()) return;
+        reportTabSwitch('window_blur');
+      }, BLUR_SETTLE_MS);
+    };
+    const onFocus = () => clearTimeout(blurTimer);
     const onFullscreen = () => {
       const active = Boolean(document.fullscreenElement);
       setIsFullscreen(active);
@@ -472,15 +688,20 @@ const StudentExamScreen = () => {
     document.addEventListener('fullscreenchange', onFullscreen);
     ['copy', 'cut', 'paste'].forEach((t) => document.addEventListener(t, onClipboard, true));
     document.addEventListener('contextmenu', onContextMenu);
+    window.addEventListener('blur', onBlur);
+    window.addEventListener('focus', onFocus);
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => {
       clearInterval(heartbeat);
+      clearTimeout(blurTimer);
       document.removeEventListener('visibilitychange', onVisibility);
       document.removeEventListener('fullscreenchange', onFullscreen);
       ['copy', 'cut', 'paste'].forEach((t) => document.removeEventListener(t, onClipboard, true));
       document.removeEventListener('contextmenu', onContextMenu);
+      window.removeEventListener('blur', onBlur);
+      window.removeEventListener('focus', onFocus);
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
       window.removeEventListener('beforeunload', onBeforeUnload);
@@ -492,20 +713,46 @@ const StudentExamScreen = () => {
   }, []);
 
   // ---------------------------------------------------------------- navigation
-  const goTo = (id) => {
-    if (!id || id === activeId) return;
-    syncTimers();
-    setActiveId(id);
-    setPaletteOpen(false);
-  };
+  const goTo = useCallback(
+    async (id) => {
+      const from = activeIdRef.current;
+      if (!id || id === from) return;
+      const fromSection = sectionOfRef.current.get(from);
+      if (fromSection !== sectionOfRef.current.get(id)) {
+        const section = sectionsRef.current.find((s) => s.sectionId === fromSection);
+        if (section?.allowRevisit === false && !timersRef.current.sections[fromSection]?.completed) {
+          const ok = await confirmAction(
+            'This section does not allow coming back. Once you leave it, its answers are locked; changes you have not saved are lost.',
+            { title: `Leave ${section.title || 'this section'}?`, confirmLabel: 'Leave section' },
+          );
+          if (!ok || activeIdRef.current !== from) return;
+        }
+      }
+      flushAutosave(from);
+      activeIdRef.current = id;
+      setActiveId(id);
+      setPaletteOpen(false);
+      requestNavigate(id);
+    },
+    [flushAutosave, requestNavigate],
+  );
   const activeIndex = ordered.findIndex((r) => r.id === activeId);
-  const toggleFlag = () =>
+  const prevId = ordered[activeIndex - 1]?.id;
+  const nextId = ordered[activeIndex + 1]?.id;
+  const goPrev = useCallback(() => goTo(prevId), [goTo, prevId]);
+  const goNext = useCallback(() => goTo(nextId), [goTo, nextId]);
+  const toggleFlag = useCallback(() => {
+    const id = activeIdRef.current;
     setFlagged((prev) => {
       const next = new Set(prev);
-      if (next.has(activeId)) next.delete(activeId);
-      else next.add(activeId);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
+  }, []);
+  const changeActive = useCallback((next) => changeDraft(activeIdRef.current, next), [changeDraft]);
+  const saveActive = useCallback(() => saveAnswer(activeIdRef.current), [saveAnswer]);
+  const runActive = useCallback((opts) => runCode(activeIdRef.current, opts), [runCode]);
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -529,10 +776,26 @@ const StudentExamScreen = () => {
       confirmLabel: 'Leave',
     });
     if (!ok) return;
-    syncTimers();
+    clearStorage();
     exitFullscreen();
     navigate('/student/exams');
   };
+
+  const groups = useMemo(
+    () =>
+      sections
+        .map((section) => {
+          const timer = timers.sections[section.sectionId] ?? null;
+          return {
+            section,
+            // Shown for sections with their own limit, and for no-revisit sections once locked.
+            timer: section.durationSeconds || timer?.completed ? timer : null,
+            items: ordered.filter((r) => r.section.sectionId === section.sectionId),
+          };
+        })
+        .filter((g) => g.items.length),
+    [sections, timers.sections, ordered],
+  );
 
   // ---------------------------------------------------------------- render
   if (view === 'loading') {
@@ -556,12 +819,42 @@ const StudentExamScreen = () => {
     );
   }
 
+  if (sebBlocked) {
+    const link = summary?.sebLink || summary?.exam?.seb?.link || null;
+    return (
+      <div className="h-full flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-surface border border-line rounded-2xl p-6 text-center space-y-3" role="alert">
+          <ShieldAlert className="w-10 h-10 text-warn mx-auto" />
+          <h1 className="text-lg font-bold text-fg">Open this exam in Safe Exam Browser</h1>
+          <p className="text-sm text-muted">
+            {sebBlocked}. {inSeb ? 'This Safe Exam Browser was not started with this exam’s settings. Ask your teacher: quit it and open the exam again with its “Open in Safe Exam Browser” link.' : 'Your answers so far are saved. Continue in Safe Exam Browser; it must already be installed on this laptop.'}
+          </p>
+          <div className="flex flex-wrap justify-center gap-2 pt-1">
+            {link && !inSeb && (
+              <a
+                href={link}
+                className="rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 px-4 py-2 bg-accent hover:bg-accent-hover text-on-accent"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                Open in Safe Exam Browser
+              </a>
+            )}
+            <Button variant="secondary" onClick={() => navigate('/student/exams')}>
+              Back to exams
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (view === 'lobby') {
-      return (
+    return (
       <div className="h-full overflow-y-auto">
         <ExamLobby
           exam={summary.exam}
           attempt={summary.attempt}
+          sebLink={summary.sebLink}
           nowMs={nowMs}
           starting={starting}
           error={startError}
@@ -569,12 +862,12 @@ const StudentExamScreen = () => {
           onBack={() => navigate('/student/exams')}
           onResults={() => navigate(`/student/exams/${examId}/results`)}
         />
-        </div>
-      );
-    }
+      </div>
+    );
+  }
 
   if (closed) {
-      return (
+    return (
       <div className="h-full flex items-center justify-center p-6">
         <div className="max-w-md w-full bg-surface border border-line rounded-2xl p-6 text-center space-y-3">
           <CheckCircle2 className="w-10 h-10 text-ok mx-auto" />
@@ -594,17 +887,9 @@ const StudentExamScreen = () => {
   const activeQuestion = questionById.get(activeId);
   const activeSection = sections.find((s) => s.sectionId === sectionOf.get(activeId));
   const savedCount = ordered.filter((r) => saved[r.id]).length;
-  const groups = sections
-    .map((section) => ({
-      section,
-      remaining: section.durationSeconds ? timers.sections[section.sectionId] ?? null : null,
-      items: ordered.filter((r) => r.section.sectionId === section.sectionId),
-    }))
-    .filter((g) => g.items.length);
   const lockReason = activeId ? lockReasonFor(activeId) : null;
-  const timerTone = remainingSeconds !== null && remainingSeconds < 60 ? 'bg-bad-soft text-bad border-bad-line' : remainingSeconds < 300 ? 'bg-warn-soft text-warn border-warn-line' : 'bg-inset text-fg border-line';
   const palette = (
-    <QuestionPalette groups={groups} activeId={activeId} stateOf={stateOf} flagged={flagged} onSelect={goTo} />
+    <QuestionPalette groups={groups} activeId={activeId} stateOf={stateOf} flagged={flagged} onSelect={goTo} clockOffset={clockOffset} />
   );
 
   return (
@@ -620,10 +905,7 @@ const StudentExamScreen = () => {
         <span className="hidden sm:inline text-xs text-muted tabular-nums">
           {savedCount}/{ordered.length} saved
         </span>
-        <span className={`flex items-center gap-1.5 h-8 px-3 rounded-lg border text-sm font-bold tabular-nums ${timerTone}`} aria-live="polite">
-          <Clock className="w-4 h-4" />
-          {formatClock(remainingSeconds)}
-        </span>
+        <ExamClock endsAt={attempt?.endsAt} clockOffset={clockOffset} onTimeUp={handleTimeUp} />
         <Button variant="secondary" className="md:hidden h-8" icon={ClipboardList} onClick={() => setPaletteOpen(true)}>
           {activeIndex + 1}/{ordered.length}
         </Button>
@@ -651,7 +933,8 @@ const StudentExamScreen = () => {
               number={activeIndex + 1}
               total={ordered.length}
               sectionTitle={sections.length > 1 ? activeSection?.title : null}
-              remaining={typeof timers.questions[activeId] === 'number' ? timers.questions[activeId] : null}
+              timer={activeQuestion.timeLimitSeconds ? timers.questions[activeId] ?? null : null}
+              clockOffset={clockOffset}
               draft={drafts[activeId]}
               dirty={isDirty(activeQuestion, drafts[activeId], saved[activeId])}
               save={saveState[activeId]}
@@ -659,15 +942,15 @@ const StudentExamScreen = () => {
               lockReason={lockReason}
               flagged={flagged.has(activeId)}
               onToggleFlag={toggleFlag}
-              onChange={(next) => changeDraft(activeId, next)}
-              onSave={() => saveAnswer(activeId)}
-              onRun={(opts) => runCode(activeId, opts)}
+              onChange={changeActive}
+              onSave={saveActive}
+              onRun={runActive}
               running={Boolean(runState[activeId]?.running)}
               runResult={runState[activeId]?.result}
               allowRun={proctoring.allowRunCode !== false}
               copyPasteDisabled={Boolean(proctoring.copyPasteDisabled)}
-              onPrev={() => goTo(ordered[activeIndex - 1]?.id)}
-              onNext={() => goTo(ordered[activeIndex + 1]?.id)}
+              onPrev={goPrev}
+              onNext={goNext}
               hasPrev={activeIndex > 0}
               hasNext={activeIndex < ordered.length - 1}
             />
@@ -684,11 +967,11 @@ const StudentExamScreen = () => {
                 <Button icon={Maximize} onClick={requestFullscreen}>
                   Enter fullscreen
                 </Button>
-          </div>
-        </div>
+              </div>
+            </div>
           )}
         </main>
-                  </div>
+      </div>
 
       {paletteOpen && (
         <div className="md:hidden fixed inset-0 z-40 flex">
@@ -698,12 +981,12 @@ const StudentExamScreen = () => {
               <p className="text-sm font-bold text-fg">Questions</p>
               <button type="button" className="p-1.5 rounded-lg text-muted hover:text-fg" onClick={() => setPaletteOpen(false)} aria-label="Close">
                 <X className="w-4 h-4" />
-                    </button>
-                  </div>
+              </button>
+            </div>
             {palette}
-                </div>
           </div>
-        )}
+        </div>
+      )}
 
       {warning && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[min(28rem,calc(100vw-2rem))] flex items-start gap-3 rounded-2xl border border-warn-line bg-surface shadow-2xl p-4">
@@ -711,20 +994,24 @@ const StudentExamScreen = () => {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-bold text-fg">{warning.title}</p>
             <p className="text-xs text-muted mt-0.5">{warning.message}</p>
-        </div>
+          </div>
           <button type="button" onClick={() => setWarning(null)} className="p-1 rounded-lg text-muted hover:text-fg" aria-label="Dismiss">
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
-      <SubmitExamModal
+      <SubmitDialog
         open={submitOpen}
+        endsAt={attempt?.endsAt}
+        clockOffset={clockOffset}
         onClose={() => setSubmitOpen(false)}
         onConfirm={handleSubmit}
         submitting={submitting}
-        remainingSeconds={remainingSeconds}
-        items={ordered.map((r) => ({ id: r.id, number: r.number, state: stateOf(r.id), flagged: flagged.has(r.id) }))}
+        items={ordered.map((r) => {
+          const state = stateOf(r.id);
+          return { id: r.id, number: r.number, state, flagged: flagged.has(r.id), away: state === 'dirty' && isAwayTimed(r.id) };
+        })}
       />
     </div>
   );

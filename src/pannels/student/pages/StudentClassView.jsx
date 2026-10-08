@@ -1,11 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { io } from 'socket.io-client';
 import { ArrowLeft, ClipboardList, Play, Search, Trophy, X } from 'lucide-react';
 import { fetchClasses } from '../../../common/components/redux/classSlice';
 import { getAssignments, getLeaderboard, getQuestionsByClass, listClassExams } from '../../../common/services/api';
-import { API_BASE_URL } from '../../../common/constants';
+import { getSocket, joinClassRoom, leaveClassRoom } from '../../../common/services/socket';
 import { Button, EmptyState, StatusChip, Table } from '../../../common/ui/primitives';
 import { table as tableClass, type } from '../../../common/ui/format';
 import { ATTEMPT_LABELS, formatDateTime, isClosedAttempt } from '../components/exam/examUtils';
@@ -86,8 +85,8 @@ const StudentClassView = () => {
     };
     load();
 
-    const socket = io(`${API_BASE_URL}/`, { withCredentials: true });
-    socket.emit('joinClass', classId);
+    const socket = getSocket();
+    joinClassRoom(classId);
     const refresh = () => {
       void load();
     };
@@ -96,7 +95,10 @@ const StudentClassView = () => {
     socket.on('questionAssigned', refresh);
     return () => {
       cancelled = true;
-      socket.disconnect();
+      socket.off('questionPublished', refresh);
+      socket.off('questionDisabled', refresh);
+      socket.off('questionAssigned', refresh);
+      leaveClassRoom(classId);
     };
   }, [classData, classId, status]);
 
@@ -144,9 +146,9 @@ const StudentClassView = () => {
               <tr key={cls._id} className={`${tableClass.row} cursor-pointer`} onClick={() => navigate(`/student/classes/${cls._id}`)}>
                 <td className={tableClass.td}>
                   <p className="text-sm font-semibold text-fg">{cls.name}</p>
-                  <p className={type.meta}>{cls.description || `${cls.questions?.length || 0} questions`}</p>
+                  <p className={type.meta}>{cls.description || `${cls.questionCount ?? cls.questions?.length ?? 0} questions`}</p>
                 </td>
-                <td className={`${tableClass.td} hidden sm:table-cell`}>{cls.students?.length || 0}</td>
+                <td className={`${tableClass.td} hidden sm:table-cell`}>{cls.studentCount ?? cls.students?.length ?? 0}</td>
                 <td className={`${tableClass.td} text-right`}>
                   <Button variant="soft" onClick={() => navigate(`/student/classes/${cls._id}`)}>Open</Button>
                 </td>

@@ -9,6 +9,8 @@ import { isRunnable, langLabel, optionLetter } from './helpers';
 const CODING = new Set(['coding', 'codingWithDriver']);
 const FILL_CODE = 'fillInTheBlanksCoding';
 
+const languagesOf = (question) => (question?.languages?.length ? question.languages : ['javascript']);
+
 const starterFor = (question, language) =>
   question?.starterCode?.find((s) => s.language === language)?.code ||
   question?.templateCode?.find((s) => s.language === language)?.code ||
@@ -36,19 +38,21 @@ function Choice({ letter, selected, onSelect, children, multi }) {
 }
 
 export default function StudentPreview({ question }) {
-  const languages = question.languages?.length ? question.languages : ['javascript'];
+  const languages = languagesOf(question);
   const [language, setLanguage] = useState(languages[0]);
   const [choice, setChoice] = useState(null);
   const [choices, setChoices] = useState(() => new Set());
   const [text, setText] = useState('');
   const [code, setCode] = useState(() => starterFor(question, languages[0]));
 
+  // A new question starts on the first language the teacher listed, with that language's starter code.
   useEffect(() => {
-    setLanguage(languages[0]);
+    const first = languagesOf(question)[0];
+    setLanguage(first);
     setChoice(null);
     setChoices(new Set());
     setText('');
-    setCode(starterFor(question, languages[0]));
+    setCode(starterFor(question, first));
   }, [question]);
 
   const publicTests = useMemo(() => (question.testCases || []).filter((t) => t.isPublic), [question.testCases]);

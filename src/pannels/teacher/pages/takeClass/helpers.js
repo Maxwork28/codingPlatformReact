@@ -1,14 +1,8 @@
-export const QUESTION_TYPE_LABELS = {
-  singleCorrectMcq: 'Single choice',
-  multipleCorrectMcq: 'Multiple choice',
-  fillInTheBlanks: 'Fill in the blanks',
-  fillInTheBlanksCoding: 'Fill in the blanks (code)',
-  coding: 'Coding',
-  codingWithDriver: 'Coding (LeetCode-style)',
-};
+import { CODING_TYPES, FULL_CODE_EDITOR_TYPES, QUESTION_TYPE_LABELS } from '../../../../common/domain/questions';
+import { stripHtml } from '../../../../common/utils/sanitizeHtml';
 
-export const RUNNABLE_CODING_TYPES = ['coding', 'fillInTheBlanksCoding', 'codingWithDriver'];
-export const FULL_CODE_EDITOR_TYPES = ['coding', 'codingWithDriver'];
+export { QUESTION_TYPE_LABELS, FULL_CODE_EDITOR_TYPES, stripHtml };
+export const RUNNABLE_CODING_TYPES = CODING_TYPES;
 
 export function classEntryFor(question, classId) {
   if (!question || !classId) return null;
@@ -29,12 +23,6 @@ export function formatQuestionPublishedAt(entry, question) {
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
-export function stripHtml(html) {
-  if (!html) return '';
-  const doc = new DOMParser().parseFromString(String(html), 'text/html');
-  return (doc.body.textContent || '').trim();
 }
 
 export function getCodeTemplateForLanguage(question, lang) {

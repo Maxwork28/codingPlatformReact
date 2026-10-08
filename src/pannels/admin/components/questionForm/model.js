@@ -1,6 +1,7 @@
 import { CheckSquare, Code2, Puzzle, SquareCode, TextCursorInput, CircleDot } from 'lucide-react';
 import { parseOptionalPoints, pointsFieldValue } from '../../../../common/utils/optionalPoints';
-import { deserializeFromHTML, richTextIsEmpty, serializeToHTML } from './richText';
+import { deserializeFromHTML, deserializeFromPlainText, richTextIsEmpty, serializeToHTML, serializeToPlainText } from './richText';
+import { CODING_TYPES, isCodingType } from '../../../../common/domain/questions';
 
 export const QUESTION_TYPE_OPTIONS = [
   { id: 'singleCorrectMcq', label: 'Single choice', hint: 'One correct option', icon: CircleDot },
@@ -12,8 +13,7 @@ export const QUESTION_TYPE_OPTIONS = [
 ];
 
 export const LANGUAGES = ['javascript', 'python', 'java', 'cpp', 'c', 'go', 'php', 'ruby'];
-export const CODING_TYPES = ['coding', 'fillInTheBlanksCoding', 'codingWithDriver'];
-export const isCodingType = (type) => CODING_TYPES.includes(type);
+export { CODING_TYPES, isCodingType };
 export const isMcqType = (type) => type === 'singleCorrectMcq' || type === 'multipleCorrectMcq';
 
 const DRIVER_PLACEHOLDERS = ['{{USER_CODE}}', '// USER_CODE_HERE', '# USER_CODE_HERE'];
@@ -59,8 +59,8 @@ export function formFromQuestion(q) {
     options: (q?.options?.length >= 2 ? q.options : ['', '', '', '']).map((o) => newOption(o || '')),
     correctOption: Number(q?.correctOption ?? 0),
     correctOptions: Array.isArray(q?.correctOptions) ? q.correctOptions.map(Number) : [],
-    codeSnippet: deserializeFromHTML(q?.codeSnippet || ''),
-    correctAnswer: deserializeFromHTML(q?.correctAnswer || ''),
+    codeSnippet: deserializeFromPlainText(q?.codeSnippet || ''),
+    correctAnswer: deserializeFromPlainText(q?.correctAnswer || ''),
     languages,
     starter: byLanguage(starterSource),
     driver: byLanguage(q?.driverCode),
@@ -117,8 +117,9 @@ export function buildPayload(f) {
     data.options = f.options.map((o) => serializeToHTML(o.value));
     data.correctOptions = [...f.correctOptions].sort((a, b) => a - b);
   } else if (f.type === 'fillInTheBlanks' || f.type === 'fillInTheBlanksCoding') {
-    data.codeSnippet = serializeToHTML(f.codeSnippet);
-    data.correctAnswer = serializeToHTML(f.correctAnswer);
+    // Compared / executed literally by the grader, so store plain text (never HTML).
+    data.codeSnippet = serializeToPlainText(f.codeSnippet);
+    data.correctAnswer = serializeToPlainText(f.correctAnswer);
   }
 
   if (coding) {

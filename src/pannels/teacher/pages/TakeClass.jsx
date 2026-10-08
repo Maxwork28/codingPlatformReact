@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { io } from 'socket.io-client';
 import { GraduationCap, List } from 'lucide-react';
 import {
   disableQuestion,
@@ -13,7 +12,7 @@ import {
   unpublishQuestion,
   viewSolution,
 } from '../../../common/services/api';
-import { API_BASE_URL } from '../../../common/constants';
+import { getSocket, joinClassRoom, leaveClassRoom } from '../../../common/services/socket';
 import { loadRunHistory, makeRunHistoryEntry, saveRunHistory } from '../../../common/utils/runOutputHistory';
 import { confirmAction, notify } from '../../../common/ui/Toast';
 import { Button, EmptyState, StatusChip } from '../../../common/ui/primitives';
@@ -169,8 +168,8 @@ const TakeClass = () => {
   useEffect(() => {
     if (!selectedClass?._id) return undefined;
     const classId = selectedClass._id;
-    const socket = io(`${API_BASE_URL}/`, { withCredentials: true });
-    socket.emit('joinClass', classId);
+    const socket = getSocket();
+    joinClassRoom(classId);
     const refetch = async () => {
       try {
         const response = await getQuestionsByClass(classId);
@@ -191,7 +190,7 @@ const TakeClass = () => {
       socket.off('questionPublished', refetch);
       socket.off('questionDisabled', refetch);
       socket.off('questionAssigned', refetch);
-      socket.disconnect();
+      leaveClassRoom(classId);
     };
   }, [selectedClass?._id]);
 

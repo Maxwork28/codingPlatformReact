@@ -1,12 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { parseTestCaseResultsList } from '../../pannels/student/components/TestCaseResultsList';
-import { summarizeRunMetrics } from './RunMetricsBadges';
 import { teacherTestQuestion, updateQuestionLimits } from '../services/api';
-
-const TIME_MIN = 0.1;
-const TIME_MAX = 5;
-const MEMORY_MIN = 16;
-const MEMORY_MAX = 1024;
+import {
+  LIMIT_MEM_FACTOR,
+  LIMIT_MEM_MIN_MB,
+  LIMIT_MEM_PAD_MB,
+  LIMIT_MEM_STEP_MB,
+  LIMIT_TIME_FACTOR,
+  LIMIT_TIME_MIN_S,
+  LIMIT_TIME_PAD_S,
+  MEMORY_MAX,
+  MEMORY_MIN,
+  TIME_MAX,
+  TIME_MIN,
+  limitsFromAverageMetrics,
+  suggestLimitsFromTestResults,
+} from '../utils/judgeLimits';
 
 const parseLooseNumber = (value) => {
   const match = String(value ?? '').trim().replace(/,/g, '').match(/-?\d+(\.\d+)?/);
@@ -29,28 +37,6 @@ const interpretMemoryMb = (value) => {
   return Math.min(MEMORY_MAX, Math.max(MEMORY_MIN, Math.ceil(mb)));
 };
 
-/** Convert a 10-run average (ms / KB) into question fields (seconds / MB). */
-export const limitsFromAverageMetrics = (avgTimeMs, avgMemoryKb) => {
-  const timeFromMs = Number(avgTimeMs) > 0 ? Number(avgTimeMs) / 1000 : TIME_MIN;
-  const memoryFromKb = Number(avgMemoryKb) > 0 ? Number(avgMemoryKb) / 1024 : MEMORY_MIN;
-  return {
-    timeLimit: Math.min(TIME_MAX, Math.max(TIME_MIN, Math.ceil(timeFromMs * 10) / 10)),
-    memoryLimit: Math.min(MEMORY_MAX, Math.max(MEMORY_MIN, Math.ceil(memoryFromKb))),
-  };
-};
-
-export const suggestLimitsFromTestResults = (testResults) => {
-  if (!testResults || testResults.error) return null;
-  const rows = parseTestCaseResultsList(testResults.results || testResults.testResults || []);
-  const { maxTimeMs, maxMemoryKb } = summarizeRunMetrics(rows);
-  if (!Number.isFinite(maxTimeMs) && !Number.isFinite(maxMemoryKb)) return null;
-  return {
-    ...limitsFromAverageMetrics(maxTimeMs, maxMemoryKb),
-    maxTimeMs,
-    maxMemoryKb,
-  };
-};
-
 const TestSolutionLimitControls = ({
   question,
   testResults,
@@ -68,14 +54,18 @@ const TestSolutionLimitControls = ({
   const [measuring, setMeasuring] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [average, setAverage] = useState(null);
+  const [shownQuestionId, setShownQuestionId] = useState(question?._id);
   const suggested = suggestLimitsFromTestResults(testResults);
 
-  useEffect(() => {
+  // Reset the fields only when a different question is shown (not when the saved limits change
+  // after "Save limits on question"), using React's "adjust state while rendering" pattern.
+  if (question?._id !== shownQuestionId) {
+    setShownQuestionId(question?._id);
     setTimeLimit(savedTime);
     setMemoryLimit(savedMemory);
     setSaveMessage('');
     setAverage(null);
-  }, [question?._id]);
+  }
 
   useEffect(() => {
     const next = setLimits
@@ -92,7 +82,7 @@ const TestSolutionLimitControls = ({
     setTimeLimit(next.timeLimit);
     setMemoryLimit(next.memoryLimit);
     onLimitsChange?.(next);
-    setSaveMessage(`Set ${next.timeLimit}s / ${next.memoryLimit} MB from the 10-run average. Save to store them on the question.`);
+    setSaveMessage(`Set ${next.timeLimit}s / ${next.memoryLimit} MB from the 10-run average. Click “Save limits on question” to store them.`);
   };
 
   const handleMeasureAverages = async () => {
@@ -132,8 +122,12 @@ const TestSolutionLimitControls = ({
         timeLimit: fields.timeLimit,
         memoryLimit: fields.memoryLimit,
       });
+      // Pre-fill the suggestion so "Save limits on question" stores it; the fields stay editable.
+      setSetLimits(true);
+      setTimeLimit(fields.timeLimit);
+      setMemoryLimit(fields.memoryLimit);
       setSaveMessage(
-        `10-run average ${bench.avgTimeMs ?? '—'} ms / ${bench.avgMemoryKb ?? '—'} KB. Click “Set average time & memory limits” to use ${fields.timeLimit}s / ${fields.memoryLimit} MB.`
+        `10-run average ${bench.avgTimeMs ?? '—'} ms / ${bench.avgMemoryKb ?? '—'} KB → suggested ${fields.timeLimit}s / ${fields.memoryLimit} MB (filled in below). Edit the fields to override, then click “Save limits on question”.`
       );
     } catch (err) {
       setSaveMessage(err?.response?.data?.error || err?.message || 'Failed to measure 10-run averages');
@@ -141,6 +135,13 @@ const TestSolutionLimitControls = ({
       setMeasuring(false);
     }
   };
+
+  const averageSeconds = Number.isFinite(Number(average?.avgTimeMs)) && average?.avgTimeMs != null
+    ? Math.max(0, Number(average.avgTimeMs)) / 1000
+    : null;
+  const averageMb = Number.isFinite(Number(average?.avgMemoryKb)) && average?.avgMemoryKb != null
+    ? Math.max(0, Number(average.avgMemoryKb)) / 1024
+    : null;
 
   const handleSave = async () => {
     const nextTime = interpretTimeSeconds(timeLimit);
@@ -206,20 +207,20 @@ const TestSolutionLimitControls = ({
           </p>
           <div className="text-xs text-accent-ink space-y-1 font-mono bg-surface rounded-md px-2 py-2">
             <p>
-              Time: {average.avgTimeMs ?? '—'} ms ÷ 1000 ={' '}
-              {Number.isFinite(Number(average.avgTimeMs))
-                ? `${(Number(average.avgTimeMs) / 1000).toFixed(4)} s`
-                : '—'}
-              {' → ceil to 0.1 s (0.1–5) → '}
+              Time: {LIMIT_TIME_FACTOR} × {averageSeconds == null ? '—' : `${averageSeconds.toFixed(4)} s`} + {LIMIT_TIME_PAD_S} s ={' '}
+              {averageSeconds == null ? '—' : `${(averageSeconds * LIMIT_TIME_FACTOR + LIMIT_TIME_PAD_S).toFixed(4)} s`}
+              {` → round up to 0.1 s (min ${LIMIT_TIME_MIN_S} s, max ${TIME_MAX} s) → `}
               <strong>{average.timeLimit} s</strong>
             </p>
             <p>
-              Memory: {average.avgMemoryKb ?? '—'} KB ÷ 1024 ={' '}
-              {Number.isFinite(Number(average.avgMemoryKb))
-                ? `${(Number(average.avgMemoryKb) / 1024).toFixed(2)} MB`
-                : '—'}
-              {' → ceil to whole MB (16–1024) → '}
+              Memory: {LIMIT_MEM_FACTOR} × {averageMb == null ? '—' : `${averageMb.toFixed(2)} MB`} + {LIMIT_MEM_PAD_MB} MB ={' '}
+              {averageMb == null ? '—' : `${(averageMb * LIMIT_MEM_FACTOR + LIMIT_MEM_PAD_MB).toFixed(2)} MB`}
+              {` → round up to a multiple of ${LIMIT_MEM_STEP_MB} MB (min ${LIMIT_MEM_MIN_MB} MB, max ${MEMORY_MAX} MB) → `}
               <strong>{average.memoryLimit} MB</strong>
+            </p>
+            <p className="font-sans text-muted">
+              The limits leave headroom over the measured average ({LIMIT_TIME_FACTOR}× the time + {LIMIT_TIME_PAD_S} s,{' '}
+              {LIMIT_MEM_FACTOR}× the memory + {LIMIT_MEM_PAD_MB} MB) so normal judge jitter doesn’t fail a correct solution.
             </p>
           </div>
           <button
@@ -265,8 +266,8 @@ const TestSolutionLimitControls = ({
             </div>
           </div>
           <p className="text-xs text-muted">
-            Paste the 10-run averages as-is: values above 5 are treated as milliseconds, values above 1024 as KB.
-            Example: 61.6 → 0.1 s, 42126 → 42 MB.
+            These are the limits the judge enforces (no extra headroom is added to what you type here).
+            Values above 5 are read as milliseconds and values above 1024 as KB, e.g. 1200 → 1.2 s, 131072 → 128 MB.
           </p>
           {suggested && !average && (
             <button

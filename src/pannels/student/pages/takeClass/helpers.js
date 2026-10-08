@@ -11,7 +11,10 @@ export {
 
 export function isEnrolledStudent(cls, userId) {
   if (!cls || !userId) return false;
-  return (cls.students || []).some((student) => String(student?._id ?? student) === String(userId));
+  // The API only ever returns a student the classes they are enrolled in, and (for privacy) no
+  // longer includes the full `students` roster. When the roster is absent, trust the server.
+  if (!Array.isArray(cls.students)) return true;
+  return cls.students.some((student) => String(student?._id ?? student) === String(userId));
 }
 
 export function availableLanguages(question) {

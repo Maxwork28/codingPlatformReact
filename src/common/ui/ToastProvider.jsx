@@ -1,8 +1,7 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
 import ConfirmDialog from './ConfirmDialog';
-
-const ToastContext = createContext(null);
+import { ToastContext, guessType, registerToastHandlers } from './Toast';
 
 const KINDS = {
   success: { box: 'border-ok-line', icon: 'text-ok', Icon: CheckCircle2 },
@@ -10,30 +9,6 @@ const KINDS = {
   warning: { box: 'border-warn-line', icon: 'text-warn', Icon: AlertTriangle },
   info: { box: 'border-info-line', icon: 'text-info', Icon: Info },
 };
-
-let toastHandler = null;
-let confirmHandler = null;
-
-function guessType(message) {
-  const text = String(message || '').toLowerCase();
-  if (/(fail|error|invalid|unable|cannot|can't|could not|not allowed|denied|missing|required)/.test(text)) return 'error';
-  if (/(success|saved|created|updated|deleted|published|copied|added|removed|released|submitted|sent)/.test(text)) return 'success';
-  if (/(please|warning|note)/.test(text)) return 'warning';
-  return 'info';
-}
-
-/** Show a toast from anywhere (event handlers, services). Type is guessed from the text when omitted. */
-export function notify(message, type) {
-  const kind = type || guessType(message);
-  if (toastHandler) toastHandler(message, kind);
-  else console.warn(message);
-}
-
-/** Promise-based replacement for window.confirm. Resolves true when the user confirms. */
-export function confirmAction(message, options = {}) {
-  if (!confirmHandler) return Promise.resolve(window.confirm(message));
-  return confirmHandler(message, options);
-}
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
@@ -64,12 +39,8 @@ export function ToastProvider({ children }) {
   };
 
   useEffect(() => {
-    toastHandler = toast;
-    confirmHandler = askConfirm;
-    return () => {
-      toastHandler = null;
-      confirmHandler = null;
-    };
+    registerToastHandlers(toast, askConfirm);
+    return () => registerToastHandlers(null, null);
   }, [toast, askConfirm]);
 
   return (
@@ -84,7 +55,7 @@ export function ToastProvider({ children }) {
         onConfirm={() => settle(true)}
         onCancel={() => settle(false)}
       />
-      <div className="fixed bottom-5 right-5 z-[60] flex max-w-sm flex-col gap-2">
+      <div className="fixed bottom-5 right-5 z-[60] flex max-w-sm flex-col gap-2" role="status" aria-live="polite">
         {toasts.map((item) => {
           const kind = KINDS[item.type];
           const Icon = kind.Icon;
@@ -106,7 +77,4 @@ export function ToastProvider({ children }) {
   );
 }
 
-export function useToast() {
-  const toast = useContext(ToastContext);
-  return toast || notify;
-}
+export default ToastProvider;

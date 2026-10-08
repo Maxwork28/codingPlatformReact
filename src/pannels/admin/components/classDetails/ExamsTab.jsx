@@ -6,14 +6,7 @@ import ActionMenu from '../../../../common/ui/ActionMenu';
 import { table as tableClass, type } from '../../../../common/ui/format';
 import { RateBar, SearchBox, Segmented } from './shared';
 import { HIDE_MD, HIDE_SM, formatDate, useStaffBase, useUrlState } from './helpers';
-
-const PHASES = {
-  live: { label: 'Live', dot: 'bg-ok animate-pulse', text: 'text-ok' },
-  scheduled: { label: 'Scheduled', dot: 'bg-info', text: 'text-info' },
-  draft: { label: 'Draft', dot: 'bg-warn', text: 'text-warn' },
-  completed: { label: 'Completed', dot: 'bg-subtle', text: 'text-muted' },
-  archived: { label: 'Archived', dot: 'bg-subtle', text: 'text-subtle' },
-};
+import { EXAM_PHASES as PHASES } from '../../../../common/domain/exams';
 
 const FILTERS = ['all', 'live', 'scheduled', 'draft', 'completed'];
 const DEFAULTS = { q: '', filter: 'all' };

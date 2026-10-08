@@ -1,12 +1,58 @@
-# React + Vite
+# AlgoSutra — web client
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 + Vite 6 + Redux Toolkit + Tailwind v4 frontend for the AlgoSutra coding classroom platform.
 
-Currently, two official plugins are available:
+## Setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+```bash
+npm install
+cp .env.example .env     # then edit VITE_API_BASE_URL
+npm run dev
+```
 
-## Expanding the ESLint configuration
+## Environment
 
-If you are developing a production application, we recommend using TypeScript and enable type-aware lint rules. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+| Variable            | Default                 | Purpose                                              |
+| ------------------- | ----------------------- | ---------------------------------------------------- |
+| `VITE_API_BASE_URL` | `http://localhost:5000` | Backend REST + Socket.IO origin (no trailing slash). |
+
+Vite reads `.env`, `.env.local`, `.env.[mode]` and `.env.[mode].local`. Only `.env.example` is committed; every other
+`.env*` file is git-ignored. Values are baked in at build time, so rebuild after changing them.
+
+## Scripts
+
+| Script               | What it does                                             |
+| -------------------- | -------------------------------------------------------- |
+| `npm run dev`        | Dev server on `0.0.0.0:5173`                             |
+| `npm run build`      | Production build to `dist/`                              |
+| `npm run build:prod` | Same, with `--mode production` made explicit             |
+| `npm run preview`    | Serve the `dist/` build locally                          |
+| `npm run lint`       | ESLint (0 errors required)                               |
+
+Production builds strip `console.*` / `debugger` and split vendor code into `vendor-react`, `vendor-ace`,
+`vendor-slate`, `vendor-chart` and `vendor-net` chunks (see `vite.config.js`).
+
+## Project layout
+
+```
+src/
+  App.jsx                      routes (lazy pages, ErrorBoundary, mustChangePassword gate)
+  common/
+    constants.js               API_BASE_URL and shared constants
+    services/api.js            axios instance + every REST call (throws message strings)
+    services/socket.js         shared authenticated Socket.IO client
+    components/redux/          auth / classes slices and the store
+  pannels/
+    pages/                     Login, ForgotPassword, ResetPassword, ChangePassword
+    admin/ teacher/ student/   role dashboards
+```
+
+## Auth behaviour
+
+- The JWT lives in `localStorage.token`; an expired token is discarded on boot.
+- Any 401 from the API (other than login / forgot / reset password) clears the token and redirects to
+  `/login?expired=1`.
+- Logout clears the token, `exam:*` localStorage keys, `algo-run-history:*` sessionStorage keys and disconnects the
+  socket.
+- If `/auth/me` reports `mustChangePassword: true`, every authenticated route redirects to `/change-password` until
+  the password is changed.

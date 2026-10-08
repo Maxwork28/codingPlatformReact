@@ -16,16 +16,13 @@ export const fetchClasses = createAsyncThunk('classes/fetchClasses', async (sear
     if (!token) {
       return rejectWithValue('Please authenticate');
     }
-    console.log('classSlice: Fetching classes', { search: search || '' });
     const params = search ? { search } : {};
     const response = await axios.get(`${API_BASE_URL}/admin/classes`, {
       headers: { Authorization: `Bearer ${token}` },
       params,
     });
-    console.log('classSlice: Fetch classes response', response.data);
     return response.data.classes;
   } catch (error) {
-    console.error('classSlice: Fetch classes error', error.response?.data || error);
     return rejectWithValue(error.response?.data?.error || 'Failed to fetch classes');
   }
 });
@@ -41,18 +38,15 @@ const classSlice = createSlice({
   extraReducers: (builder) => {
     builder
       .addCase(fetchClasses.pending, (state) => {
-        console.log('classSlice: Fetch classes pending');
         state.status = 'loading';
         state.error = null;
       })
       .addCase(fetchClasses.fulfilled, (state, action) => {
-        console.log('classSlice: Fetch classes fulfilled', action.payload);
         state.status = 'succeeded';
         state.classes = action.payload;
         state.error = null;
       })
       .addCase(fetchClasses.rejected, (state, action) => {
-        console.log('classSlice: Fetch classes rejected', action.payload);
         state.status = 'failed';
         state.error = action.payload;
       })

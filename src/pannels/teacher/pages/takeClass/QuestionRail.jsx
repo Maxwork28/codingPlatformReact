@@ -29,6 +29,7 @@ export default function QuestionRail({
           onClick={onToggle}
           className="hidden lg:inline-flex p-1.5 rounded-lg text-muted hover:text-fg hover:bg-hover"
           title="Collapse sidebar"
+          aria-label="Collapse sidebar"
         >
           <PanelLeftClose className="w-4 h-4" />
         </button>
@@ -108,6 +109,7 @@ export default function QuestionRail({
           onClick={onToggle}
           className="hidden lg:flex items-center justify-center w-10 shrink-0 border-r border-line bg-surface hover:bg-hover"
           title="Expand sidebar"
+          aria-label="Expand sidebar"
         >
           <PanelLeftOpen className="w-4 h-4 text-muted" />
         </button>

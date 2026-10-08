@@ -96,6 +96,7 @@ const Navbar = () => {
               role === 'student' ? 'cursor-pointer hover:border-line-strong' : 'cursor-default'
             }`}
             title={role === 'student' ? (uploading ? 'Uploading…' : 'Update profile picture') : user?.name}
+            aria-label={role === 'student' ? (uploading ? 'Uploading profile picture' : 'Update profile picture') : `Signed in as ${user?.name || 'user'}`}
           >
             {avatarUrl ? (
               <img src={avatarUrl} alt={user?.name || 'Profile'} className="w-full h-full object-cover" />
@@ -112,6 +113,7 @@ const Navbar = () => {
             onClick={handleLogout}
             className="p-1.5 text-muted hover:text-fg rounded-lg hover:bg-hover"
             title="Logout"
+            aria-label="Logout"
           >
             <LogOut className="w-4 h-4" />
           </button>

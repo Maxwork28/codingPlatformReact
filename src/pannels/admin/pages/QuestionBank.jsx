@@ -6,17 +6,10 @@ import { Button, EmptyState, Pagination, StatusChip, Table } from '../../../comm
 import ActionMenu from '../../../common/ui/ActionMenu';
 import { table as tableClass, type } from '../../../common/ui/format';
 import { confirmAction, notify } from '../../../common/ui/Toast';
+import { QUESTION_TYPE_LABELS } from '../../../common/domain/questions';
+import { stripHtml } from '../../../common/utils/sanitizeHtml';
 
 const PAGE_SIZE = 20;
-
-const QUESTION_TYPE_LABELS = {
-  singleCorrectMcq: 'MCQ · single',
-  multipleCorrectMcq: 'MCQ · multiple',
-  fillInTheBlanks: 'Fill in the blanks',
-  fillInTheBlanksCoding: 'Fill-in code',
-  coding: 'Coding',
-  codingWithDriver: 'Coding · driver',
-};
 
 const DIFFICULTIES = [
   { id: '', label: 'All' },
@@ -56,13 +49,6 @@ const COLUMNS = [
 
 const selectClass =
   'h-9 bg-inset border border-line rounded-xl px-3 text-fg text-xs outline-none focus:border-accent cursor-pointer';
-
-const stripHtml = (html) => {
-  if (!html || typeof html !== 'string') return '';
-  const div = document.createElement('div');
-  div.innerHTML = html;
-  return (div.textContent || '').trim();
-};
 
 const formatDate = (value) =>
   value ? new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—';

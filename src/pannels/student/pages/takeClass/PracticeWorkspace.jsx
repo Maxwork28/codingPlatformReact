@@ -3,8 +3,10 @@ import parse from 'html-react-parser';
 import { Clock, Copy, Maximize2, RotateCcw, X } from 'lucide-react';
 import CodeEditor from '../../components/CodeEditor';
 import QuestionHtml from '../../../../common/components/QuestionHtml';
-import CodingQuestionDetails, { isCodingQuestionType } from '../../../../common/components/CodingQuestionDetails';
+import CodingQuestionDetails from '../../../../common/components/CodingQuestionDetails';
+import { isCodingType } from '../../../../common/domain/questions';
 import { historyKindLabel } from '../../../../common/utils/runOutputHistory';
+import { htmlToPlainText, sanitizeHtml } from '../../../../common/utils/sanitizeHtml';
 import { Button, EmptyState, StatusChip } from '../../../../common/ui/primitives';
 import { inputClass, type } from '../../../../common/ui/format';
 import {
@@ -37,7 +39,7 @@ function OptionList({ options, type: questionType, selected, locked, onSingle, o
               onChange={() => (questionType === 'multipleCorrectMcq' ? onToggle(index) : onSingle(index))}
             />
             <span className="text-xs font-semibold shrink-0 text-fg">{(index + 10).toString(36).toUpperCase()}.</span>
-            <div className="text-xs text-body flex-1 min-w-0">{parse(option || '')}</div>
+            <div className="text-xs text-body flex-1 min-w-0">{parse(sanitizeHtml(option || ''))}</div>
           </label>
         );
       })}
@@ -102,7 +104,7 @@ export default function PracticeWorkspace({
     <div id="student-workspace" className="flex-1 min-h-0 min-w-0 flex flex-col lg:flex-row overflow-hidden">
       <div className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5 bg-page w-full lg:h-full" style={{ flex: `0 0 ${isRunnable ? leftPanelWidth : 100}%` }}>
         <div className="max-w-3xl">
-          <h2 className="text-lg font-bold text-fg mb-3" dangerouslySetInnerHTML={{ __html: selectedQuestion.title }} />
+          <h2 className="text-lg font-bold text-fg mb-3">{stripHtml(selectedQuestion.title) || 'Untitled question'}</h2>
           <div className="flex flex-wrap items-center gap-2 mb-5">
             <StatusChip kind={difficultyKind(selectedQuestion.difficulty)}>{selectedQuestion.difficulty || '—'}</StatusChip>
             <StatusChip kind="info">
@@ -123,14 +125,14 @@ export default function PracticeWorkspace({
             className="text-xs leading-relaxed text-body"
             empty={<span className="text-xs text-muted">—</span>}
           />
-          {isCodingQuestionType(selectedQuestion.type) ? (
+          {isCodingType(selectedQuestion.type) ? (
             <div className="mt-5">
               <CodingQuestionDetails question={selectedQuestion} tone="theme" publicTests={selectedQuestion.testCases} />
             </div>
           ) : selectedQuestion.constraints ? (
             <div className="mt-5">
               <h3 className={`${type.section} mb-2`}>Constraints</h3>
-              <div className="text-xs leading-relaxed text-body" dangerouslySetInnerHTML={{ __html: selectedQuestion.constraints }} />
+              <div className="text-xs leading-relaxed text-body" dangerouslySetInnerHTML={{ __html: sanitizeHtml(selectedQuestion.constraints) }} />
             </div>
           ) : null}
 
@@ -217,7 +219,7 @@ export default function PracticeWorkspace({
               </div>
               <div className="flex items-center gap-1.5">
                 {(showFullEditor || isFillCoding) && (
-                  <Button variant="secondary" icon={Maximize2} className="h-8 px-2!" onClick={onToggleFullscreen} title="Fullscreen (F11)" />
+                  <Button variant="secondary" icon={Maximize2} className="h-8 px-2!" onClick={onToggleFullscreen} title="Fullscreen (F11)" aria-label="Enter fullscreen editor" />
                 )}
                 {questionRunHistory.length > 0 && (
                   <Button variant="soft" icon={Clock} className="h-8" onClick={onOpenHistory}>
@@ -259,7 +261,7 @@ export default function PracticeWorkspace({
                       Template (line below replaces <code className="font-mono">// FILL_IN_THE_BLANK</code>)
                     </p>
                     <pre className="text-xs mb-3 p-3 rounded-xl overflow-auto shrink-0 max-h-[45%] font-mono border border-line bg-inset text-body leading-relaxed">
-                      {stripHtml(selectedQuestion.codeSnippet || '') || '(No snippet)'}
+                      {htmlToPlainText(selectedQuestion.codeSnippet || '') || '(No snippet)'}
                     </pre>
                     <label className="text-xs font-medium text-muted shrink-0">Line for the blank</label>
                     <textarea

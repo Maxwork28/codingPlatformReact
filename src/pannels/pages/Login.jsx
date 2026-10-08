@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { login } from '../../common/components/redux/authSlice';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { examReturnPath } from '../../common/utils/seb';
 import { ArrowRight, Eye, EyeOff, KeyRound, Loader2 } from 'lucide-react';
 import ThemeToggle from '../../common/components/ThemeToggle';
 import BrandLogo from '../../common/components/BrandLogo';
@@ -13,13 +14,16 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
   const { status, error } = useSelector((state) => state.auth);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     const result = await dispatch(login({ email, password: password.trim() }));
     if (login.fulfilled.match(result)) {
-      navigate(`/${result.payload.role}`);
+      // Back to the exam page that sent a student here (Safe Exam Browser starts on the exam URL, signed out).
+      const back = result.payload.role === 'student' ? examReturnPath(location.state?.from) : null;
+      navigate(back || `/${result.payload.role}`, { replace: Boolean(back) });
     }
   };
 

@@ -1,15 +1,15 @@
 import React from 'react';
-
-const CODING_TYPES = ['coding', 'fillInTheBlanksCoding', 'codingWithDriver'];
-
-export function isCodingQuestionType(type) {
-  return CODING_TYPES.includes(type);
-}
+import { hiddenTestCaseCount, isCodingType } from '../domain/questions';
+import { sanitizeHtml } from '../utils/sanitizeHtml';
 
 function hasText(value) {
   return String(value || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').trim().length > 0;
 }
 
+/**
+ * Students only receive the public test cases (the server strips hidden ones), so an
+ * `isPublic` flag may be missing. Treat a case as public unless it is explicitly private.
+ */
 function examplesFromQuestion(question, publicTests) {
   const samples = (question?.sampleIo || [])
     .filter((pair) => String(pair?.input || '').trim() || String(pair?.output || '').trim())
@@ -20,7 +20,7 @@ function examplesFromQuestion(question, publicTests) {
     }));
   if (samples.length > 0) return samples;
   return (publicTests || [])
-    .filter((test) => test?.isPublic)
+    .filter((test) => test && test.isPublic !== false)
     .filter((test) => String(test?.input || '').trim() || String(test?.expectedOutput || '').trim())
     .map((test) => ({
       input: test.input || '',
@@ -78,17 +78,18 @@ const TONES = {
 };
 
 const CodingQuestionDetails = ({ question, tone = 'statement', publicTests = [] }) => {
-  if (!isCodingQuestionType(question?.type)) return null;
+  if (!isCodingType(question?.type)) return null;
 
   const styles = TONES[tone] || TONES.statement;
   const examples = examplesFromQuestion(question, publicTests);
+  const hiddenCount = hiddenTestCaseCount(question, publicTests);
   const sections = [
     hasText(question.inputFormat) && { title: 'Input format', html: question.inputFormat },
     hasText(question.outputFormat) && { title: 'Output format', html: question.outputFormat },
     hasText(question.constraints) && { title: 'Constraints', html: question.constraints },
   ].filter(Boolean);
 
-  if (sections.length === 0 && examples.length === 0) return null;
+  if (sections.length === 0 && examples.length === 0 && hiddenCount === 0) return null;
 
   return (
     <>
@@ -98,13 +99,18 @@ const CodingQuestionDetails = ({ question, tone = 'statement', publicTests = [] 
           <div
             className={styles.body}
             style={styles.bodyStyle}
-            dangerouslySetInnerHTML={{ __html: section.html }}
+            dangerouslySetInnerHTML={{ __html: sanitizeHtml(section.html) }}
           />
         </div>
       ))}
-      {examples.length > 0 && (
+      {(examples.length > 0 || hiddenCount > 0) && (
         <div className={styles.section}>
           <h3 className={styles.heading} style={styles.headingStyle}>Sample input / output</h3>
+          {hiddenCount > 0 && (
+            <p className={styles.note} style={styles.labelStyle}>
+              {hiddenCount} hidden test case{hiddenCount === 1 ? '' : 's'} {examples.length > 0 ? 'also run' : 'run'} on submit.
+            </p>
+          )}
           <div className={styles.list}>
             {examples.map((example, index) => (
               <div key={index} className={styles.card} style={styles.cardStyle}>

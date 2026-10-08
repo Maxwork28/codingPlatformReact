@@ -1,4 +1,4 @@
-import React, { Fragment, useEffect, useState } from 'react';
+import React, { Fragment, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { Menu, Transition, Portal } from '@headlessui/react';
@@ -161,7 +161,7 @@ function StudentAssignmentsSection({ close }) {
       <div className="max-h-48 overflow-y-auto">
         {cls.assignments.map((a, idx) => {
           const qid = a.questionId?._id || a.questionId;
-          const question = cls.questions.find((q) => q._id === qid);
+          const question = (cls.questions || []).find((q) => String(q?._id ?? q) === String(qid));
           const title = question?.title || 'Untitled';
           const type = question?.type || 'Question';
           const isActiveQuestion = activeQ === String(qid);
@@ -210,10 +210,16 @@ const HeaderNavigationMenu = () => {
   const { pathname } = useLocation();
   const dispatch = useDispatch();
   const [draftCount, setDraftCount] = useState(0);
+  // Read the latest status without re-running the fetch on every status change: depending on it
+  // would retry in a loop whenever fetchClasses fails. The fetch should only run when the token changes.
+  const statusRef = useRef(status);
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   useEffect(() => {
     if (!token) return;
-    if (status === 'idle' || status === 'failed') {
+    if (statusRef.current === 'idle' || statusRef.current === 'failed') {
       dispatch(fetchClasses(''));
     }
   }, [dispatch, token]);

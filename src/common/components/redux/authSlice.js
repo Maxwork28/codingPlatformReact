@@ -1,29 +1,83 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
-import { API_BASE_URL } from '../../constants';
 import { jwtDecode } from 'jwt-decode';
+import { API_BASE_URL } from '../../constants';
+import { disconnectSocket } from '../../services/socket';
 
 const isAuthFailureStatus = (status) => status === 401 || status === 403;
+
+/** Decodes a JWT; returns null when it is malformed or already expired. */
+const decodeLiveToken = (token) => {
+  if (!token) return null;
+  try {
+    const decoded = jwtDecode(token);
+    if (decoded?.exp && decoded.exp * 1000 <= Date.now()) return null;
+    return decoded;
+  } catch {
+    return null;
+  }
+};
+
+const removeKeysWithPrefix = (storage, prefix) => {
+  try {
+    const keys = [];
+    for (let i = 0; i < storage.length; i += 1) {
+      const key = storage.key(i);
+      if (key && key.startsWith(prefix)) keys.push(key);
+    }
+    keys.forEach((key) => storage.removeItem(key));
+  } catch {
+    /* storage unavailable */
+  }
+};
+
+/** Everything a signed-in session leaves behind in the browser. */
+export const clearSessionStorage = () => {
+  try {
+    localStorage.removeItem('token');
+  } catch {
+    /* ignore */
+  }
+  if (typeof localStorage !== 'undefined') removeKeysWithPrefix(localStorage, 'exam:');
+  if (typeof sessionStorage !== 'undefined') removeKeysWithPrefix(sessionStorage, 'algo-run-history:');
+  disconnectSocket();
+};
+
+const toUser = (payload) => ({
+  id: payload.id,
+  name: payload.name,
+  email: payload.email,
+  role: payload.role,
+  profilePicture: payload.profilePicture || null,
+  canCreateQuestion: Boolean(payload.canCreateQuestion),
+  mustChangePassword: Boolean(payload.mustChangePassword),
+});
 
 // Validate token and fetch user details
 export const validateToken = createAsyncThunk('auth/validateToken', async (_, { rejectWithValue }) => {
   const token = localStorage.getItem('token');
   try {
     if (!token) throw new Error('No token found');
+    const decodedToken = decodeLiveToken(token);
+    if (!decodedToken) {
+      if (localStorage.getItem('token') === token) localStorage.removeItem('token');
+      return rejectWithValue({ message: 'Session expired', keepSession: false });
+    }
     const response = await axios.get(`${API_BASE_URL}/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    console.log('authSlice: Validate token response', response.data);
-    const decodedToken = jwtDecode(token);
+    // /auth/me may return the user flat or nested under `user`.
+    const data = response.data?.user && typeof response.data.user === 'object'
+      ? { ...response.data, ...response.data.user }
+      : response.data;
     return {
-      ...response.data,
-      id: decodedToken.id || response.data.id,
-      role: decodedToken.role || response.data.role,
-      profilePicture: response.data.profilePicture || null,
+      ...data,
+      id: decodedToken.id || data.id,
+      role: decodedToken.role || data.role,
+      profilePicture: data.profilePicture || null,
       token,
     };
   } catch (error) {
-    console.error('authSlice: Validate token error', error.response?.data || error);
     const status = error.response?.status;
     // Only drop THIS token. A login that finished while /auth/me was in-flight
     // must not have its new token deleted.
@@ -44,20 +98,16 @@ export const login = createAsyncThunk('auth/login', async ({ email, password }, 
   try {
     const normalizedEmail = (email || '').trim().toLowerCase();
     const normalizedPassword = typeof password === 'string' ? password : String(password || '');
-    console.log('authSlice: Initiating login request', { email: normalizedEmail });
     const response = await axios.post(`${API_BASE_URL}/auth/login`, {
       email: normalizedEmail,
       password: normalizedPassword,
     });
-    console.log('authSlice: Login response', response.data);
 
-    const decodedToken = jwtDecode(response.data.token);
-    console.log('authSlice: Decoded token', decodedToken);
+    const decodedToken = decodeLiveToken(response.data.token);
+    const role = decodedToken?.role || response.data.role;
+    const id = decodedToken?.id || response.data.id;
 
-    const role = decodedToken.role || response.data.role;
-    const id = decodedToken.id || response.data.id;
-
-    if (!role || !id) {
+    if (!response.data.token || !role || !id) {
       return rejectWithValue('Login succeeded but user role/id is missing');
     }
 
@@ -70,25 +120,23 @@ export const login = createAsyncThunk('auth/login', async ({ email, password }, 
       profilePicture: response.data.profilePicture || null,
     };
   } catch (error) {
-    console.error('authSlice: Login error', error.response?.data || error);
     return rejectWithValue(error.response?.data?.error || 'Login failed');
   }
 });
 
-// Initialize state with token and decoded user info
-const token = localStorage.getItem('token');
+// Initialize state from the stored token; an expired or malformed token means logged out.
+let initialToken = localStorage.getItem('token');
 let initialUser = null;
 let initialRole = null;
 
-if (token) {
-  try {
-    const decodedToken = jwtDecode(token);
+if (initialToken) {
+  const decodedToken = decodeLiveToken(initialToken);
+  if (decodedToken) {
     initialUser = { id: decodedToken.id };
     initialRole = decodedToken.role;
-    console.log('authSlice: Initialized with token', { id: decodedToken.id, role: initialRole });
-  } catch (error) {
-    console.error('authSlice: Failed to decode token', error);
+  } else {
     localStorage.removeItem('token');
+    initialToken = null;
   }
 }
 
@@ -96,80 +144,67 @@ const authSlice = createSlice({
   name: 'auth',
   initialState: {
     user: initialUser,
-    token: token,
+    token: initialToken,
     role: initialRole,
     status: 'idle',
     error: null,
   },
   reducers: {
     logout: (state) => {
-      console.log('authSlice: Logging out');
       state.user = null;
       state.token = null;
       state.role = null;
       state.status = 'idle';
       state.error = null;
-      localStorage.removeItem('token');
+      clearSessionStorage();
     },
     setProfilePicture: (state, action) => {
       if (state.user) {
         state.user.profilePicture = action.payload;
       }
     },
+    /** After POST /auth/change-password: store the fresh token and lift the forced-change gate. */
+    passwordChanged: (state, action) => {
+      const token = action.payload?.token;
+      if (token) {
+        state.token = token;
+        localStorage.setItem('token', token);
+      }
+      if (state.user) state.user.mustChangePassword = false;
+    },
+    setMustChangePassword: (state, action) => {
+      if (state.user) state.user.mustChangePassword = Boolean(action.payload);
+    },
   },
   extraReducers: (builder) => {
     builder
       .addCase(login.pending, (state) => {
-        console.log('authSlice: Login pending');
         state.status = 'loading';
         state.error = null;
       })
       .addCase(login.fulfilled, (state, action) => {
-        console.log('authSlice: Login fulfilled', action.payload);
         state.status = 'succeeded';
         state.token = action.payload.token;
         state.role = action.payload.role;
-        state.user = {
-          id: action.payload.id,
-          name: action.payload.name,
-          email: action.payload.email,
-          role: action.payload.role,
-          profilePicture: action.payload.profilePicture || null,
-          canCreateQuestion: Boolean(action.payload.canCreateQuestion),
-        };
-        state.error = null;
-        if (!action.payload.id) {
-          state.error = 'Login succeeded, but user ID is missing';
-          console.warn('authSlice: User ID is missing in payload', action.payload);
-        }
+        state.user = toUser(action.payload);
+        state.error = action.payload.id ? null : 'Login succeeded, but user ID is missing';
         localStorage.setItem('token', action.payload.token);
       })
       .addCase(login.rejected, (state, action) => {
-        console.log('authSlice: Login rejected', action.payload);
         state.status = 'failed';
         state.error = action.payload;
       })
       .addCase(validateToken.pending, (state) => {
-        console.log('authSlice: Validate token pending');
         state.status = 'loading';
       })
       .addCase(validateToken.fulfilled, (state, action) => {
-        console.log('authSlice: Validate token fulfilled', action.payload);
         state.status = 'succeeded';
         state.token = action.payload.token;
         state.role = action.payload.role;
-        state.user = {
-          id: action.payload.id,
-          name: action.payload.name,
-          email: action.payload.email,
-          role: action.payload.role,
-          profilePicture: action.payload.profilePicture || null,
-          canCreateQuestion: Boolean(action.payload.canCreateQuestion),
-        };
+        state.user = toUser(action.payload);
         state.error = null;
       })
       .addCase(validateToken.rejected, (state, action) => {
-        console.log('authSlice: Validate token rejected', action.payload);
         // Login may have completed while /auth/me was still failing with the old token.
         if (state.user?.name && state.token) {
           return;
@@ -195,5 +230,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { logout, setProfilePicture } = authSlice.actions;
+export const { logout, setProfilePicture, passwordChanged, setMustChangePassword } = authSlice.actions;
 export default authSlice.reducer;

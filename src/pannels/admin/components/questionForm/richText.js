@@ -116,6 +116,33 @@ export const deserializeFromHTML = (input) => {
   }
 };
 
+/**
+ * Plain text for fields that are compared or executed literally (typed answers, fill-the-code
+ * templates). One line per block; no HTML, no entities.
+ */
+export const serializeToPlainText = (nodes) => {
+  if (!Array.isArray(nodes) || nodes.length === 0) return '';
+  const textOf = (node) => (Text.isText(node) ? node.text : (node.children || []).map(textOf).join(''));
+  return nodes
+    .map((node) => {
+      if (node.type === 'bulleted-list' || node.type === 'numbered-list') return (node.children || []).map(textOf).join('\n');
+      return textOf(node);
+    })
+    .join('\n')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s+$/, '');
+};
+
+/** Plain text (one paragraph per line) or legacy HTML → editor nodes. */
+export const deserializeFromPlainText = (input) => {
+  if (!input || typeof input !== 'string') return emptyRichText();
+  if (/<\/?(p|br|div|pre)\b[^>]*>/i.test(input)) return deserializeFromHTML(input);
+  return input
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => ({ type: 'paragraph', children: [{ text: line }] }));
+};
+
 export const richTextIsEmpty = (nodes) =>
   !serializeToHTML(nodes)
     .replace(/<img[^>]*>/gi, 'img')

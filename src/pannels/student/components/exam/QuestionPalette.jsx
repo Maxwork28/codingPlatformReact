@@ -1,6 +1,7 @@
 import React from 'react';
 import { Lock } from 'lucide-react';
 import { formatClock } from './examUtils';
+import { useTimerSeconds } from './useCountdown';
 
 const TONES = {
   saved: 'bg-ok-soft text-ok border-ok-line',
@@ -15,24 +16,29 @@ const LEGEND = [
   ['empty', 'Not answered'],
 ];
 
-/** Numbered question grid grouped by section. `stateOf(id)` returns saved | dirty | empty | locked. */
-export default function QuestionPalette({ groups, activeId, stateOf, flagged, onSelect }) {
+/** A section's own countdown. Ticks by itself so the grid does not re-render every second. */
+function SectionClock({ timer, clockOffset }) {
+  const seconds = useTimerSeconds(timer, clockOffset);
+  if (seconds === null && !timer?.completed) return null;
+  const timedOut = timer.completed && !(timer.remaining > 0);
+  const label = timer.completed ? (timedOut ? 'Time over' : 'Locked') : formatClock(seconds);
+  const tone = timer.completed ? 'text-bad' : seconds < 60 ? 'text-warn' : 'text-muted';
+  return <span className={`text-[11px] font-semibold tabular-nums ${tone}`}>{label}</span>;
+}
+
+/**
+ * Numbered question grid grouped by section. `stateOf(id)` returns saved | dirty | empty | locked.
+ * `group.timer` is the section timer from the server (null when the section has no own limit).
+ */
+function QuestionPalette({ groups, activeId, stateOf, flagged, onSelect, clockOffset = 0 }) {
   return (
     <div className="space-y-5">
       {groups.map((group) => (
         <div key={group.section.sectionId} className="space-y-2">
-          {groups.length > 1 || group.remaining != null ? (
+          {groups.length > 1 || group.timer ? (
             <div className="flex items-center justify-between gap-2">
               <p className="text-[11px] font-bold uppercase tracking-wider text-muted truncate">{group.section.title}</p>
-              {group.remaining != null && (
-                <span
-                  className={`text-[11px] font-semibold tabular-nums ${
-                    group.remaining === 0 ? 'text-bad' : group.remaining < 60 ? 'text-warn' : 'text-muted'
-                  }`}
-                >
-                  {group.remaining === 0 ? 'Time over' : formatClock(group.remaining)}
-                </span>
-              )}
+              {group.timer && <SectionClock timer={group.timer} clockOffset={clockOffset} />}
             </div>
           ) : null}
           <div className="grid grid-cols-5 gap-1.5">
@@ -75,3 +81,6 @@ export default function QuestionPalette({ groups, activeId, stateOf, flagged, on
     </div>
   );
 }
+
+/** Memoised: the palette only needs to re-render when a question's state, flag or the active id changes. */
+export default React.memo(QuestionPalette);

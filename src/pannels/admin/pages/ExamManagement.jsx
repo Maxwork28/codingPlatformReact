@@ -35,17 +35,12 @@ import { confirmAction, notify } from '../../../common/ui/Toast';
 import ClassPicker from '../components/ClassPicker';
 import { RateBar, SearchBox, Segmented } from '../components/classDetails/shared';
 import { HIDE_MD, HIDE_SM, errorText, formatDate, paginate, plural, selectClass, useUrlState } from '../components/classDetails/helpers';
+import { EXAM_PHASES } from '../../../common/domain/exams';
 
 const PAGE_SIZE = 12;
 const POLL_MS = 30000;
 
-const PHASES = {
-  live: { label: 'Live', dot: 'bg-ok animate-pulse', text: 'text-ok' },
-  scheduled: { label: 'Scheduled', dot: 'bg-info', text: 'text-info' },
-  draft: { label: 'Draft', dot: 'bg-warn', text: 'text-warn' },
-  completed: { label: 'Closed', dot: 'bg-subtle', text: 'text-muted' },
-  archived: { label: 'Archived', dot: 'bg-subtle', text: 'text-subtle' },
-};
+const PHASES = EXAM_PHASES;
 const FILTERS = ['all', 'live', 'scheduled', 'draft', 'completed', 'archived'];
 const DEFAULTS = { q: '', phase: 'all', class: '', page: '1' };
 

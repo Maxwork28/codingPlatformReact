@@ -70,7 +70,8 @@ const StudentExamList = () => {
 
   const enrolled = useMemo(() => {
     if (!user?.id) return [];
-    return (classes || []).filter((cls) => (cls.students || []).some((s) => String(s?._id ?? s) === String(user.id)));
+    // The API returns only the classes this student is enrolled in; the roster itself is no longer sent.
+    return (classes || []).filter((cls) => !Array.isArray(cls.students) || cls.students.some((s) => String(s?._id ?? s) === String(user.id)));
   }, [classes, user?.id]);
 
   const load = useCallback(async () => {

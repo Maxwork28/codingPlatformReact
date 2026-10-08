@@ -6,6 +6,9 @@ import { getQuestion, viewSolution } from '../../../common/services/api';
 import { Button, EmptyState, StatusChip } from '../../../common/ui/primitives';
 import { type } from '../../../common/ui/format';
 import { RUNNABLE_CODING_TYPES, QUESTION_TYPE_LABELS, stripHtml } from '../pages/takeClass/helpers';
+import { sanitizeHtml } from '../../../common/utils/sanitizeHtml';
+
+const safeParse = (html) => parse(sanitizeHtml(html || ''));
 
 const langLabel = (lang) => (lang ? String(lang).charAt(0).toUpperCase() + String(lang).slice(1) : 'Solution');
 
@@ -118,7 +121,7 @@ const QuestionSolution = () => {
     const opt = question.options?.[question.correctOption];
     body = opt ? (
       <p className="text-xs text-body">
-        {question.correctOption + 1}. {parse(opt)}
+        {question.correctOption + 1}. {safeParse(opt)}
       </p>
     ) : (
       <p className="text-xs text-muted">No solution saved.</p>
@@ -129,7 +132,7 @@ const QuestionSolution = () => {
       <ul className="space-y-2 text-xs text-body">
         {indexes.map((idx) => (
           <li key={idx}>
-            {idx + 1}. {parse(question.options?.[idx] || '')}
+            {idx + 1}. {safeParse(question.options?.[idx])}
           </li>
         ))}
       </ul>
@@ -138,7 +141,7 @@ const QuestionSolution = () => {
     );
   } else if (qType === 'fillInTheBlanks') {
     body = question.correctAnswer ? (
-      <p className="text-xs text-body">{parse(question.correctAnswer)}</p>
+      <p className="text-xs text-body">{safeParse(question.correctAnswer)}</p>
     ) : (
       <p className="text-xs text-muted">No solution saved.</p>
     );

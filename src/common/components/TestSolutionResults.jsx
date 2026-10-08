@@ -1,6 +1,9 @@
 import React from 'react';
-import TestCaseResultsList, { parseTestCaseResultsList } from '../../pannels/student/components/TestCaseResultsList';
-import RunMetricsBadges, { summarizeRunMetrics } from './RunMetricsBadges';
+import TestCaseResultsList from '../../pannels/student/components/TestCaseResultsList';
+import { parseTestCaseResultsList } from '../utils/testCaseResults';
+import RunMetricsBadges from './RunMetricsBadges';
+import { summarizeRunMetrics } from '../utils/runMetrics';
+import { sanitizeHtml } from '../utils/sanitizeHtml';
 
 const TestSolutionResults = ({ testResults }) => {
   if (!testResults) return null;
@@ -41,7 +44,7 @@ const TestSolutionResults = ({ testResults }) => {
       {testResults.explanation && (
         <div
           className="mt-4 p-3 bg-inset rounded text-sm text-body prose prose-sm max-w-none"
-          dangerouslySetInnerHTML={{ __html: String(testResults.explanation) }}
+          dangerouslySetInnerHTML={{ __html: sanitizeHtml(String(testResults.explanation)) }}
         />
       )}
     </div>

@@ -4,6 +4,8 @@ import {
   CalendarClock,
   CheckCircle2,
   Clock,
+  ExternalLink,
+  KeyRound,
   Layers,
   ListChecks,
   Lock,
@@ -13,7 +15,8 @@ import {
   Trophy,
 } from 'lucide-react';
 import { Button, Card, StatusChip } from '../../../../common/ui/primitives';
-import { type } from '../../../../common/ui/format';
+import { inputClass, type } from '../../../../common/ui/format';
+import { isSafeExamBrowser } from '../../../../common/utils/seb';
 import { ATTEMPT_LABELS, formatClock, formatDateTime, formatMinutes, isClosedAttempt } from './examUtils';
 
 function Fact({ icon, label, value }) {
@@ -37,7 +40,8 @@ const rulesFor = (exam) => {
     (exam.sections || []).some((s) => s.durationSeconds) && 'Some sections have their own time limit. When it runs out, those answers are locked.',
     'Choice and text answers save automatically. Coding answers are saved when you press Submit code.',
     'You can change any saved answer until you submit the exam. Your last saved answer is the one that counts.',
-    p.fullscreenRequired && 'The exam runs in fullscreen. Leaving fullscreen is recorded.',
+    p.sebRequired && 'This exam runs in Safe Exam Browser. Your teacher announces the entry password in class; you need it to start.',
+    p.fullscreenRequired && !p.sebRequired && 'The exam runs in fullscreen. Leaving fullscreen is recorded.',
     p.tabSwitchLimit > 0
       ? `Switching tabs or windows is recorded. After ${p.tabSwitchLimit} switches the exam is locked and submitted.`
       : 'Switching tabs or windows is recorded.',
@@ -47,9 +51,48 @@ const rulesFor = (exam) => {
   ].filter(Boolean);
 };
 
-export default function ExamLobby({ exam, attempt, nowMs, starting, error, onStart, onBack, onResults }) {
+/** Shown instead of Start / Resume when the exam needs Safe Exam Browser and this browser is not SEB. */
+function OpenInSeb({ link, resuming }) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-start gap-3">
+        <span className="w-9 h-9 rounded-xl border bg-accent-soft text-accent-ink border-accent-line flex items-center justify-center shrink-0">
+          <ShieldCheck className="w-4 h-4" />
+        </span>
+        <div className="min-w-0 space-y-1">
+          <p className={type.cardTitle}>{resuming ? 'Continue in Safe Exam Browser' : 'This exam runs in Safe Exam Browser'}</p>
+          <p className={type.body}>
+            You cannot {resuming ? 'continue' : 'start'} it in this browser. Open it in Safe Exam Browser: it locks your laptop to the exam until
+            you submit. Inside Safe Exam Browser, sign in again and enter the entry password your teacher announces.
+          </p>
+          <p className={type.meta}>Safe Exam Browser must already be installed on this laptop. Ask your teacher if the button does nothing.</p>
+        </div>
+      </div>
+      <div className="flex justify-end">
+        {link ? (
+          <a
+            href={link}
+            className="rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 px-4 py-2 bg-accent hover:bg-accent-hover text-on-accent"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            Open in Safe Exam Browser
+          </a>
+        ) : (
+          <p className="text-xs text-bad">The Safe Exam Browser link is not available. Ask your teacher.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function ExamLobby({ exam, attempt, sebLink, nowMs, starting, error, onStart, onBack, onResults }) {
   const [agreed, setAgreed] = useState(false);
+  const [entryPassword, setEntryPassword] = useState('');
   const p = exam.proctoring || {};
+  const sebRequired = Boolean(p.sebRequired || exam.seb?.required);
+  const inSeb = isSafeExamBrowser();
+  const needsSeb = sebRequired && !inSeb;
+  const link = sebLink || exam.seb?.link || null;
   const closedAttempt = isClosedAttempt(attempt);
   const inProgress = attempt?.status === 'in_progress';
   const opensInMs = exam.phase === 'scheduled' && p.startTime ? new Date(p.startTime).getTime() - nowMs : 0;
@@ -72,6 +115,8 @@ export default function ExamLobby({ exam, attempt, nowMs, starting, error, onSta
         </Button>
       </div>
     );
+  } else if (inProgress && needsSeb) {
+    action = <OpenInSeb link={link} resuming />;
   } else if (inProgress) {
     action = (
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -79,7 +124,7 @@ export default function ExamLobby({ exam, attempt, nowMs, starting, error, onSta
           <p className={type.cardTitle}>You have an attempt in progress</p>
           <p className={type.body}>{formatClock(leftMs / 1000)} left on your clock.</p>
         </div>
-        <Button icon={RotateCcw} onClick={onStart} disabled={starting}>
+        <Button icon={RotateCcw} onClick={() => onStart()} disabled={starting}>
           {starting ? 'Opening…' : 'Resume exam'}
         </Button>
       </div>
@@ -103,9 +148,35 @@ export default function ExamLobby({ exam, attempt, nowMs, starting, error, onSta
         <p className={type.body}>This exam has closed and you did not take it.</p>
       </div>
     );
+  } else if (needsSeb) {
+    action = <OpenInSeb link={link} />;
   } else {
+    const passwordMissing = sebRequired && !entryPassword.trim();
     action = (
       <div className="space-y-3">
+        {sebRequired && (
+          <div className="space-y-1.5">
+            <label htmlFor="seb-entry-password" className="flex items-center gap-1.5 text-xs font-semibold text-fg">
+              <KeyRound className="w-3.5 h-3.5 text-muted" />
+              Entry password
+            </label>
+            <input
+              id="seb-entry-password"
+              value={entryPassword}
+              onChange={(e) => setEntryPassword(e.target.value.toUpperCase())}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && agreed && !passwordMissing && !starting) onStart(entryPassword.trim());
+              }}
+              placeholder="Your teacher will announce it"
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              maxLength={32}
+              className={`${inputClass} font-mono tracking-[0.2em] uppercase max-w-xs`}
+            />
+            <p className={type.meta}>Letters and digits only. You need it once, to start.</p>
+          </div>
+        )}
         <label className="flex items-start gap-2.5 cursor-pointer select-none">
           <input
             type="checkbox"
@@ -116,7 +187,7 @@ export default function ExamLobby({ exam, attempt, nowMs, starting, error, onSta
           <span className="text-xs text-body">I have read the instructions. I understand the timer starts as soon as I begin.</span>
         </label>
         <div className="flex justify-end">
-          <Button icon={Play} onClick={onStart} disabled={!agreed || starting}>
+          <Button icon={Play} onClick={() => onStart(sebRequired ? entryPassword.trim() : undefined)} disabled={!agreed || passwordMissing || starting}>
             {starting ? 'Starting…' : 'Start exam'}
           </Button>
         </div>

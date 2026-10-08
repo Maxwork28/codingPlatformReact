@@ -13,10 +13,16 @@ function Count({ label, value, tone }) {
   );
 }
 
-/** `items` is the ordered question list: { id, number, state: saved | dirty | empty | locked, flagged }. */
+/**
+ * `items` is the ordered question list: { id, number, state: saved | dirty | empty | locked, flagged, away }.
+ * `away` marks unsaved changes in a timed question/section the student has left: the server only accepts
+ * those while that timer runs, so they are not saved on submit.
+ */
 export default function SubmitExamModal({ open, onClose, onConfirm, submitting, items, remainingSeconds }) {
   const saved = items.filter((i) => i.state === 'saved').length;
   const dirty = items.filter((i) => i.state === 'dirty');
+  const saveable = dirty.filter((i) => !i.away);
+  const away = dirty.filter((i) => i.away);
   const empty = items.filter((i) => i.state === 'empty');
   const flagged = items.filter((i) => i.flagged);
   const list = (rows) => rows.map((r) => r.number).join(', ');
@@ -35,7 +41,7 @@ export default function SubmitExamModal({ open, onClose, onConfirm, submitting, 
             Keep working
           </Button>
           <Button icon={Send} onClick={onConfirm} disabled={submitting}>
-            {submitting ? 'Submitting…' : dirty.length ? 'Save and submit' : 'Submit exam'}
+            {submitting ? 'Submitting…' : saveable.length ? 'Save and submit' : 'Submit exam'}
           </Button>
         </>
       }
@@ -46,10 +52,16 @@ export default function SubmitExamModal({ open, onClose, onConfirm, submitting, 
         <Count label="Unanswered" value={empty.length} tone={empty.length ? 'text-bad' : 'text-fg'} />
       </div>
       <div className="space-y-2 text-xs text-body">
-        {dirty.length > 0 && (
+        {saveable.length > 0 && (
           <p>
-            Questions {list(dirty)} have changes that are not saved yet. They will be saved before the exam is submitted. Coding answers are checked
+            Questions {list(saveable)} have changes that are not saved yet. They will be saved before the exam is submitted. Coding answers are checked
             again, which can take a few seconds.
+          </p>
+        )}
+        {away.length > 0 && (
+          <p className="text-warn">
+            Questions {list(away)} have unsaved changes in a timed part of the exam you have left. Go back to them and save while their timer
+            runs; otherwise those changes are not submitted.
           </p>
         )}
         {empty.length > 0 && <p>Questions {list(empty)} have no answer and will score zero.</p>}

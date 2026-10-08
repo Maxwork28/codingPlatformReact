@@ -19,7 +19,9 @@ import QuestionHtml from '../../../../common/components/QuestionHtml';
 import CodingQuestionDetails from '../../../../common/components/CodingQuestionDetails';
 import { Button, StatusChip } from '../../../../common/ui/primitives';
 import { confirmAction } from '../../../../common/ui/Toast';
+import { stripHtml } from '../../../../common/utils/sanitizeHtml';
 import { formatClock, isCoding, LANGUAGE_LABELS, starterFor, TYPE_LABELS } from './examUtils';
+import { useTimerSeconds } from './useCountdown';
 
 const DIFFICULTY_KIND = { easy: 'pass', medium: 'warning', hard: 'fail' };
 const letter = (i) => String.fromCharCode(65 + i);
@@ -55,7 +57,19 @@ function SaveStatus({ coding, dirty, save }) {
   return null;
 }
 
-function Statement({ question, number, total, sectionTitle, remaining, locked, lockReason }) {
+/** The question's own countdown (server timer). Ticks by itself so the editor is not re-rendered every second. */
+function QuestionClock({ timer, clockOffset }) {
+  const seconds = useTimerSeconds(timer, clockOffset);
+  if (seconds === null) return null;
+  return (
+    <span className={`ml-auto flex items-center gap-1 font-semibold tabular-nums ${seconds < 30 ? 'text-bad' : 'text-muted'}`}>
+      <Timer className="w-3.5 h-3.5" />
+      {formatClock(seconds)}
+    </span>
+  );
+}
+
+function Statement({ question, number, total, sectionTitle, timer, clockOffset, locked, lockReason }) {
   return (
     <div className="space-y-4">
       <div className="space-y-2">
@@ -64,14 +78,9 @@ function Statement({ question, number, total, sectionTitle, remaining, locked, l
             Question {number} of {total}
           </span>
           {sectionTitle && <span>· {sectionTitle}</span>}
-          {remaining != null && (
-            <span className={`ml-auto flex items-center gap-1 font-semibold tabular-nums ${remaining < 30 ? 'text-bad' : 'text-muted'}`}>
-              <Timer className="w-3.5 h-3.5" />
-              {formatClock(remaining)}
-            </span>
-          )}
+          {timer && <QuestionClock timer={timer} clockOffset={clockOffset} />}
         </div>
-        <h2 className="text-lg font-bold text-fg leading-snug" dangerouslySetInnerHTML={{ __html: question.title }} />
+        <h2 className="text-lg font-bold text-fg leading-snug">{stripHtml(question.title) || 'Untitled question'}</h2>
         <div className="flex flex-wrap items-center gap-1.5">
           <StatusChip kind="neutral">{TYPE_LABELS[question.type] || question.type}</StatusChip>
           {question.difficulty && <StatusChip kind={DIFFICULTY_KIND[question.difficulty] || 'neutral'}>{question.difficulty}</StatusChip>}
@@ -267,12 +276,13 @@ function CodingWorkspace({ question, draft, disabled, onChange, copyPasteDisable
   );
 }
 
-export default function ExamQuestionView({
+function ExamQuestionView({
   question,
   number,
   total,
   sectionTitle,
-  remaining,
+  timer,
+  clockOffset,
   draft,
   dirty,
   save,
@@ -299,7 +309,8 @@ export default function ExamQuestionView({
       number={number}
       total={total}
       sectionTitle={sectionTitle}
-      remaining={remaining}
+      timer={timer}
+      clockOffset={clockOffset}
       locked={locked}
       lockReason={lockReason}
     />
@@ -376,3 +387,6 @@ export default function ExamQuestionView({
     </div>
   );
 }
+
+/** Memoised so the exam screen's 1 Hz clock does not re-render the editor. Callers pass stable callbacks. */
+export default React.memo(ExamQuestionView);

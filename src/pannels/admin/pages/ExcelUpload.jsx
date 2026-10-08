@@ -15,6 +15,8 @@ import { uploadExcel } from '../../../common/services/api';
 import { Button, StatusChip, Table } from '../../../common/ui/primitives';
 import { table as tableClass, type } from '../../../common/ui/format';
 import { notify } from '../../../common/ui/Toast';
+import OneTimeCredentials from '../../../common/components/OneTimeCredentials';
+import { hasOneTimeCredentials } from '../../../common/utils/oneTimeCredentials';
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const ACCEPTED = ['.xlsx', '.xls', '.csv'];
@@ -279,7 +281,9 @@ const ExcelUpload = () => {
             <li>First row must be the column headers; only the first sheet is read.</li>
             <li>Rows with an email that already exists are not changed.</li>
             <li>
-              New users get login details by email, or the default password if email sending isn&apos;t set up.
+              Each new user gets a random one-time password. It is emailed to them when email sending is set
+              up; otherwise it is shown once on this page after the import, so copy or download it then. Users
+              must choose a new password the first time they sign in.
             </li>
             {role === 'teacher' && <li>Imported teachers can create questions; change this on the Teachers page.</li>}
           </ul>
@@ -319,12 +323,17 @@ const ExcelUpload = () => {
             </div>
           </div>
 
-          {result.defaultPassword && result.created > 0 && (
-            <p className="flex items-center gap-2 rounded-xl border border-warn-line bg-warn-soft px-3 py-2 text-xs text-warn">
-              <KeyRound className="w-3.5 h-3.5 shrink-0" />
-              Email sending isn&apos;t configured. New accounts can sign in with the default password
-              <code className="rounded bg-surface px-1.5 py-0.5 font-semibold text-fg">{result.defaultPassword}</code>
-            </p>
+          {hasOneTimeCredentials(result) ? (
+            <OneTimeCredentials credentials={result.credentials} filename={`${role}s-passwords`} />
+          ) : (
+            result.created > 0 && (
+              <p className="flex items-center gap-2 rounded-xl border border-info-line bg-info-soft px-3 py-2 text-xs text-info">
+                <KeyRound className="w-3.5 h-3.5 shrink-0" />
+                {result.credentialsEmailed
+                  ? 'New accounts have been emailed their login details.'
+                  : result.message || 'New accounts were created.'}
+              </p>
+            )
           )}
 
           {visibleRows.length === 0 ? (
