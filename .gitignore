@@ -10,8 +10,8 @@ lerna-debug.log*
 node_modules
 *.local
 
-# Build output
-dist/
+# Build output is committed so EC2 can git pull the SPA
+# dist/
 
 # Environment files (keep .env.example committed)
 .env

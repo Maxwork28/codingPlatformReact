@@ -1,0 +1,1 @@
+const r="At least 8 characters, with letters and numbers.";function n(e){const t=typeof e=="string"?e:"";return t.length<8?"Use at least 8 characters.":/[A-Za-z]/.test(t)?/\d/.test(t)?"":"Include at least one number.":"Include at least one letter."}export{r as P,n as p};
