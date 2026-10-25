@@ -20,9 +20,12 @@ const TestCaseResultsList = ({ results, className = '', showPublicIo = true, sho
       {resultArray.map((result, index) => {
         const caseNum = result.testCaseNumber ?? index + 1;
         const isPublic = result.isPublic !== false;
-        const showIo = showHiddenDetails || (isPublic && showPublicIo);
-        const statusLabel =
-          showHiddenDetails || isPublic
+        // Practice submits stop at the first failing test; later tests come back as 'skipped'.
+        const skipped = result.status === 'skipped';
+        const showIo = !skipped && (showHiddenDetails || (isPublic && showPublicIo));
+        const statusLabel = skipped
+          ? 'not run'
+          : showHiddenDetails || isPublic
             ? result.passed
               ? 'success'
               : 'failed'
@@ -34,15 +37,18 @@ const TestCaseResultsList = ({ results, className = '', showPublicIo = true, sho
           <div key={`tc-${caseNum}-${index}`} className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p
-                className={`text-sm font-medium ${result.passed ? 'text-ok' : 'text-bad'}`}
+                className={`text-sm font-medium ${result.passed ? 'text-ok' : skipped ? 'text-muted' : 'text-bad'}`}
               >
                 Test case {caseNum} {statusLabel}
                 {showHiddenDetails && !isPublic && (
                   <span className="ml-1.5 text-xs font-normal text-muted">(hidden)</span>
                 )}
               </p>
-              <RunMetricsBadges result={result} />
+              {!skipped && <RunMetricsBadges result={result} />}
             </div>
+            {skipped && index > 0 && resultArray[index - 1]?.status !== 'skipped' && (
+              <p className="text-xs text-muted">Not run because an earlier test failed. Fix that one first.</p>
+            )}
 
             {showIo && (
               <>

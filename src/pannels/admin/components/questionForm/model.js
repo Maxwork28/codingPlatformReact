@@ -84,8 +84,37 @@ export function formFromQuestion(q) {
       : [blankTest()],
     timeLimit: String(q?.timeLimit || 2),
     memoryLimit: String(q?.memoryLimit || 256),
+    checkerType: q?.checker?.type || 'exact',
+    checkerTolerance: String(q?.checker?.tolerance ?? '0.000001'),
+    checkerLanguage: q?.checker?.language || 'python',
+    checkerCode: q?.checker?.code || DEFAULT_CHECKER_CODE,
   };
 }
+
+/** Output comparison modes (server: utils/judge.js compareOutput / custom checker). */
+export const CHECKER_TYPES = [
+  { value: 'exact', label: 'Exact match', hint: 'Line by line; trailing spaces and blank lines at the end are ignored.' },
+  { value: 'token', label: 'Ignore spacing', hint: 'Same words / numbers in the same order; spaces and line breaks do not matter.' },
+  { value: 'float', label: 'Decimal numbers', hint: 'Like "Ignore spacing", and numbers count as equal within the tolerance.' },
+  { value: 'ignoreCase', label: 'Ignore upper / lower case', hint: 'Exact match, but YES and yes are the same.' },
+  { value: 'custom', label: 'Custom checker program', hint: 'Your program decides, e.g. when several answers are correct.' },
+];
+
+export const DEFAULT_CHECKER_CODE = [
+  'import sys',
+  '',
+  '# argv: <test input file> <expected output file> <student output file>',
+  '# Print "OK" to accept. Print anything else (e.g. "WA reason") to reject; the line is shown to the student.',
+  'inp = open(sys.argv[1]).read().split()',
+  'expected = open(sys.argv[2]).read().split()',
+  'got = open(sys.argv[3]).read().split()',
+  '',
+  'if got == expected:',
+  '    print("OK")',
+  'else:',
+  '    print("WA expected", " ".join(expected[:5]), "but got", " ".join(got[:5]))',
+  '',
+].join('\n');
 
 /** The request body for create/update. Kept deterministic so it doubles as the "unsaved changes" fingerprint. */
 export function buildPayload(f) {
@@ -136,6 +165,12 @@ export function buildPayload(f) {
     }));
     data.timeLimit = Number(f.timeLimit);
     data.memoryLimit = Number(f.memoryLimit);
+    data.checker =
+      f.checkerType === 'float'
+        ? { type: 'float', tolerance: Number(f.checkerTolerance) }
+        : f.checkerType === 'custom'
+          ? { type: 'custom', language: f.checkerLanguage, code: f.checkerCode }
+          : { type: f.checkerType || 'exact' };
     const filled = f.languages.filter((l) => String(f.solutions[l] || '').trim()).map((language) => ({ language, code: f.solutions[language] }));
     if (filled.length) {
       const primary = filled.find((s) => s.language === f.solutionLanguage) || filled[0];
@@ -195,6 +230,10 @@ export function validate(f) {
     if (!(Number(f.timeLimit) > 0)) add('languages', 'Time limit must be above 0');
     if (!(Number(f.memoryLimit) > 0)) add('languages', 'Memory limit must be above 0');
     if (!f.testCases.length) add('tests', 'Add at least one test case');
+    if (f.checkerType === 'float' && !(Number(f.checkerTolerance) > 0 && Number(f.checkerTolerance) < 1)) {
+      add('tests', 'Tolerance must be a small positive number, e.g. 0.000001');
+    }
+    if (f.checkerType === 'custom' && !String(f.checkerCode || '').trim()) add('tests', 'Add the checker program');
     const incomplete = f.testCases.filter((t) => !String(t.input).trim() || !String(t.expectedOutput).trim()).length;
     if (incomplete) add('tests', `${incomplete} test case${incomplete === 1 ? ' is' : 's are'} missing input or output`);
     if (!f.testCases.some((t) => t.isPublic)) add('tests', 'No public test case, so students see no example run', 'warn');

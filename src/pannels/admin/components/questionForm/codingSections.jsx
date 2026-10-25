@@ -10,7 +10,7 @@ import { errorText } from '../classDetails/helpers';
 import { langLabel } from '../questionDetails/helpers';
 import RichTextEditor from './RichTextEditor';
 import { Field, FormSection, LanguageCodeEditor } from './fields';
-import { LANGUAGES, defaultDriverCode } from './model';
+import { CHECKER_TYPES, DEFAULT_CHECKER_CODE, LANGUAGES, defaultDriverCode } from './model';
 
 export function IoSection({ form, set, editorKey, ...section }) {
   return (
@@ -66,7 +66,80 @@ export function TestsSection({ form, set, ...section }) {
         minItems={1}
         addLabel="Add test case"
       />
+      <CheckerField form={form} set={set} />
     </FormSection>
+  );
+}
+
+/** How a program's output is compared with the expected output. */
+function CheckerField({ form, set }) {
+  const current = CHECKER_TYPES.find((c) => c.value === form.checkerType) || CHECKER_TYPES[0];
+  return (
+    <div className="space-y-3 pt-2 border-t border-line">
+      <Field label="Answer checking" htmlFor="q-checker" hint={current.hint}>
+        <select
+          id="q-checker"
+          value={form.checkerType}
+          onChange={(e) => set('checkerType', e.target.value)}
+          className={`${inputClass} h-9 max-w-xs`}
+        >
+          {CHECKER_TYPES.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+      {form.checkerType === 'float' && (
+        <Field label="Tolerance" htmlFor="q-tolerance" hint="Absolute or relative difference allowed, e.g. 0.000001 (1e-6).">
+          <input
+            id="q-tolerance"
+            type="number"
+            min="0"
+            step="any"
+            value={form.checkerTolerance}
+            onChange={(e) => set('checkerTolerance', e.target.value)}
+            className={`${inputClass} h-9 max-w-xs`}
+          />
+        </Field>
+      )}
+      {form.checkerType === 'custom' && (
+        <div className="space-y-2">
+          <Field
+            label="Checker language"
+            htmlFor="q-checker-lang"
+            hint="Runs once per test after the student's program, with 3 file paths: test input, expected output, student output. Print OK to accept."
+          >
+            <select
+              id="q-checker-lang"
+              value={form.checkerLanguage}
+              onChange={(e) => set('checkerLanguage', e.target.value)}
+              className={`${inputClass} h-9 max-w-xs`}
+            >
+              {LANGUAGES.map((lang) => (
+                <option key={lang} value={lang}>
+                  {langLabel(lang)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <textarea
+            aria-label="Checker program"
+            value={form.checkerCode}
+            onChange={(e) => set('checkerCode', e.target.value)}
+            rows={14}
+            spellCheck={false}
+            className="w-full bg-inset border border-line rounded-lg px-3 py-2 font-mono text-xs text-fg outline-none focus:border-accent"
+          />
+          {form.checkerLanguage !== 'python' && form.checkerCode === DEFAULT_CHECKER_CODE && (
+            <p className={type.meta}>The example above is Python: replace it with a {langLabel(form.checkerLanguage)} program.</p>
+          )}
+          <p className={type.meta}>
+            The checker never sees other students' work and its code is not shown to students. A crash or a non-zero exit counts as a checker error, never as accepted.
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 

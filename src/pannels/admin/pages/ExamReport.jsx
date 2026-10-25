@@ -490,6 +490,7 @@ export default function ExamReport() {
                                 <span className="text-subtle font-normal">/{a.maxScore ?? 0}</span>
                               </p>
                               {pct != null && <p className={type.meta}>{pct}%</p>}
+                              {a.pendingGrading > 0 && <p className={type.meta}>{a.pendingGrading} grading…</p>}
                             </>
                           )}
                         </td>

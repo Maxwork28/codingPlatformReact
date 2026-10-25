@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, ClipboardList, Clock, ExternalLink, LogOut, Maximize, Send, ShieldAlert, WifiOff, X } from 'lucide-react';
 import {
   autoSubmitExam,
+  awaitJudgeJob,
   getExamAttempt,
   getStudentExamSummary,
   logProctoringEvent,
@@ -52,7 +53,14 @@ const savedMap = (answers) =>
   Object.fromEntries(
     (answers || []).map((a) => [
       String(a.questionId),
-      { answer: a.answer, language: a.language, savedAt: a.savedAt, passedTestCases: a.passedTestCases, totalTestCases: a.totalTestCases },
+      {
+        answer: a.answer,
+        language: a.language,
+        savedAt: a.savedAt,
+        passedTestCases: a.passedTestCases,
+        totalTestCases: a.totalTestCases,
+        gradingStatus: a.gradingStatus,
+      },
     ]),
   );
 
@@ -457,21 +465,41 @@ const StudentExamScreen = () => {
         });
         if (saveSeqRef.current[id] !== seq) return true;
         const d = res.data;
+        const grading = coding && d.gradingStatus === 'pending' && d.jobId;
         setSaved((s) => ({
           ...s,
-          [id]: { answer: payloadAnswer(q, draft), language: draft.language, savedAt: d.savedAt, passedTestCases: d.passedTestCases, totalTestCases: d.totalTestCases },
-        }));
-        setSaveState((s) => ({
-          ...s,
           [id]: {
-            saving: false,
+            answer: payloadAnswer(q, draft),
+            language: draft.language,
             savedAt: d.savedAt,
-            result: coding
-              ? { passedTestCases: d.passedTestCases, totalTestCases: d.totalTestCases, testResults: d.testResults, executionError: d.executionError }
-              : null,
+            passedTestCases: d.passedTestCases,
+            totalTestCases: d.totalTestCases,
+            gradingStatus: grading ? 'pending' : undefined,
           },
         }));
+        // The answer is stored now; for code the tests run in the background and the result follows.
+        setSaveState((s) => ({ ...s, [id]: { saving: false, savedAt: d.savedAt, grading: Boolean(grading), result: null } }));
         if (coding) setRunState((s) => ({ ...s, [id]: { running: false, result: null } }));
+        if (grading) {
+          awaitJudgeJob(d.jobId)
+            .then((r) => {
+              if (saveSeqRef.current[id] !== seq || r?.superseded) return;
+              setSaved((s) => ({ ...s, [id]: { ...s[id], passedTestCases: r.passedTestCases, totalTestCases: r.totalTestCases, gradingStatus: r.gradingStatus } }));
+              setSaveState((s) => ({
+                ...s,
+                [id]: {
+                  ...s[id],
+                  grading: false,
+                  result: { passedTestCases: r.passedTestCases, totalTestCases: r.totalTestCases, testResults: r.testResults, executionError: r.executionError },
+                },
+              }));
+            })
+            .catch(() => {
+              if (saveSeqRef.current[id] !== seq) return;
+              // Still saved: the grade is applied on the server and shows in the results.
+              setSaveState((s) => ({ ...s, [id]: { ...s[id], grading: false, gradingDelayed: true } }));
+            });
+        }
         return true;
       } catch (err) {
         if (saveSeqRef.current[id] === seq) {
@@ -534,6 +562,41 @@ const StudentExamScreen = () => {
     });
     await Promise.allSettled(ids.map((id) => saveAnswer(id)));
   }, [ordered, questionById, lockReasonFor, isAwayTimed, saved, saveAnswer]);
+
+  // Coding answers saved before a reload may still be grading: re-read the attempt until they are done.
+  const pendingAfterLoad = useMemo(
+    () => Object.keys(saved).filter((id) => saved[id]?.gradingStatus === 'pending' && !saveState[id]?.grading),
+    [saved, saveState],
+  );
+  useEffect(() => {
+    if (!pendingAfterLoad.length || closed) return undefined;
+    const t = setTimeout(async () => {
+      try {
+        const res = await getExamAttempt(examId);
+        const fresh = savedMap(res.data.attempt?.answers);
+        setSaved((s) => {
+          const next = { ...s };
+          for (const id of pendingAfterLoad) {
+            if (fresh[id] && s[id] && fresh[id].savedAt === s[id].savedAt) next[id] = { ...s[id], ...fresh[id] };
+          }
+          return next;
+        });
+        setSaveState((s) => {
+          const next = { ...s };
+          for (const id of pendingAfterLoad) {
+            const f = fresh[id];
+            if (f && f.gradingStatus !== 'pending') {
+              next[id] = { ...s[id], savedAt: f.savedAt, result: { passedTestCases: f.passedTestCases, totalTestCases: f.totalTestCases } };
+            }
+          }
+          return next;
+        });
+      } catch {
+        /* next tick retries */
+      }
+    }, 4000);
+    return () => clearTimeout(t);
+  }, [pendingAfterLoad, closed, examId]);
 
   // ---------------------------------------------------------------- running code
   const runCode = useCallback(

@@ -78,7 +78,11 @@ function QuestionResult({ q, number }) {
           <p className={type.meta}>
             {TYPE_LABELS[q.type] || q.type}
             {q.section ? ` · ${q.section}` : ''}
-            {coding && q.response ? ` · ${q.response.passedTestCases}/${q.response.totalTestCases} tests` : ''}
+            {coding && q.response
+              ? q.response.gradingStatus === 'pending'
+                ? ' · tests still running'
+                : ` · ${q.response.passedTestCases}/${q.response.totalTestCases} tests`
+              : ''}
           </p>
         </div>
         <span className="text-sm font-bold tabular-nums text-fg shrink-0">
@@ -210,6 +214,11 @@ const StudentExamResults = () => {
                   <span className="text-base text-muted font-semibold">/{maxScore}</span>
                 </p>
                 <p className={type.body}>points scored</p>
+                {attempt.pendingGrading > 0 && (
+                  <p className={type.meta}>
+                    {attempt.pendingGrading} coding answer{attempt.pendingGrading === 1 ? ' is' : 's are'} still being graded; refresh in a moment.
+                  </p>
+                )}
               </div>
             </div>
           ) : (

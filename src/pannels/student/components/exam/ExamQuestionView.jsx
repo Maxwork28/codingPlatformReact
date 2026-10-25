@@ -31,7 +31,7 @@ function SaveStatus({ coding, dirty, save }) {
     return (
       <span className="flex items-center gap-1.5 text-xs text-muted">
         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-        {coding ? 'Checking your code…' : 'Saving…'}
+        Saving…
       </span>
     );
   }
@@ -45,6 +45,15 @@ function SaveStatus({ coding, dirty, save }) {
   }
   if (dirty) {
     return <span className="text-xs text-warn">{coding ? 'Changes not submitted' : 'Not saved yet'}</span>;
+  }
+  if (save?.savedAt && save.grading) {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-ok">
+        <Check className="w-3.5 h-3.5" />
+        Saved · running tests
+        <Loader2 className="w-3.5 h-3.5 animate-spin text-muted" />
+      </span>
+    );
   }
   if (save?.savedAt) {
     return (
@@ -255,6 +264,15 @@ function CodingWorkspace({ question, draft, disabled, onChange, copyPasteDisable
             </p>
           )}
           {showSubmitted && save.result.executionError && <p className="text-xs text-bad">{save.result.executionError}</p>}
+          {tab === 'results' && !tabRun && save?.grading && (
+            <p className="flex items-center gap-1.5 text-xs text-muted">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Your code is saved. Running all tests…
+            </p>
+          )}
+          {tab === 'results' && !tabRun && save?.gradingDelayed && !save?.result && (
+            <p className="text-xs text-muted">Your code is saved. Test results will appear in your exam results.</p>
+          )}
           {shownTests?.length ? (
             <TestCaseResultsList results={shownTests} />
           ) : (

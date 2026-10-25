@@ -119,12 +119,18 @@ const QuestionStatistics = () => {
     if (!classId) return undefined;
     const socket = getSocket();
     joinClassRoom(classId);
-    const refresh = ({ classId: updatedClassId } = {}) => {
-      if (!updatedClassId || String(updatedClassId) === String(classId)) {
+    // During class every Run / Submit sends events; reload at most once per 3 s burst.
+    let timer = null;
+    const silentReload = () => {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
         loadReport({ silent: true });
-      }
+      }, 3000);
     };
-    const silentReload = () => loadReport({ silent: true });
+    const refresh = ({ classId: updatedClassId } = {}) => {
+      if (!updatedClassId || String(updatedClassId) === String(classId)) silentReload();
+    };
     socket.on('analyticsUpdated', refresh);
     socket.on('codeRun', silentReload);
     socket.on('submissionUpdate', silentReload);
@@ -134,6 +140,7 @@ const QuestionStatistics = () => {
       socket.off('codeRun', silentReload);
       socket.off('submissionUpdate', silentReload);
       socket.off('studentBlockStatusUpdated', silentReload);
+      clearTimeout(timer);
       leaveClassRoom(classId);
     };
   }, [classId, loadReport]);

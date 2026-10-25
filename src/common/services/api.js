@@ -1,12 +1,15 @@
 import axios from 'axios';
 import { API_BASE_URL } from '../constants';
 import { SEB_REQUIRED_EVENT, sebRequestHeaders } from '../utils/seb';
+import { getSocket } from './socket';
 
-/** Default request timeout. Judge-backed calls (run/submit/teacher-test) pass JUDGE_TIMEOUT instead. */
+/** Default request timeout. Synchronous judge-backed staff calls (teacher test) pass JUDGE_TIMEOUT instead. */
 const DEFAULT_TIMEOUT = 30000;
 export const JUDGE_TIMEOUT = 90000;
 const JUDGE_OPTS = { timeout: JUDGE_TIMEOUT };
 export const JUDGE_TIMEOUT_MESSAGE = 'The judge took too long. Please try again.';
+/** How long a student waits for a queued Run / Submit before giving up (the judge itself expires stale jobs). */
+const JOB_WAIT_MS = 10 * 60 * 1000;
 
 /** Endpoints where a 401 is a normal "wrong credentials / bad token" answer, not an expired session. */
 const PUBLIC_AUTH_PATHS = ['/auth/login', '/auth/forgot-password', '/auth/reset-password'];
@@ -1159,15 +1162,15 @@ export const getQuestionPerspectiveReport = async (classId, questionId) => {
  * @param {boolean} [isRun=false] - Whether it's a run or submit
  * @returns {Promise} Axios response (includes explanation)
  */
-export const submitAnswer = async (questionId, answer, classId, language, isRun = false, examContext = null) => {
+export const submitAnswer = async (questionId, answer, classId, language, isRun = false, examContext = null, { onUpdate } = {}) => {
   try {
-    const payload = { answer, classId, language, isRun };
+    const payload = { answer, classId, language, isRun, clientRequestId: newRequestId() };
     if (examContext) {
       payload.examAttemptId = examContext.examAttemptId;
       payload.examId = examContext.examId;
     }
-    const response = await api.post(`/questions/${questionId}/submit`, payload, JUDGE_OPTS);
-    return response;
+    // Coding answers are judged as a job (202 + result later); MCQ / typed answers answer at once.
+    return await judgeRequest(() => api.post(`/questions/${questionId}/submit`, payload), { onUpdate });
   } catch (err) {
     if (typeof err === 'string') throw err;
     // Handle maxAttempts error specifically for UI feedback
@@ -1186,19 +1189,115 @@ export const submitAnswer = async (questionId, answer, classId, language, isRun 
  * @param {string} language - Programming language
  * @returns {Promise} Axios response (includes explanation)
  */
-export const runCode = async (questionId, answer, classId, language, examContext = null) => {
+export const runCode = async (questionId, answer, classId, language, examContext = null, { onUpdate } = {}) => {
   try {
-    const payload = { answer, classId, language };
+    const payload = { answer, classId, language, clientRequestId: newRequestId() };
     if (examContext) {
       payload.examAttemptId = examContext.examAttemptId;
       payload.examId = examContext.examId;
     }
-    const response = await api.post(`/questions/${questionId}/run`, payload, JUDGE_OPTS);
-    return response;
+    return await judgeRequest(() => api.post(`/questions/${questionId}/run`, payload), { onUpdate });
   } catch (err) {
     if (typeof err === 'string') throw err;
     throw err.response?.data?.error || 'Failed to run code';
   }
+};
+
+// ---------------------------------------------------------------------------
+// Async judge jobs
+// ---------------------------------------------------------------------------
+
+/** Key sent with every Run / Submit click: a retried request returns the same job instead of judging twice. */
+const newRequestId = () => {
+  try {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID().replace(/-/g, '');
+  } catch {
+    /* fall through */
+  }
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`.slice(0, 32);
+};
+
+/**
+ * Wait for a judge job (Run, Submit, exam Run / grading). The result normally arrives over the
+ * socket ('judge:done' in the user's room); GET /judge/jobs/:id is polled as a fallback.
+ * onUpdate(view) gets { status: 'queued' | 'running', position } while waiting.
+ * Resolves with the job's result payload; rejects with an error message string.
+ */
+export function awaitJudgeJob(jobId, { onUpdate, timeoutMs = JOB_WAIT_MS } = {}) {
+  const id = String(jobId);
+  return new Promise((resolve, reject) => {
+    let finished = false;
+    let pollTimer = null;
+    let delay = 1500;
+    const socket = getSocket();
+    const cleanup = () => {
+      finished = true;
+      clearTimeout(pollTimer);
+      clearTimeout(deadline);
+      socket.off('judge:done', onDone);
+      socket.off('connect', onReconnect);
+    };
+    const settle = (view) => {
+      if (finished || !view) return;
+      if (view.status === 'done') {
+        if (view.result === undefined) return poll(); // too big for the socket message: fetch it
+        cleanup();
+        resolve(view.result);
+      } else if (view.status === 'failed') {
+        cleanup();
+        reject(view.error?.message || 'Code execution failed');
+      } else if (onUpdate) {
+        onUpdate(view);
+      }
+    };
+    const poll = async () => {
+      if (finished) return;
+      clearTimeout(pollTimer);
+      try {
+        const { data } = await api.get(`/judge/jobs/${id}`);
+        settle(data);
+      } catch (err) {
+        if (err.response?.status === 404) {
+          cleanup();
+          reject('This run is no longer available. Please try again.');
+          return;
+        }
+      }
+      if (!finished) {
+        delay = Math.min(Math.round(delay * 1.5), 5000);
+        pollTimer = setTimeout(poll, delay);
+      }
+    };
+    function onDone(view) {
+      if (view?.jobId === id) settle(view);
+    }
+    // Events emitted while the socket was reconnecting are lost: check right away after a reconnect.
+    function onReconnect() {
+      poll();
+    }
+    socket.on('judge:done', onDone);
+    socket.on('connect', onReconnect);
+    pollTimer = setTimeout(poll, delay);
+    const deadline = setTimeout(() => {
+      if (finished) return;
+      cleanup();
+      reject(JUDGE_TIMEOUT_MESSAGE);
+    }, timeoutMs);
+  });
+}
+
+/**
+ * POST a judge-backed request. A 202 { jobId } answer is awaited and turned into the same
+ * { data } shape the synchronous endpoints returned, so callers need no changes.
+ */
+const judgeRequest = async (post, { onUpdate } = {}) => {
+  const response = await post();
+  if (response.status === 202 && response.data?.jobId) {
+    if (onUpdate) onUpdate(response.data);
+    const result = await awaitJudgeJob(response.data.jobId, { onUpdate });
+    return { ...response, status: 200, data: result };
+  }
+  return response;
 };
 
 /**
@@ -1215,21 +1314,21 @@ export const getLeaderboard = async (classId) => {
     throw err.response?.data?.error || 'Failed to fetch leaderboard';
   }
 };
-export const runCodeWithCustomInput = async (questionId, answer, classId, language, customInput, expectedOutput, examContext = null) => {
+export const runCodeWithCustomInput = async (questionId, answer, classId, language, customInput, expectedOutput, examContext = null, { onUpdate } = {}) => {
   try {
     const payload = {
       answer,
       classId,
       language,
       customInput,
-      expectedOutput
+      expectedOutput,
+      clientRequestId: newRequestId(),
     };
     if (examContext) {
       payload.examAttemptId = examContext.examAttemptId;
       payload.examId = examContext.examId;
     }
-    const response = await api.post(`/questions/${questionId}/run-custom`, payload, JUDGE_OPTS);
-    return response;
+    return await judgeRequest(() => api.post(`/questions/${questionId}/run-custom`, payload), { onUpdate });
   } catch (err) {
     if (typeof err === 'string') throw err;
     throw err.response?.data?.error || 'Failed to run code with custom input';
@@ -1361,9 +1460,14 @@ export const getStudentExamSummary = (examId) => examCall(() => api.get(`/exams/
 export const startExam = (examId, entryPassword) =>
   examCall(() => api.post(`/exams/${examId}/start`, entryPassword ? { entryPassword } : {}, sebOpts()), 'Failed to start exam');
 export const getExamAttempt = (examId) => examCall(() => api.get(`/exams/${examId}/attempt`, sebOpts()), 'Failed to fetch attempt');
+/** Saves at once; coding answers come back { gradingStatus: 'pending', jobId } and are graded in the background (awaitJudgeJob). */
 export const submitExamAnswer = (examId, data) =>
   examCall(() => api.post(`/exams/${examId}/submit-answer`, data, sebOpts()), 'Failed to save answer');
-export const runExamCode = (examId, data) => examCall(() => api.post(`/exams/${examId}/run`, data, sebOpts()), 'Failed to run code');
+export const runExamCode = (examId, data, { onUpdate } = {}) =>
+  examCall(
+    () => judgeRequest(() => api.post(`/exams/${examId}/run`, { ...data, clientRequestId: newRequestId() }, sebOpts()), { onUpdate }),
+    'Failed to run code'
+  );
 export const logProctoringEvent = (examId, attemptId, type, details = {}) =>
   examCall(() => api.post(`/exams/${examId}/events`, { attemptId, type, details }, sebOpts()), 'Failed to log event');
 /** Tell the server which question is open; it pauses/starts the section and question timers and returns their state. */
